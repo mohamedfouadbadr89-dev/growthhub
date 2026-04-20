@@ -312,3 +312,8 @@ byok_openrouter_key: encrypted via Supabase Vault (nullable)
 - Credits balance check is SKIPPED for LTD users
 - BYOK key is stored encrypted in Supabase Vault
 - If LTD user has no BYOK key → block AI features with prompt to add key
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
