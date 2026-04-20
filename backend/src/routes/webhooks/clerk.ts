@@ -41,13 +41,12 @@ clerkWebhook.post('/', async (c) => {
     if (eventType === 'organization.created') {
       const orgId = data.id as string
       const name = data.name as string
-      const slug = (data.slug as string | null) ?? null
       const createdAt = new Date(data.created_at as number).toISOString()
 
       const { error } = await supabaseAdmin
         .from('organizations')
         .upsert(
-          { org_id: orgId, name, slug, created_at: createdAt },
+          { org_id: orgId, name, created_at: createdAt },
           { onConflict: 'org_id' }
         )
 
@@ -62,33 +61,32 @@ clerkWebhook.post('/', async (c) => {
       const publicUserData = data.public_user_data as Record<string, unknown>
       const orgData = data.organization as Record<string, unknown>
 
-      const userId = publicUserData.user_id as string
+      const clerkId = publicUserData.user_id as string
       const orgId = orgData.id as string
-      const email = (publicUserData.identifier as string | null) ?? null
-      const firstName = (publicUserData.first_name as string | null) ?? null
-      const lastName = (publicUserData.last_name as string | null) ?? null
-      const role = (data.role as string | null) ?? 'member'
+      const email = (publicUserData.identifier as string | null) ?? ''
+      // Clerk roles are prefixed: "org:admin" → "admin", "org:member" → "member"
+      const rawRole = (data.role as string | null) ?? 'org:member'
+      const role = rawRole.replace(/^org:/, '') === 'admin' ? 'admin' : 'member'
       const createdAt = new Date(data.created_at as number).toISOString()
 
       const { error } = await supabaseAdmin
         .from('users')
         .upsert(
           {
-            id: userId,
+            clerk_id: clerkId,
             org_id: orgId,
             email,
-            full_name: [firstName, lastName].filter(Boolean).join(' ') || null,
             role,
             created_at: createdAt,
           },
-          { onConflict: 'id' }
+          { onConflict: 'clerk_id' }
         )
 
       if (error) {
         console.error('[clerk-webhook] Failed to upsert user:', error.message)
         return c.json({ error: 'DB error' }, 500)
       }
-      console.log(`[clerk-webhook] User membership created: ${userId} → org ${orgId}`)
+      console.log(`[clerk-webhook] User membership created: ${clerkId} → org ${orgId}`)
     }
   } catch (err) {
     console.error('[clerk-webhook] Handler error:', err)
