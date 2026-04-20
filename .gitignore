@@ -47,3 +47,6 @@ backend/dist/
 
 # supabase
 .supabase/
+
+# clerk configuration (can include secrets)
+/.clerk/
