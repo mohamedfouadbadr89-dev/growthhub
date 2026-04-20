@@ -1,225 +1,280 @@
 "use client";
 
-import { TrendingUp, BadgeCheck, Zap, ArrowRight, CheckCircle2, History, AlertTriangle, PauseCircle, Play } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { Loader2, Plus, ToggleLeft, ToggleRight, Trash2, Zap } from "lucide-react";
+import { apiClient } from "@/lib/api-client";
 
-const METRICS = [
-  { label: "Revenue Impact",   value: "$142.8k", sub: "+12.4% vs last 30d", Icon: TrendingUp,  iconColor: "text-emerald-500" },
-  { label: "CPA Improvement",  value: "-18.2%",  sub: "System-wide efficiency", Icon: BadgeCheck, iconColor: "text-emerald-500" },
-  { label: "Exec. Frequency",  value: "1.2m",    sub: "Actions per hour",    Icon: Zap,         iconColor: "text-primary" },
-];
+interface ActionTemplate {
+  id: string;
+  platform: string;
+  name: string;
+}
 
-const PLATFORM_DOT: Record<string, string> = {
-  "Meta":   "bg-[#0668E1]",
-  "Google": "bg-[#4285F4]",
-  "TikTok": "bg-[#FE2C55]",
-  "Snap":   "bg-[#FFFC00]",
-};
+interface AutomationRule {
+  id: string;
+  name: string;
+  trigger_type: string;
+  min_confidence_threshold: number;
+  action_template_id: string;
+  action_params: Record<string, unknown>;
+  enabled: boolean;
+  run_count: number;
+  last_fired_at: string | null;
+  created_at: string;
+  actions_library?: { platform: string; name: string } | Array<{ platform: string; name: string }>;
+}
 
-const AUTOMATIONS = [
-  {
-    platforms: ["Meta", "Google"],
-    status: "Running", statusStyle: "bg-emerald-100 text-emerald-700",
-    title: "Global ROAS Balancer",
-    desc: "Managing 142 campaign entities",
-    stat1Label: "Impact", stat1Value: "$42,900", stat1Color: "text-foreground",
-    stat2Label: "ROAS",   stat2Value: "4.2x",    stat2Color: "text-emerald-600",
-  },
-  {
-    platforms: ["TikTok"],
-    status: "Running", statusStyle: "bg-emerald-100 text-emerald-700",
-    title: "Creative Saturation Monitor",
-    desc: "Monitoring 24 ad groups",
-    stat1Label: "Impact", stat1Value: "-$12k CPA", stat1Color: "text-foreground",
-    stat2Label: "Freq",   stat2Value: "Real-time",  stat2Color: "text-foreground",
-  },
-  {
-    platforms: ["Meta"],
-    status: "Paused", statusStyle: "bg-amber-100 text-amber-700",
-    title: "Nightly Budget Scaler",
-    desc: "Threshold: 2.5x ROAS min",
-    stat1Label: "Impact", stat1Value: "$8,210", stat1Color: "text-foreground",
-    stat2Label: "Scale",  stat2Value: "+15%",   stat2Color: "text-foreground",
-  },
-  {
-    platforms: ["Google", "TikTok"],
-    status: "Running", statusStyle: "bg-emerald-100 text-emerald-700",
-    title: "Cross-Channel Bidder",
-    desc: "Execution frequency: 5m",
-    stat1Label: "Impact",     stat1Value: "$19.4k", stat1Color: "text-foreground",
-    stat2Label: "Efficiency", stat2Value: "+9%",    stat2Color: "text-emerald-600",
-  },
-];
+const TRIGGER_TYPES = ["ROAS_DROP", "SPEND_SPIKE", "CONVERSION_DROP", "SCALING_OPPORTUNITY"] as const;
 
-const LIVE_ACTIVITY = [
-  { dot: "bg-blue-500",   title: "Budget adjusted on Meta Ads",          sub: "2m ago • Campaign: Summer_Launch_24" },
-  { dot: "bg-pink-500",   title: "Creative rotated on TikTok Ads",        sub: "8m ago • Group: Youth_Demographic_A" },
-  { dot: "bg-yellow-400", title: "Bid scaled on Google Ads",              sub: "14m ago • Search: Luxury_Apparel_High_Intent" },
-  { dot: "bg-blue-500",   title: "New Automation instance deployed",      sub: "21m ago • Policy: ROAS_Guard_v2" },
-];
+export default function AutomationRulesPage() {
+  const { getToken } = useAuth();
+  const [rules, setRules] = useState<AutomationRule[]>([]);
+  const [templates, setTemplates] = useState<ActionTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    trigger_type: "ROAS_DROP" as string,
+    min_confidence_threshold: 70,
+    action_template_id: "",
+    action_params: "{}",
+    enabled: true,
+  });
 
-export default function AutomationPage() {
+  const load = async () => {
+    const token = await getToken();
+    if (!token) { setLoading(false); return; }
+    try {
+      const [rulesData, templatesData] = await Promise.all([
+        apiClient<{ rules: AutomationRule[] }>("/api/v1/automation/rules", token),
+        apiClient<{ actions: ActionTemplate[] }>("/api/v1/actions", token),
+      ]);
+      setRules(rulesData.rules);
+      setTemplates(templatesData.actions);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleToggle = async (rule: AutomationRule) => {
+    const token = await getToken();
+    if (!token) return;
+    try {
+      const updated = await apiClient<AutomationRule>(`/api/v1/automation/rules/${rule.id}`, token, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !rule.enabled }),
+      });
+      setRules((prev) => prev.map((r) => (r.id === rule.id ? { ...r, ...updated } : r)));
+    } catch {}
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this rule?")) return;
+    const token = await getToken();
+    if (!token) return;
+    try {
+      await apiClient(`/api/v1/automation/rules/${id}`, token, { method: "DELETE" });
+      setRules((prev) => prev.filter((r) => r.id !== id));
+    } catch {}
+  };
+
+  const handleCreate = async () => {
+    setSaving(true);
+    try {
+      const token = await getToken();
+      if (!token) return;
+      let parsedParams: Record<string, unknown> = {};
+      try { parsedParams = JSON.parse(form.action_params); } catch {}
+      const newRule = await apiClient<AutomationRule>("/api/v1/automation/rules", token, {
+        method: "POST",
+        body: JSON.stringify({
+          name: form.name,
+          trigger_type: form.trigger_type,
+          min_confidence_threshold: form.min_confidence_threshold,
+          action_template_id: form.action_template_id,
+          action_params: parsedParams,
+          enabled: form.enabled,
+        }),
+      });
+      setRules((prev) => [newRule, ...prev]);
+      setShowForm(false);
+      setForm({ name: "", trigger_type: "ROAS_DROP", min_confidence_threshold: 70, action_template_id: "", action_params: "{}", enabled: true });
+    } catch {} finally {
+      setSaving(false);
+    }
+  };
+
+  const getActionLib = (rule: AutomationRule) => {
+    const lib = rule.actions_library;
+    return Array.isArray(lib) ? lib[0] : lib;
+  };
+
   return (
-    <div className="space-y-8 pb-8">
-      {/* Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {METRICS.map((m) => (
-          <div key={m.label} className="bg-white p-6 rounded-3xl shadow-sm">
-            <div className="flex justify-between items-start mb-4">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">
-                {m.label}
-              </span>
-              <m.Icon size={20} className={m.iconColor} />
-            </div>
-            <div className="text-4xl font-black text-foreground font-sans">{m.value}</div>
-            <p className="text-xs text-muted-foreground mt-1 font-body">{m.sub}</p>
-          </div>
-        ))}
+    <div className="space-y-8 pb-12">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">
+            Execution Engine
+          </p>
+          <h2 className="text-4xl font-extrabold tracking-tight text-foreground font-sans">Automation Rules</h2>
+          <p className="text-muted-foreground mt-2 font-body">
+            Define IF→THEN playbooks. Rules fire automatically after each intelligence run.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-primary to-[#2563eb] text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity font-body"
+        >
+          <Plus size={16} /> New Rule
+        </button>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Active Automations */}
-        <div className="lg:col-span-8 space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold tracking-tight text-foreground font-sans">Active Automations</h3>
-            <button className="text-sm font-semibold text-primary flex items-center gap-1 font-body">
-              View All <ArrowRight size={14} />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {AUTOMATIONS.map((a) => (
-              <div
-                key={a.title}
-                className="bg-white p-6 rounded-3xl shadow-sm border border-transparent hover:border-primary/10 transition-all"
+      {/* Create form */}
+      {showForm && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-border space-y-5">
+          <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground font-body">New Automation Rule</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-foreground mb-1.5 font-body">Rule Name <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Pause on ROAS Drop"
+                className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-body bg-surface-container-low focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-foreground mb-1.5 font-body">Trigger Type <span className="text-red-500">*</span></label>
+              <select
+                value={form.trigger_type}
+                onChange={(e) => setForm((f) => ({ ...f, trigger_type: e.target.value }))}
+                className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-body bg-surface-container-low focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
               >
-                <div className="flex justify-between mb-4">
-                  <div className="flex gap-2">
-                    {a.platforms.map((p) => (
-                      <div key={p} className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-body">
-                        <div className={`w-1 h-1 rounded-full ${PLATFORM_DOT[p]}`} /> {p}
-                      </div>
-                    ))}
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider font-body ${a.statusStyle}`}>
-                    {a.status}
-                  </span>
-                </div>
-                <h4 className="text-lg font-bold text-foreground mb-1 font-sans">{a.title}</h4>
-                <p className="text-sm text-muted-foreground mb-6 font-body">{a.desc}</p>
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-surface-container-low">
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">
-                      {a.stat1Label}
-                    </div>
-                    <div className={`text-base font-bold font-body ${a.stat1Color}`}>{a.stat1Value}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">
-                      {a.stat2Label}
-                    </div>
-                    <div className={`text-base font-bold font-body ${a.stat2Color}`}>{a.stat2Value}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right Column */}
-        <div className="lg:col-span-4 space-y-8">
-          {/* Live Activity */}
-          <div className="bg-white rounded-3xl shadow-sm overflow-hidden flex flex-col h-[400px]">
-            <div className="p-6 pb-2 border-b border-surface-container-low">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground font-body">
-                Live Activity
-              </h3>
+                {TRIGGER_TYPES.map((t) => (
+                  <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
+                ))}
+              </select>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {LIVE_ACTIVITY.map((item, i) => (
-                <div key={i} className="flex gap-3">
-                  <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${item.dot}`} />
-                  <div>
-                    <p className="text-sm font-medium text-foreground font-body">{item.title}</p>
-                    <p className="text-[10px] text-muted-foreground font-body">{item.sub}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Risk & Safety */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-6 font-body">
-              Risk &amp; Safety
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-surface-container-low rounded-2xl">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 size={20} className="text-emerald-500" />
-                  <span className="text-sm font-medium font-body">Stop-loss Triggers</span>
-                </div>
-                <span className="text-xs font-bold text-emerald-600 font-body">Secure</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-surface-container-low rounded-2xl">
-                <div className="flex items-center gap-3">
-                  <History size={20} className="text-emerald-500" />
-                  <span className="text-sm font-medium font-body">System Rollbacks</span>
-                </div>
-                <span className="text-xs font-bold text-muted-foreground font-body">0 Active</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-[#ffdad6]/20 rounded-2xl border border-error/10">
-                <div className="flex items-center gap-3">
-                  <AlertTriangle size={20} className="text-error fill-error" />
-                  <span className="text-sm font-medium font-body">Platform Alerts</span>
-                </div>
-                <span className="text-xs font-bold text-error font-body">2 Alerts</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Control Panel */}
-      <div className="bg-white/85 backdrop-blur-md border border-border rounded-2xl px-8 py-6">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <button className="bg-error text-white px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:opacity-90 transition-colors font-body">
-              <PauseCircle size={16} /> Pause all
-            </button>
-            <button className="bg-surface-container-high text-foreground px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-surface-container-highest transition-colors font-body">
-              <Play size={16} /> Resume
-            </button>
-          </div>
-
-          <div className="flex-1 max-w-md w-full flex items-center gap-6">
-            <div className="flex flex-col gap-1 w-full">
-              <div className="flex justify-between">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">
-                  System Sensitivity
-                </label>
-                <span className="text-[10px] font-black text-primary font-body">Balanced (0.64)</span>
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-foreground mb-1.5 font-body">
+                Min Confidence Threshold: <span className="text-primary">{form.min_confidence_threshold}%</span>
+              </label>
               <input
                 type="range"
-                min="0"
-                max="100"
-                defaultValue="64"
+                min={0}
+                max={100}
+                value={form.min_confidence_threshold}
+                onChange={(e) => setForm((f) => ({ ...f, min_confidence_threshold: Number(e.target.value) }))}
                 className="w-full h-1.5 bg-surface-container-high rounded-lg appearance-none cursor-pointer accent-primary"
               />
             </div>
-          </div>
-
-          <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground font-body">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Systems Operational</span>
+            <div>
+              <label className="block text-xs font-bold text-foreground mb-1.5 font-body">Action Template <span className="text-red-500">*</span></label>
+              <select
+                value={form.action_template_id}
+                onChange={(e) => setForm((f) => ({ ...f, action_template_id: e.target.value }))}
+                className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-body bg-surface-container-low focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+              >
+                <option value="">Select template…</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
             </div>
-            <div className="w-px h-4 bg-border" />
-            <span>Last Sync: 12s ago</span>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold text-foreground mb-1.5 font-body">
+                Action Params (JSON) — use <code className="text-primary">"campaign_id": "auto"</code> to resolve from decision
+              </label>
+              <textarea
+                value={form.action_params}
+                onChange={(e) => setForm((f) => ({ ...f, action_params: e.target.value }))}
+                rows={3}
+                className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-mono bg-surface-container-low focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all resize-none"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-4 pt-2">
+            <button
+              onClick={handleCreate}
+              disabled={saving || !form.name || !form.action_template_id}
+              className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white rounded-xl font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed font-body"
+            >
+              {saving ? <><Loader2 size={14} className="animate-spin" /> Creating…</> : "Create Rule"}
+            </button>
+            <button onClick={() => setShowForm(false)} className="text-sm text-muted-foreground hover:text-foreground font-body transition-colors">
+              Cancel
+            </button>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Rules list */}
+      {loading ? (
+        <div className="flex items-center gap-3 text-muted-foreground py-20 justify-center">
+          <Loader2 size={20} className="animate-spin" />
+          <span className="font-body text-sm">Loading rules…</span>
+        </div>
+      ) : rules.length === 0 ? (
+        <div className="py-20 text-center text-muted-foreground font-body text-sm">
+          No automation rules yet. Create one to start automating decisions.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {rules.map((rule) => {
+            const lib = getActionLib(rule);
+            return (
+              <div key={rule.id} className="bg-white rounded-2xl p-6 shadow-sm border border-border flex flex-col md:flex-row md:items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <Zap size={20} className="text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <h4 className="font-bold text-foreground font-body">{rule.name}</h4>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider font-body ${rule.enabled ? "bg-emerald-100 text-emerald-700" : "bg-surface-container-high text-muted-foreground"}`}>
+                      {rule.enabled ? "Enabled" : "Disabled"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-body">
+                    IF <span className="font-bold text-foreground">{rule.trigger_type.replace(/_/g, " ")}</span>
+                    {" "}AND confidence ≥ <span className="font-bold text-foreground">{rule.min_confidence_threshold}%</span>
+                    {lib && <> THEN <span className="font-bold text-foreground">{lib.name}</span></>}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-center">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase font-body">Runs</p>
+                    <p className="text-sm font-bold text-foreground font-sans">{rule.run_count}</p>
+                  </div>
+                  <div className="w-px h-8 bg-border" />
+                  <button
+                    onClick={() => handleToggle(rule)}
+                    className="text-muted-foreground hover:text-primary transition-colors"
+                    title={rule.enabled ? "Disable rule" : "Enable rule"}
+                  >
+                    {rule.enabled
+                      ? <ToggleRight size={28} className="text-primary" />
+                      : <ToggleLeft size={28} />
+                    }
+                  </button>
+                  <button
+                    onClick={() => handleDelete(rule.id)}
+                    className="text-muted-foreground hover:text-error transition-colors"
+                    title="Delete rule"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

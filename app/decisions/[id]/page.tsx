@@ -4,8 +4,15 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
-import { ChevronRight, Zap, Lightbulb, Loader2, Sparkles, AlertTriangle } from "lucide-react";
-import { apiClient } from "@/lib/api-client";
+import { ChevronRight, Zap, Lightbulb, Loader2, Sparkles, AlertTriangle, PlayCircle, CheckCircle2 } from "lucide-react";
+import { apiClient, ApiError } from "@/lib/api-client";
+
+const DECISION_ACTION_MAP: Record<string, Record<string, string>> = {
+  ROAS_DROP:           { meta: "00000000-0000-0000-0000-000000000001", google: "00000000-0000-0000-0000-000000000004" },
+  SPEND_SPIKE:         { meta: "00000000-0000-0000-0000-000000000003", google: "00000000-0000-0000-0000-000000000006" },
+  CONVERSION_DROP:     { meta: "00000000-0000-0000-0000-000000000001", google: "00000000-0000-0000-0000-000000000004" },
+  SCALING_OPPORTUNITY: { meta: "00000000-0000-0000-0000-000000000002", google: "00000000-0000-0000-0000-000000000005" },
+};
 
 interface DecisionDetail {
   id: string;
@@ -47,6 +54,9 @@ export default function DecisionDetailPage() {
   const [decision, setDecision] = useState<DecisionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [execResult, setExecResult] = useState<{ result: string } | null>(null);
+  const [execError, setExecError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetch = async () => {
@@ -84,6 +94,30 @@ export default function DecisionDetailPage() {
 
   const cfg = TYPE_CONFIG[decision.type] ?? TYPE_CONFIG.ROAS_DROP;
   const snapshot = decision.data_snapshot ?? {};
+
+  const recommendedTemplateId = DECISION_ACTION_MAP[decision.type]?.[decision.platform.toLowerCase()];
+
+  const handleExecute = async () => {
+    if (!recommendedTemplateId) return;
+    setExecuting(true);
+    setExecResult(null);
+    setExecError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+      const campaignId = (snapshot.campaign_id as string | undefined) ?? decision.campaign_id;
+      const result = await apiClient<{ history_id: string; result: string }>(`/api/v1/actions/${recommendedTemplateId}/execute`, token, {
+        method: "POST",
+        body: JSON.stringify({ params: { campaign_id: campaignId }, decision_id: decision.id }),
+      });
+      setExecResult(result);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message ?? "Execution failed";
+      setExecError(msg);
+    } finally {
+      setExecuting(false);
+    }
+  };
 
   return (
     <div className="pb-12 space-y-10">
@@ -183,6 +217,31 @@ export default function DecisionDetailPage() {
               <h3 className="text-[0.75rem] font-black uppercase tracking-[0.2em] text-white/70 font-body">Recommended Action</h3>
             </div>
             <p className="text-xl font-bold font-sans leading-snug">{decision.recommended_action}</p>
+            {recommendedTemplateId && (
+              <button
+                onClick={handleExecute}
+                disabled={executing || !!execResult}
+                className="mt-2 flex items-center justify-center gap-2 px-5 py-3 bg-white/15 hover:bg-white/25 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-body border border-white/20"
+              >
+                {executing
+                  ? <><Loader2 size={16} className="animate-spin" /> Executing…</>
+                  : execResult
+                  ? <><CheckCircle2 size={16} /> Executed</>
+                  : <><PlayCircle size={16} /> Execute Recommended Action</>
+                }
+              </button>
+            )}
+            {execError && (
+              <div className="flex items-start gap-2 bg-white/10 rounded-xl p-3 border border-white/20">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <p className="text-xs font-body text-white/80">{execError}</p>
+              </div>
+            )}
+            {execResult && (
+              <Link href="/automation/history" className="text-center text-xs text-white/70 hover:text-white font-body transition-colors">
+                View in Decision History →
+              </Link>
+            )}
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-12 -mt-12 blur-2xl" />
           </section>
         </div>

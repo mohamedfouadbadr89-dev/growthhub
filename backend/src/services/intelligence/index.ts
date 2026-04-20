@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { generateDecisionsForOrg } from './decision-generator.js'
 import { detectAlerts } from './alert-detection.js'
+import { dispatchAutomation } from '../execution/automation-engine.js'
 
 export async function dispatchIntelligence(
   orgId: string,
@@ -37,10 +38,11 @@ export async function dispatchIntelligence(
   try {
     decisionsGenerated = await generateDecisionsForOrg(orgId, runId)
     alertsGenerated = await detectAlerts(orgId, runId)
+    const rulesExecuted = await dispatchAutomation(orgId, runId)
 
     await supabaseAdmin
       .from('decision_runs')
-      .update({ status: 'completed', decisions_generated: decisionsGenerated, alerts_generated: alertsGenerated, completed_at: new Date().toISOString() })
+      .update({ status: 'completed', decisions_generated: decisionsGenerated, alerts_generated: alertsGenerated, rules_executed: rulesExecuted, completed_at: new Date().toISOString() })
       .eq('id', runId)
   } catch (err) {
     await supabaseAdmin
