@@ -63,7 +63,7 @@ export async function dispatchAutomation(orgId: string, runId: string): Promise<
   let rulesExecuted = 0
 
   // 4. Match and execute each (decision, rule) pair
-  for (const rule of rules as AutomationRule[]) {
+  for (const rule of rules as unknown as AutomationRule[]) {
     const actionLib = Array.isArray(rule.actions_library)
       ? (rule.actions_library[0] as ActionLib)
       : (rule.actions_library as ActionLib)

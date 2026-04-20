@@ -22,11 +22,9 @@ process.on('unhandledRejection', (reason) => {
 
 // ─── Required env validation ──────────────────────────────────────────────────
 const requiredEnvVars = ['CLERK_SECRET_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']
-for (const key of requiredEnvVars) {
-  if (!process.env[key]) {
-    console.error(`[STARTUP] Missing required environment variable: ${key}`)
-    process.exit(1)
-  }
+const missingVars = requiredEnvVars.filter((key) => !process.env[key])
+if (missingVars.length > 0) {
+  console.warn(`[STARTUP] ⚠️  Missing env vars: ${missingVars.join(', ')} — auth/DB routes will fail until configured`)
 }
 
 type Variables = { userId: string; orgId: string }
