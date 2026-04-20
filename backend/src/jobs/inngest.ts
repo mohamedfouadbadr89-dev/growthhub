@@ -1,6 +1,7 @@
 import { Inngest } from 'inngest'
 import { supabaseAdmin } from '../lib/supabase.js'
 import { dispatchSync } from '../services/sync/index.js'
+import { dispatchIntelligence } from '../services/intelligence/index.js'
 
 export const inngest = new Inngest({ id: 'growthhub' })
 
@@ -27,7 +28,7 @@ const dailySyncAll = inngest.createFunction(
 
 const syncIntegration = inngest.createFunction(
   { id: 'sync-integration', triggers: [{ event: 'integration/sync.requested' }] },
-  async ({ event }) => {
+  async ({ event, step }) => {
     const { integrationId, orgId } = event.data as { integrationId: string; orgId: string }
 
     const { data: integration, error: fetchError } = await supabaseAdmin
@@ -67,6 +68,12 @@ const syncIntegration = inngest.createFunction(
         .from('sync_logs')
         .update({ status: 'success', records_written: recordsWritten, completed_at: new Date().toISOString() })
         .eq('id', syncLog.id)
+
+      // Trigger intelligence engine after successful sync
+      await step.sendEvent('trigger-decisions', {
+        name: 'intelligence/decisions.requested' as const,
+        data: { orgId },
+      })
     } catch (err) {
       const errorMessage = (err as Error).message
 
@@ -87,4 +94,19 @@ const syncIntegration = inngest.createFunction(
   }
 )
 
-export const functions = [dailySyncAll, syncIntegration]
+const generateDecisions = inngest.createFunction(
+  { id: 'generate-decisions', triggers: [{ event: 'intelligence/decisions.requested' }] },
+  async ({ event }) => {
+    const { orgId } = event.data as { orgId: string }
+    try {
+      const { runId } = await dispatchIntelligence(orgId, 'sync_complete')
+      return { runId }
+    } catch (err) {
+      const e = err as Error & { code?: string }
+      if (e.code === 'ALREADY_IN_PROGRESS') return { skipped: true }
+      throw err
+    }
+  }
+)
+
+export const functions = [dailySyncAll, syncIntegration, generateDecisions]

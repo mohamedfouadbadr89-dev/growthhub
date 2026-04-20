@@ -1,69 +1,81 @@
 "use client";
 
-import { TrendingUp, Sparkles, MousePointerClick, Globe, Network, Zap, Brain, ArrowRight, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
+import Link from "next/link";
+import { TrendingUp, Sparkles, ArrowRight, ShieldCheck, Loader2 } from "lucide-react";
+import { apiClient } from "@/lib/api-client";
 
-const OPPORTUNITY_CARDS = [
-  {
-    Icon: MousePointerClick,
-    uplift: "+15.2%",
-    title: "Optimize Search Bidding",
-    desc: "Current performance indicates a 15% efficiency gap in EMEA campaigns. Structural keyword recalibration recommended.",
-    confidence: "92% Confidence",
-  },
-  {
-    Icon: Globe,
-    uplift: "+12.5%",
-    title: "Expand to New Markets",
-    desc: "LATAM market signals high intent for Precision tier tools. Localized landing pages could drive significant volume.",
-    confidence: "85% Confidence",
-  },
-  {
-    Icon: Network,
-    uplift: "+8.4%",
-    title: "Retargeting Alignment",
-    desc: "Sync retargeting pixel data with CRM segment logic to reduce acquisition costs on lapsed users.",
-    confidence: "96% Confidence",
-  },
-  {
-    Icon: Zap,
-    uplift: "+21.0%",
-    title: "Load Speed Optimization",
-    desc: "Core Web Vitals for checkout flow are below target. Image compression and script deferral will improve conversion.",
-    confidence: "78% Confidence",
-  },
-  {
-    Icon: Brain,
-    uplift: "+5.5%",
-    title: "Churn Prediction Model",
-    desc: "Integrate behavioral signals into your dashboard to proactively identify and save high-value accounts.",
-    confidence: "91% Confidence",
-  },
-];
+interface Opportunity {
+  id: string;
+  type: string;
+  platform: string;
+  campaign_id: string;
+  trigger_condition: string;
+  confidence_score: number;
+  recommended_action: string;
+  priority_score: number;
+  ai_status: string;
+  created_at: string;
+}
+
+const PLATFORM_COLORS: Record<string, string> = {
+  meta: "bg-blue-100 text-blue-700",
+  google: "bg-orange-100 text-orange-700",
+  shopify: "bg-green-100 text-green-700",
+};
 
 export default function OpportunitiesPage() {
+  const { getToken } = useAuth();
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetch = async () => {
+      const token = await getToken();
+      if (!token) { setLoading(false); return; }
+      try {
+        const data = await apiClient<{ decisions: Opportunity[] }>(
+          "/api/v1/decisions?type=SCALING_OPPORTUNITY&status=active&limit=50",
+          token
+        );
+        setOpportunities(data.decisions ?? []);
+      } catch {
+        /* empty on error */
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetch();
+  }, [getToken]);
+
+  const avgConfidence = opportunities.length
+    ? Math.round(opportunities.reduce((s, o) => s + (o.confidence_score ?? 0), 0) / opportunities.length)
+    : 0;
+
   return (
     <div className="space-y-10 pb-12">
       {/* Hero Stats Row */}
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 lg:col-span-8 bg-white p-8 rounded-2xl shadow-sm relative overflow-hidden">
           <div className="relative z-10">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4 block font-body">
-              Current Momentum
-            </span>
-            <h3 className="text-4xl font-extrabold text-foreground mb-2 font-sans">
-              Potential Growth Yield
-            </h3>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4 block font-body">Current Momentum</span>
+            <h3 className="text-4xl font-extrabold text-foreground mb-2 font-sans">Scaling Opportunities</h3>
             <p className="text-muted-foreground max-w-md mb-8 font-body">
-              We've identified 6 critical zones where architectural adjustments could unlock significant revenue pipelines.
+              Campaigns maintaining ROAS above 3.5× for 5+ consecutive days — ready to scale budget.
             </p>
             <div className="flex gap-10">
               <div>
-                <p className="text-sm font-medium text-muted-foreground font-body">Total Projected Uplift</p>
-                <p className="text-3xl font-extrabold text-[#007f36] font-sans">+24.8%</p>
+                <p className="text-sm font-medium text-muted-foreground font-body">Opportunities Found</p>
+                <p className={`text-3xl font-extrabold font-sans ${loading ? "animate-pulse text-muted-foreground" : "text-[#007f36]"}`}>
+                  {loading ? "…" : opportunities.length}
+                </p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground font-body">Confidence Interval</p>
-                <p className="text-3xl font-extrabold text-foreground font-sans">88.4%</p>
+                <p className="text-sm font-medium text-muted-foreground font-body">Avg Confidence</p>
+                <p className={`text-3xl font-extrabold font-sans ${loading ? "animate-pulse text-muted-foreground" : "text-foreground"}`}>
+                  {loading ? "…" : opportunities.length ? `${avgConfidence}%` : "—"}
+                </p>
               </div>
             </div>
           </div>
@@ -75,77 +87,71 @@ export default function OpportunitiesPage() {
         <div className="col-span-12 lg:col-span-4 bg-[#2563eb] p-8 rounded-2xl shadow-lg shadow-blue-500/20 text-white flex flex-col justify-between">
           <div>
             <Sparkles size={32} className="mb-4" />
-            <h4 className="text-xl font-bold leading-tight font-sans">Priority AI Insight</h4>
+            <h4 className="text-xl font-bold leading-tight font-sans">What is a Scaling Opportunity?</h4>
             <p className="text-white/80 text-sm mt-2 font-body">
-              EMEA campaigns show a recurring search gap. Activating suggested bidding could recover $12k/mo.
+              A campaign sustaining ROAS above 3.5× for at least 5 days. These campaigns have validated audience-offer fit and are ready for increased budget.
             </p>
           </div>
-          <button className="bg-white text-primary px-6 py-3 rounded-lg font-bold text-sm w-full mt-6 hover:opacity-90 transition-opacity active:scale-[0.98] font-body">
-            Launch Auto-Fix
-          </button>
+          <Link href="/decisions" className="bg-white text-primary px-6 py-3 rounded-lg font-bold text-sm w-full mt-6 hover:opacity-90 transition-opacity text-center block font-body">
+            View All Decisions
+          </Link>
         </div>
       </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center gap-3 text-muted-foreground py-8">
+          <Loader2 size={20} className="animate-spin" />
+          <span className="font-body text-sm">Loading opportunities…</span>
+        </div>
+      )}
+
+      {/* No opportunities */}
+      {!loading && opportunities.length === 0 && (
+        <div className="bg-white rounded-2xl p-12 text-center border border-border">
+          <TrendingUp size={40} className="text-muted-foreground mx-auto mb-4" />
+          <p className="font-bold text-foreground font-sans text-lg mb-1">No Scaling Opportunities Yet</p>
+          <p className="text-muted-foreground font-body text-sm max-w-sm mx-auto">
+            Opportunities appear when a campaign maintains ROAS above 3.5× for 5+ consecutive days. Keep running your campaigns and check back after the next sync.
+          </p>
+        </div>
+      )}
 
       {/* Opportunities Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {OPPORTUNITY_CARDS.map((card) => (
-          <div
-            key={card.title}
-            className="bg-white p-6 rounded-2xl hover:shadow-xl transition-all duration-300 group flex flex-col shadow-sm"
-          >
-            <div className="flex justify-between items-start mb-6">
-              <div className="w-12 h-12 bg-surface-container-low rounded-xl flex items-center justify-center text-primary group-hover:bg-[#2563eb] group-hover:text-white transition-colors">
-                <card.Icon size={22} />
-              </div>
-              <div className="px-3 py-1 bg-[#007f36]/10 rounded-full">
-                <span className="text-[#007f36] text-xs font-bold font-body">{card.uplift}</span>
-              </div>
-            </div>
-            <h5 className="text-lg font-bold text-foreground mb-2 font-sans">{card.title}</h5>
-            <p className="text-sm text-muted-foreground leading-relaxed mb-8 font-body">{card.desc}</p>
-            <div className="mt-auto pt-6 flex items-center justify-between border-t border-surface-container-low">
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter font-body">
-                  Confidence
-                </span>
-                <span className="text-sm font-bold text-foreground font-body">{card.confidence}</span>
-              </div>
-              <button className="text-primary font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all active:opacity-80 font-body">
-                View details <ArrowRight size={14} />
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {/* Image Card */}
-        <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative min-h-[320px]">
-          <div className="absolute inset-0 z-0">
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent z-10" />
-            <img
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuCC242XQedkY-bDz81_6Spx48JV7os9NzsDkuq0CiNa0_SgtpNfinA_aBUiN5DodGH2VByAfb7PqwkrJOwJraLLxTqJTjT1lvt0BUMfL510owLhSNX-lNGfr9oFcgwFN86JmOggeApaCfGEYzSRJDPPWAL4CbrpBXFXjst6HJSiOl5_aRwHfmd4fgwY34tQHj_27dvPayRHq-Q--5HYAC_ERexfdIvK-NahG97Orhssf901qemhIevd28w6svlOrGRO8UEAcdv1Mfs"
-              alt="Data Visualization"
-              className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700"
-            />
-          </div>
-          <div className="relative z-20 mt-auto p-6 text-white">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#dbe1ff] font-body">
-                Custom Strategy
-              </span>
-              <span className="text-xs font-bold bg-white/20 backdrop-blur-md px-2 py-0.5 rounded text-white font-body">
-                Expert Audit
-              </span>
-            </div>
-            <h5 className="text-xl font-bold mb-2 font-sans">Architectural Review</h5>
-            <p className="text-white/70 text-xs mb-6 font-body">
-              Get a personalized deep-dive audit from our expert precision curators.
-            </p>
-            <button className="w-full bg-white text-foreground py-3 rounded-lg font-bold text-sm hover:opacity-90 transition-opacity active:scale-[0.98] font-body">
-              Request Analysis
-            </button>
-          </div>
+      {!loading && opportunities.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {opportunities.map((opp) => {
+            const plat = PLATFORM_COLORS[opp.platform] ?? "bg-surface-container-low text-foreground";
+            return (
+              <Link
+                key={opp.id}
+                href={`/decisions/${opp.id}`}
+                className="bg-white p-6 rounded-2xl hover:shadow-xl transition-all duration-300 group flex flex-col shadow-sm"
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest font-body ${plat}`}>
+                    {opp.platform}
+                  </span>
+                  <div className="px-3 py-1 bg-[#007f36]/10 rounded-full">
+                    <span className="text-[#007f36] text-xs font-bold font-body">{opp.confidence_score ?? "—"}% conf.</span>
+                  </div>
+                </div>
+                <p className="text-sm font-bold text-muted-foreground font-body mb-1">Campaign {opp.campaign_id}</p>
+                <h5 className="text-base font-bold text-foreground mb-2 font-sans">{opp.trigger_condition}</h5>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-8 font-body">{opp.recommended_action}</p>
+                <div className="mt-auto pt-5 flex items-center justify-between border-t border-surface-container-low">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter font-body">
+                    Priority: {Number(opp.priority_score).toFixed(1)}
+                  </span>
+                  <span className="text-primary font-bold text-sm flex items-center gap-1 group-hover:gap-2 transition-all font-body">
+                    View details <ArrowRight size={14} />
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
-      </div>
+      )}
 
       {/* Methodology Banner */}
       <div className="p-8 bg-surface-container-high border-2 border-dashed border-border rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6">
@@ -154,16 +160,15 @@ export default function OpportunitiesPage() {
             <ShieldCheck size={28} className="text-muted-foreground" />
           </div>
           <div>
-            <h6 className="font-bold text-foreground font-sans">How we calculate opportunities</h6>
+            <h6 className="font-bold text-foreground font-sans">How opportunities are detected</h6>
             <p className="text-sm text-muted-foreground max-w-xl font-body">
-              Our analysis engine cross-references your current KPIs against industry benchmarks and historical
-              regression models. We only display opportunities with a confidence score above 75%.
+              The AI engine analyzes your synced campaign metrics daily. A campaign qualifies as a scaling opportunity when it sustains ROAS above 3.5× for 5 or more consecutive days, indicating validated audience-offer fit.
             </p>
           </div>
         </div>
-        <button className="px-8 py-3 bg-white text-muted-foreground border border-border rounded-full font-bold text-sm hover:bg-surface-container-low transition-colors shadow-sm shrink-0 font-body">
-          Learn Methodology
-        </button>
+        <Link href="/decisions" className="px-8 py-3 bg-white text-muted-foreground border border-border rounded-full font-bold text-sm hover:bg-surface-container-low transition-colors shadow-sm shrink-0 font-body">
+          Back to Decisions
+        </Link>
       </div>
     </div>
   );
