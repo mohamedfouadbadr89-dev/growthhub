@@ -19,7 +19,7 @@ export async function syncShopify(integration: {
   // The ad_account was created during connect/complete with platform_account_id = shop domain
   const { data: adAccount } = await supabaseAdmin
     .from('ad_accounts')
-    .select('id, platform_account_id')
+    .select('id, platform_account_id, integration_id')
     .eq('integration_id', integration.id)
     .single()
 
@@ -31,6 +31,7 @@ export async function syncShopify(integration: {
   const rows: Array<{
     org_id: string
     ad_account_id: string
+    integration_id: string
     date: string
     platform: string
     campaign_id: string
@@ -94,6 +95,7 @@ export async function syncShopify(integration: {
       rows.push({
         org_id: integration.org_id,
         ad_account_id: adAccount.id as string,
+        integration_id: adAccount.integration_id as string,
         date,
         platform: 'shopify',
         campaign_id: orderId,

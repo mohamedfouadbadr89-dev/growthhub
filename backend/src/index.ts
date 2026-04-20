@@ -7,6 +7,7 @@ import { health } from './routes/health.js'
 import { v1 } from './routes/v1/index.js'
 import { errorHandler } from './middleware/error.js'
 import { inngest, functions } from './jobs/inngest.js'
+import { clerkWebhook } from './routes/webhooks/clerk.js'
 
 // ─── Process-level error handlers (must be first) ────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -32,6 +33,9 @@ type Variables = { userId: string; orgId: string }
 const app = new Hono<{ Variables: Variables }>()
 
 app.use('*', logger())
+
+// Webhook — no auth, must be before auth middleware
+app.route('/api/webhooks/clerk', clerkWebhook)
 
 // Health check — mounted at both /health and /api/v1/health (no auth required)
 app.route('/health', health)

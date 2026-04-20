@@ -6,26 +6,28 @@
 **Goal:** Auth + Database + Backend skeleton working end-to-end
 
 ### Clerk
-- [ ] ClerkProvider in `app/layout.tsx`
-- [ ] Middleware protecting all private routes
-- [ ] Sign-in / Sign-up pages (`/sign-in`, `/sign-up`)
-- [ ] Auto-create Organization on sign-up
-- [ ] Redirect to `/dashboard/overview` after auth
+- [x] ClerkProvider in `app/layout.tsx`
+- [x] Middleware protecting all private routes
+- [x] Sign-in / Sign-up pages (`/sign-in`, `/sign-up`)
+- [x] Auto-create Organization on sign-up
+- [x] Redirect to `/dashboard/overview` after auth
 
 ### Supabase Schema
-- [ ] `organizations` table
-- [ ] `users` table
-- [ ] `subscriptions` table
-- [ ] `audit_logs` table
-- [ ] RLS enabled on all tables
-- [ ] All tables have `org_id` column
+- [x] `organizations` table
+- [x] `users` table
+- [x] `subscriptions` table
+- [x] `audit_logs` table
+- [x] RLS enabled on all tables
+- [x] All tables have `org_id` column
 
-### Backend (Railway)
-- [ ] Express/Hono server setup
-- [ ] Clerk token verification middleware
-- [ ] Health check endpoint `GET /health`
-- [ ] Base API structure `/api/v1/`
-- [ ] Error handling + logging (Sentry)
+### Backend (Railway/VPS)
+- [x] Hono server setup (binds 0.0.0.0:3001)
+- [x] Clerk token verification middleware
+- [x] Health check endpoint `GET /health`
+- [x] Base API structure `/api/v1/`
+- [x] Error handling + logging
+- [x] Clerk webhook handler (`POST /api/webhooks/clerk`)
+- [x] PM2 ecosystem config (`ecosystem.config.cjs`)
 
 ### Deliverable
 User can sign up → create org → land on dashboard → backend responds to authenticated requests
@@ -89,10 +91,10 @@ System detects anomalies → generates decisions → user sees prioritized actio
 **Goal:** User can execute decisions as actions
 
 ### Actions
-- [ ] `actions_library` table
-- [ ] `automation_rules` table
-- [ ] `automation_runs` table
-- [ ] `decision_history` table (CRITICAL — memory system)
+- [x] `actions_library` table
+- [x] `automation_rules` table
+- [x] `automation_runs` table
+- [x] `decision_history` table (CRITICAL — memory system)
 
 ### Decision History Record
 Every execution logs:
@@ -105,16 +107,17 @@ Every execution logs:
 - confidence_score
 
 ### Pages (Real Data)
-- [ ] Actions Library
-- [ ] Action Detail
-- [ ] Execution Logs
-- [ ] Automation Status
-- [ ] Decision History
+- [x] Actions Library (`/actions`)
+- [x] Action Detail (`/actions/[id]`)
+- [x] Execution Logs (`/actions/logs`)
+- [x] Automation Status (`/actions/automation`)
+- [x] Decision History (`/automation/history`)
 
 ### Automation
-- [ ] Automation rules builder
-- [ ] Strategies (IF→THEN playbooks)
-- [ ] Inngest jobs for automated execution
+- [x] Automation rules builder (CRUD via API + UI)
+- [x] Strategies (IF→THEN playbooks — automation_rules table)
+- [x] Inngest job for automated execution (`dispatchAutomation`)
+- [x] Manual execution from Decision Detail page
 
 ### Deliverable
 User sees decision → clicks execute → action runs → result logged in Decision History

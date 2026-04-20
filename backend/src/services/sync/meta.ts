@@ -81,6 +81,7 @@ export async function syncMeta(integration: {
       return {
         org_id: integration.org_id,
         ad_account_id: account.id,
+        integration_id: integration.id,
         date: row.date_start,
         platform: 'meta',
         campaign_id: row.campaign_id,

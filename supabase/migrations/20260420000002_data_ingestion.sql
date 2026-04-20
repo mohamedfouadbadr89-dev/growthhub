@@ -53,6 +53,7 @@ CREATE TABLE campaign_metrics (
   id              UUID NOT NULL DEFAULT gen_random_uuid(),
   org_id          TEXT NOT NULL,
   ad_account_id   UUID NOT NULL REFERENCES ad_accounts(id),
+  integration_id  UUID NOT NULL REFERENCES integrations(id),
   date            DATE NOT NULL,
   platform        TEXT NOT NULL CHECK (platform IN ('meta', 'google', 'shopify')),
   campaign_id     TEXT NOT NULL,
@@ -62,6 +63,9 @@ CREATE TABLE campaign_metrics (
   clicks          BIGINT NOT NULL DEFAULT 0,
   conversions     BIGINT NOT NULL DEFAULT 0,
   revenue         NUMERIC(14, 4) NOT NULL DEFAULT 0,
+  roas            NUMERIC(14, 4) GENERATED ALWAYS AS (
+                    CASE WHEN spend = 0 THEN 0 ELSE revenue / spend END
+                  ) STORED,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (id, date),
   UNIQUE (org_id, ad_account_id, campaign_id, date)
@@ -99,6 +103,8 @@ CREATE INDEX idx_campaign_metrics_org_date
   ON campaign_metrics(org_id, date DESC);
 CREATE INDEX idx_campaign_metrics_ad_account_date
   ON campaign_metrics(ad_account_id, date DESC);
+CREATE INDEX idx_campaign_metrics_integration_id
+  ON campaign_metrics(integration_id);
 
 -- ============================================================
 -- Table: sync_logs (immutable — no UPDATE/DELETE policies)

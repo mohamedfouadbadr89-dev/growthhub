@@ -104,6 +104,7 @@ export async function syncGoogle(integration: {
     const rows: Array<{
       org_id: string
       ad_account_id: string
+      integration_id: string
       date: string
       platform: string
       campaign_id: string
@@ -134,6 +135,7 @@ export async function syncGoogle(integration: {
           rows.push({
             org_id: integration.org_id,
             ad_account_id: account.id,
+            integration_id: integration.id,
             date: result.segments.date,
             platform: 'google',
             campaign_id: result.campaign.id,
