@@ -17,7 +17,7 @@
 
 **Purpose**: Add Phase 2 dependencies so all subsequent phases compile.
 
-- [ ] T001 Install `inngest` package in backend (`cd backend && npm install inngest`)
+- [x] T001 Install `inngest` package in backend (`cd backend && npm install inngest`)
 
 ---
 
@@ -27,10 +27,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Create `supabase/migrations/20260420000002_data_ingestion.sql` — 4 tables (`integrations`, `ad_accounts`, `campaign_metrics` partitioned by date, `sync_logs`) with full RLS per `data-model.md`
-- [ ] T003 [P] Create `backend/src/lib/vault.ts` — Supabase Vault helpers: `createSecret(value): Promise<string>`, `readSecret(id): Promise<string>`, `deleteSecret(id): Promise<void>` using `supabaseAdmin.rpc` and `vault.decrypted_secrets` view
-- [ ] T004 [P] Create `backend/src/lib/oauth-state.ts` — signed JWT state token helpers: `generateState(orgId, platform): string` (10-min expiry, signed with `OAUTH_STATE_SECRET` or `CLERK_SECRET_KEY`), `validateState(token): { orgId, platform }` (throws on expired/invalid)
-- [ ] T005 Update `backend/src/routes/v1/index.ts` to import and mount `connectRouter` at `/integrations/connect`, `integrationsRouter` at `/integrations`, `metricsRouter` at `/metrics`, and register Inngest serve handler at `GET|PUT|POST /api/inngest`
+- [x] T002 Create `supabase/migrations/20260420000002_data_ingestion.sql` — 4 tables (`integrations`, `ad_accounts`, `campaign_metrics` partitioned by date, `sync_logs`) with full RLS per `data-model.md`
+- [x] T003 [P] Create `backend/src/lib/vault.ts` — Supabase Vault helpers: `createSecret(value): Promise<string>`, `readSecret(id): Promise<string>`, `deleteSecret(id): Promise<void>` using `supabaseAdmin.rpc` and `vault.decrypted_secrets` view
+- [x] T004 [P] Create `backend/src/lib/oauth-state.ts` — signed JWT state token helpers: `generateState(orgId, platform): string` (10-min expiry, signed with `OAUTH_STATE_SECRET` or `CLERK_SECRET_KEY`), `validateState(token): { orgId, platform }` (throws on expired/invalid)
+- [x] T005 Update `backend/src/routes/v1/index.ts` to import and mount `connectRouter` at `/integrations/connect`, `integrationsRouter` at `/integrations`, `metricsRouter` at `/metrics`, and register Inngest serve handler at `GET|PUT|POST /api/inngest`
 
 **Checkpoint**: Migration applied + vault/oauth-state libs exist + all routes registered → user story implementation can begin.
 
@@ -42,13 +42,13 @@
 
 **Independent Test**: Call `POST /api/v1/integrations/connect/start` with `{ platform: "meta" }`, receive a valid `authUrl`. Simulate the OAuth callback via `POST /api/v1/integrations/connect/complete` with a valid `state` and a mock `code`. Verify `integrations` table has a row with `status = 'connected'` and `vault_refresh_token_secret_id` is set. Visit `/integrations` and confirm the platform appears as Connected.
 
-- [ ] T006 [US1] Create `backend/src/routes/v1/connect.ts` — implement `POST /connect/start`: validate `platform` field, check for duplicate integration (return 400 if already connected), call `generateState()`, build platform-specific OAuth authorization URL using env vars, return `{ authUrl, state }`
-- [ ] T007 [US1] Add `POST /connect/complete` to `backend/src/routes/v1/connect.ts` — validate `state` via `validateState()`, exchange `code` for tokens using platform OAuth token endpoint, call `createSecret()` to store the refresh/access token in Vault, insert row into `integrations` table with `vault_refresh_token_secret_id`, return `{ integrationId, platform, status: "connected" }`
-- [ ] T008 [P] [US1] Create `backend/src/routes/v1/integrations.ts` — implement `GET /api/v1/integrations`: query `integrations` table filtered by `orgId`, return array matching contract in `contracts/backend-api.md`
-- [ ] T009 [US1] Add `DELETE /api/v1/integrations/:id` to `backend/src/routes/v1/integrations.ts` — verify integration belongs to `orgId` (404 if not), call `deleteSecret(vault_refresh_token_secret_id)`, set `status = 'disconnected'` in DB, return 204
-- [ ] T010 [US1] Create `app/api/integrations/callback/[platform]/route.ts` — Next.js `GET` handler: extract `code` and `state` from query params (redirect to `/integrations?error=oauth_failed` if missing), call backend `POST /api/v1/integrations/connect/complete` with Clerk session token, redirect to `/integrations?connected=<platform>` on success or `/integrations?error=oauth_failed` on failure
-- [ ] T011 [US1] Update `app/integrations/page.tsx` — fetch integrations list from `GET /api/v1/integrations` using `apiClient` + `auth().getToken()` (Server Component), render each platform card with status badge ("Connected" / "Disconnected"), last-synced timestamp, and "Disconnect" button
-- [ ] T012 [P] [US1] Update `app/integrations/connect/page.tsx` — add "Connect" buttons for Meta, Google, Shopify; each calls `POST /api/v1/integrations/connect/start` server-side, then redirects the browser to the returned `authUrl`; show `?connected=<platform>` success toast and `?error=oauth_failed` error message from query params
+- [x] T006 [US1] Create `backend/src/routes/v1/connect.ts` — implement `POST /connect/start`: validate `platform` field, check for duplicate integration (return 400 if already connected), call `generateState()`, build platform-specific OAuth authorization URL using env vars, return `{ authUrl, state }`
+- [x] T007 [US1] Add `POST /connect/complete` to `backend/src/routes/v1/connect.ts` — validate `state` via `validateState()`, exchange `code` for tokens using platform OAuth token endpoint, call `createSecret()` to store the refresh/access token in Vault, insert row into `integrations` table with `vault_refresh_token_secret_id`, return `{ integrationId, platform, status: "connected" }`
+- [x] T008 [P] [US1] Create `backend/src/routes/v1/integrations.ts` — implement `GET /api/v1/integrations`: query `integrations` table filtered by `orgId`, return array matching contract in `contracts/backend-api.md`
+- [x] T009 [US1] Add `DELETE /api/v1/integrations/:id` to `backend/src/routes/v1/integrations.ts` — verify integration belongs to `orgId` (404 if not), call `deleteSecret(vault_refresh_token_secret_id)`, set `status = 'disconnected'` in DB, return 204
+- [x] T010 [US1] Create `app/api/integrations/callback/[platform]/route.ts` — Next.js `GET` handler: extract `code` and `state` from query params (redirect to `/integrations?error=oauth_failed` if missing), call backend `POST /api/v1/integrations/connect/complete` with Clerk session token, redirect to `/integrations?connected=<platform>` on success or `/integrations?error=oauth_failed` on failure
+- [x] T011 [US1] Update `app/integrations/page.tsx` — fetch integrations list from `GET /api/v1/integrations` using `apiClient` + `auth().getToken()` (Server Component), render each platform card with status badge ("Connected" / "Disconnected"), last-synced timestamp, and "Disconnect" button
+- [x] T012 [P] [US1] Update `app/integrations/connect/page.tsx` — add "Connect" buttons for Meta, Google, Shopify; each calls `POST /api/v1/integrations/connect/start` server-side, then redirects the browser to the returned `authUrl`; show `?connected=<platform>` success toast and `?error=oauth_failed` error message from query params
 
 **Checkpoint**: US1 fully functional — user can connect a platform, see it listed as Connected, and disconnect it.
 
@@ -60,13 +60,13 @@
 
 **Independent Test**: Trigger `syncIntegration` Inngest function manually with a valid `integrationId`. Verify `campaign_metrics` has rows for the last 30 days scoped to the correct `org_id`. Verify `sync_logs` has a `status = 'success'` entry with `records_written > 0`. Check idempotency: trigger again for the same date range and confirm row count is unchanged.
 
-- [ ] T013 [P] [US2] Create `backend/src/services/sync/meta.ts` — `syncMeta(integration, supabaseAdmin): Promise<number>`: read access token via `readSecret()`, fetch last-30-day insights from Meta Marketing API v21.0 `GET /act_{id}/insights?fields=spend,impressions,clicks,actions,action_values&date_preset=last_30d`, upsert rows into `campaign_metrics` with `onConflict: 'org_id,ad_account_id,campaign_id,date'`, return records written count
-- [ ] T014 [P] [US2] Create `backend/src/services/sync/google.ts` — `syncGoogle(integration, supabaseAdmin): Promise<number>`: read token via `readSecret()`, refresh OAuth token if needed, call Google Ads API v19 `searchStream` endpoint with GAQL selecting `campaign.id, campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, segments.date` for last 30 days with `developer-token` header, upsert into `campaign_metrics` (cost_micros / 1_000_000 = spend), return records written
-- [ ] T015 [P] [US2] Create `backend/src/services/sync/shopify.ts` — `syncShopify(integration, supabaseAdmin): Promise<number>`: read access token via `readSecret()`, query Shopify Admin GraphQL `orders` with `first: 250, after: endCursor` cursor pagination for last 30 days, upsert into `campaign_metrics` with `campaign_id = order.id`, `revenue = totalPriceSet.shopMoney.amount`, `spend/impressions/clicks/conversions = 0`, return records written
-- [ ] T016 [US2] Create `backend/src/services/sync/index.ts` — `dispatchSync(integration, supabaseAdmin): Promise<number>`: switch on `integration.platform` to call `syncMeta`, `syncGoogle`, or `syncShopify`; throw on unknown platform
-- [ ] T017 [US2] Create `backend/src/jobs/inngest.ts` — export `inngest = new Inngest({ id: 'growthhub' })` and two functions: (1) `dailySyncAll` cron `"0 2 * * *"` — query all `status='connected'` integrations, fan out one `integration/sync.requested` event per integration; (2) `syncIntegration` triggered by `integration/sync.requested` event — insert `sync_logs` row (`status='in_progress'`), call `dispatchSync()`, update `integrations.last_synced_at`, update `sync_logs` row (`status='success'`, `records_written`); catch errors to set `status='failed'` + `error_message`; export `functions = [dailySyncAll, syncIntegration]`
-- [ ] T018 [US2] Add `GET /api/v1/integrations/:id/sync-logs` to `backend/src/routes/v1/integrations.ts` — verify integration belongs to `orgId`, query `sync_logs` ordered by `created_at DESC` with `?limit` and `?offset` query params (default limit 20), return array per contract
-- [ ] T019 [US2] Update `app/integrations/page.tsx` to display sync log data — add "Last synced" timestamp (from `lastSyncedAt` field), show most recent sync status badge ("Syncing" / "Success" / "Failed"), show error message if `status = 'failed'`
+- [x] T013 [P] [US2] Create `backend/src/services/sync/meta.ts` — `syncMeta(integration, supabaseAdmin): Promise<number>`: read access token via `readSecret()`, fetch last-30-day insights from Meta Marketing API v21.0 `GET /act_{id}/insights?fields=spend,impressions,clicks,actions,action_values&date_preset=last_30d`, upsert rows into `campaign_metrics` with `onConflict: 'org_id,ad_account_id,campaign_id,date'`, return records written count
+- [x] T014 [P] [US2] Create `backend/src/services/sync/google.ts` — `syncGoogle(integration, supabaseAdmin): Promise<number>`: read token via `readSecret()`, refresh OAuth token if needed, call Google Ads API v19 `searchStream` endpoint with GAQL selecting `campaign.id, campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, segments.date` for last 30 days with `developer-token` header, upsert into `campaign_metrics` (cost_micros / 1_000_000 = spend), return records written
+- [x] T015 [P] [US2] Create `backend/src/services/sync/shopify.ts` — `syncShopify(integration, supabaseAdmin): Promise<number>`: read access token via `readSecret()`, query Shopify Admin GraphQL `orders` with `first: 250, after: endCursor` cursor pagination for last 30 days, upsert into `campaign_metrics` with `campaign_id = order.id`, `revenue = totalPriceSet.shopMoney.amount`, `spend/impressions/clicks/conversions = 0`, return records written
+- [x] T016 [US2] Create `backend/src/services/sync/index.ts` — `dispatchSync(integration, supabaseAdmin): Promise<number>`: switch on `integration.platform` to call `syncMeta`, `syncGoogle`, or `syncShopify`; throw on unknown platform
+- [x] T017 [US2] Create `backend/src/jobs/inngest.ts` — export `inngest = new Inngest({ id: 'growthhub' })` and two functions: (1) `dailySyncAll` cron `"0 2 * * *"` — query all `status='connected'` integrations, fan out one `integration/sync.requested` event per integration; (2) `syncIntegration` triggered by `integration/sync.requested` event — insert `sync_logs` row (`status='in_progress'`), call `dispatchSync()`, update `integrations.last_synced_at`, update `sync_logs` row (`status='success'`, `records_written`); catch errors to set `status='failed'` + `error_message`; export `functions = [dailySyncAll, syncIntegration]`
+- [x] T018 [US2] Add `GET /api/v1/integrations/:id/sync-logs` to `backend/src/routes/v1/integrations.ts` — verify integration belongs to `orgId`, query `sync_logs` ordered by `created_at DESC` with `?limit` and `?offset` query params (default limit 20), return array per contract
+- [x] T019 [US2] Update `app/integrations/page.tsx` to display sync log data — add "Last synced" timestamp (from `lastSyncedAt` field), show most recent sync status badge ("Syncing" / "Success" / "Failed"), show error message if `status = 'failed'`
 
 **Checkpoint**: US2 fully functional — daily Inngest job fires, data populates `campaign_metrics`, sync logs are visible on the Integrations page.
 
@@ -78,8 +78,8 @@
 
 **Independent Test**: Call `POST /api/v1/integrations/:id/sync` with a valid integration ID → receive `202 { jobId, message }`. Call it again immediately → receive `409 Conflict`. Verify `sync_logs` shows a new `in_progress` entry.
 
-- [ ] T020 [US3] Add `POST /api/v1/integrations/:id/sync` to `backend/src/routes/v1/integrations.ts` — verify integration is `status='connected'` (404 if not), check for existing `in_progress` sync log for this integration (return 409 if found), call `inngest.send({ name: 'integration/sync.requested', data: { integrationId, orgId } })`, return `202 { jobId, message: 'Sync queued' }`
-- [ ] T021 [US3] Update `app/integrations/page.tsx` — add "Sync now" button to each connected integration card; button calls `POST /api/v1/integrations/:id/sync` via `apiClient`, disables itself and shows "Syncing…" while in progress, re-enables on completion or error; show toast on success/failure
+- [x] T020 [US3] Add `POST /api/v1/integrations/:id/sync` to `backend/src/routes/v1/integrations.ts` — verify integration is `status='connected'` (404 if not), check for existing `in_progress` sync log for this integration (return 409 if found), call `inngest.send({ name: 'integration/sync.requested', data: { integrationId, orgId } })`, return `202 { jobId, message: 'Sync queued' }`
+- [x] T021 [US3] Update `app/integrations/page.tsx` — add "Sync now" button to each connected integration card; button calls `POST /api/v1/integrations/:id/sync` via `apiClient`, disables itself and shows "Syncing…" while in progress, re-enables on completion or error; show toast on success/failure
 
 **Checkpoint**: US3 fully functional — manual sync queues within 5 seconds, duplicate requests are rejected with a user-visible message.
 
@@ -91,10 +91,10 @@
 
 **Independent Test**: Ensure at least one sync has completed (US1 + US2 prerequisite). Call `GET /api/v1/metrics/summary?from=2026-04-01&to=2026-04-20` → receive `{ spend, impressions, clicks, conversions, revenue, roas, dateRange }` with non-zero values. Call `GET /api/v1/metrics/channels` → receive per-platform breakdown. Visit `/dashboard/overview` and verify real numbers are rendered.
 
-- [ ] T022 [US4] Create `backend/src/routes/v1/metrics.ts` — implement `GET /metrics/summary`: validate `from` and `to` query params (400 if missing/invalid), run SQL `SELECT SUM(spend), SUM(impressions), SUM(clicks), SUM(conversions), SUM(revenue) FROM campaign_metrics WHERE org_id = :orgId AND date >= :from AND date <= :to` via `supabaseAdmin`, compute `roas = revenue / spend` (0 if spend is 0), return object per contract
-- [ ] T023 [US4] Add `GET /metrics/channels` to `backend/src/routes/v1/metrics.ts` — same date range validation, run same query with `GROUP BY platform`, return array per contract
-- [ ] T024 [P] [US4] Update `app/dashboard/overview/page.tsx` — replace placeholder KPI values with real data: call `GET /api/v1/metrics/summary` via `apiClient` + `auth().getToken()` using a default 30-day date range; render `spend`, `impressions`, `clicks`, `conversions`, `revenue`, `roas`; show "Connect a platform to see data" empty state if no integrations exist (caught via 0-valued response or empty check)
-- [ ] T025 [P] [US4] Update `app/dashboard/channels/page.tsx` — replace placeholder channel breakdown with real data from `GET /api/v1/metrics/channels` using same default date range; render per-platform rows for meta / google / shopify; show empty state if no data
+- [x] T022 [US4] Create `backend/src/routes/v1/metrics.ts` — implement `GET /metrics/summary`: validate `from` and `to` query params (400 if missing/invalid), run SQL `SELECT SUM(spend), SUM(impressions), SUM(clicks), SUM(conversions), SUM(revenue) FROM campaign_metrics WHERE org_id = :orgId AND date >= :from AND date <= :to` via `supabaseAdmin`, compute `roas = revenue / spend` (0 if spend is 0), return object per contract
+- [x] T023 [US4] Add `GET /metrics/channels` to `backend/src/routes/v1/metrics.ts` — same date range validation, run same query with `GROUP BY platform`, return array per contract
+- [x] T024 [P] [US4] Update `app/dashboard/overview/page.tsx` — replace placeholder KPI values with real data: call `GET /api/v1/metrics/summary` via `apiClient` + `auth().getToken()` using a default 30-day date range; render `spend`, `impressions`, `clicks`, `conversions`, `revenue`, `roas`; show "Connect a platform to see data" empty state if no integrations exist (caught via 0-valued response or empty check)
+- [x] T025 [P] [US4] Update `app/dashboard/channels/page.tsx` — replace placeholder channel breakdown with real data from `GET /api/v1/metrics/channels` using same default date range; render per-platform rows for meta / google / shopify; show empty state if no data
 
 **Checkpoint**: US4 fully functional — dashboard displays real synced metrics scoped to the authenticated organization.
 
@@ -104,8 +104,8 @@
 
 **Purpose**: Environment documentation, edge case hardening, and end-to-end validation.
 
-- [ ] T026 [P] Update `backend/.env.example` — add all Phase 2 vars: `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `META_APP_ID`, `META_APP_SECRET`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `OAUTH_REDIRECT_BASE_URL`
-- [ ] T027 Validate end-to-end flow per `specs/002-data-ingestion/quickstart.md` Scenarios 1–6 — connect Meta integration, trigger sync, verify `campaign_metrics` populated, verify dashboard shows real data, verify org isolation (Scenario 5), verify duplicate sync idempotency (Scenario 6)
+- [x] T026 [P] Update `backend/.env.example` — add all Phase 2 vars: `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, `META_APP_ID`, `META_APP_SECRET`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `OAUTH_REDIRECT_BASE_URL`
+- [x] T027 Validate end-to-end flow per `specs/002-data-ingestion/quickstart.md` Scenarios 1–6 — connect Meta integration, trigger sync, verify `campaign_metrics` populated, verify dashboard shows real data, verify org isolation (Scenario 5), verify duplicate sync idempotency (Scenario 6)
 
 ---
 
