@@ -1,0 +1,429 @@
+"use client";
+
+import { useState } from "react";
+
+const navItems = [
+  { label: "Dashboard", icon: "dashboard", active: true },
+  { label: "Decisions", icon: "gavel", active: false },
+  { label: "Actions", icon: "ads_click", active: false },
+  { label: "Automation", icon: "smart_toy", active: false },
+  { label: "Creatives", icon: "palette", active: false },
+  { label: "Campaigns", icon: "campaign", active: false },
+  { label: "Integrations", icon: "extension", active: false },
+  { label: "Settings", icon: "settings", active: false },
+];
+
+const kpis = [
+  { label: "Revenue", value: "$142,580", change: "+8.2%", positive: true, progress: 75 },
+  { label: "Profit", value: "$54,200", change: "+12.1%", positive: true, progress: 50 },
+  { label: "ROAS", value: "3.8x", change: "-0.4%", positive: false, progress: 38 },
+  { label: "Spend", value: "$37,521", change: "Stable", positive: null, progress: 65 },
+  { label: "MER", value: "18.4%", change: "+2.1%", positive: true, progress: 80 },
+];
+
+const chartBars = [
+  { revenue: 40, spend: 32 },
+  { revenue: 55, spend: 47 },
+  { revenue: 45, spend: 34 },
+  { revenue: 70, spend: 63 },
+  { revenue: 60, spend: 49 },
+  { revenue: 85, spend: 81 },
+  { revenue: 75, spend: 66 },
+];
+
+const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const campaigns = [
+  {
+    name: "Spring Collection 2024",
+    platform: "Meta Ads",
+    platformColor: "#1877F2",
+    platformLetter: "F",
+    spend: "$12,450",
+    revenue: "$52,290",
+    roas: "4.2x",
+    roasType: "great",
+    status: "Active",
+    statusType: "active",
+  },
+  {
+    name: "Brand Search - EMEA",
+    platform: "Google Ads",
+    platformColor: "#EA4335",
+    platformLetter: "G",
+    spend: "$4,200",
+    revenue: "$18,480",
+    roas: "4.4x",
+    roasType: "great",
+    status: "Active",
+    statusType: "active",
+  },
+  {
+    name: "UGC Influencer Push",
+    platform: "YouTube",
+    platformColor: "#FF0000",
+    platformLetter: "Y",
+    spend: "$8,900",
+    revenue: "$22,250",
+    roas: "2.5x",
+    roasType: "neutral",
+    status: "Paused",
+    statusType: "paused",
+  },
+  {
+    name: "Retargeting Phase 2",
+    platform: "LinkedIn",
+    platformColor: "#0077B5",
+    platformLetter: "L",
+    spend: "$1,200",
+    revenue: "$1,440",
+    roas: "1.2x",
+    roasType: "bad",
+    status: "Warning",
+    statusType: "warning",
+  },
+];
+
+export default function DashboardOverview() {
+  const [insightVisible, setInsightVisible] = useState(true);
+
+  return (
+    <div className="flex h-screen bg-[#f8f9ff] font-['Inter'] text-[#05345c]">
+      {/* Sidebar */}
+      <aside className="fixed left-0 top-0 h-full w-64 z-40 bg-[#eff4ff] flex flex-col gap-2 p-6 font-['Manrope'] font-medium tracking-tight">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="w-10 h-10 bg-[#005bc4] rounded-xl flex items-center justify-center text-white">
+            <span className="material-symbols-outlined text-xl">precision_manufacturing</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold font-['Manrope'] text-[#05345c] tracking-tighter">
+              Precision Curator
+            </h1>
+            <p className="text-[10px] uppercase tracking-widest text-[#3d618c] opacity-60">
+              Management Suite
+            </p>
+          </div>
+        </div>
+
+        <nav className="flex flex-col gap-1 flex-1">
+          {navItems.map((item) => (
+            <a
+              key={item.label}
+              href="#"
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 ${
+                item.active
+                  ? "text-[#005bc4] font-bold bg-[#dce9ff] scale-95"
+                  : "text-[#4a5264] hover:bg-[#dce9ff] hover:text-[#005bc4]"
+              }`}
+            >
+              <span className="material-symbols-outlined">{item.icon}</span>
+              <span>{item.label}</span>
+            </a>
+          ))}
+        </nav>
+
+        <div className="mt-6 pt-6 border-t border-[#91b4e4]/10 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-[#005bc4] flex items-center justify-center text-white text-sm font-bold">
+            AS
+          </div>
+          <div className="overflow-hidden">
+            <p className="text-sm font-bold truncate">Alex Sterling</p>
+            <p className="text-[10px] text-[#3d618c] opacity-70 truncate">Growth Director</p>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <div className="ml-64 flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="fixed top-0 right-0 left-64 h-16 z-30 bg-[#f8f9ff]/80 backdrop-blur-xl flex justify-between items-center px-8 border-b border-[#91b4e4]/10">
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-[#05345c]">Dashboard Overview</h2>
+            <span className="h-4 w-px bg-[#91b4e4]/30" />
+            <div className="flex items-center gap-2 text-[#3d618c] text-sm">
+              <span className="material-symbols-outlined text-sm">calendar_today</span>
+              <span>Last 30 Days</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[#5a7da9] text-sm">
+                search
+              </span>
+              <input
+                className="bg-[#eff4ff] border-none rounded-full pl-10 pr-4 py-2 text-sm w-64 outline-none focus:ring-2 focus:ring-[#005bc4]/20"
+                placeholder="Search analytics..."
+                type="text"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button className="px-4 py-2 rounded-lg bg-[#eff4ff] text-[#3d618c] font-medium hover:bg-[#dce9ff] transition-colors flex items-center gap-2 text-sm">
+                Date Range
+                <span className="material-symbols-outlined text-xs">expand_more</span>
+              </button>
+              <button className="px-4 py-2 rounded-lg bg-[#005bc4] text-white font-medium hover:opacity-90 transition-opacity flex items-center gap-2 text-sm">
+                Platform Filter
+                <span className="material-symbols-outlined text-xs">filter_alt</span>
+              </button>
+            </div>
+            <div className="flex items-center gap-2 border-l border-[#91b4e4]/30 pl-6">
+              <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#e5eeff] text-[#4a5264] transition-all">
+                <span className="material-symbols-outlined">notifications</span>
+              </button>
+              <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#e5eeff] text-[#4a5264] transition-all">
+                <span className="material-symbols-outlined">settings</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Content */}
+        <main className="pt-24 px-8 pb-12 overflow-y-auto flex-1">
+          {/* AI Summary */}
+          {insightVisible && (
+            <section className="mb-10 p-6 bg-white rounded-xl border border-[#91b4e4]/10 shadow-[0_16px_32px_-8px_rgba(5,52,92,0.06)] flex gap-6 items-start">
+              <div className="w-12 h-12 rounded-xl bg-[#e4ceff] flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[#54436b]"
+                  style={{ fontVariationSettings: "'FILL' 1" }}>
+                  auto_awesome
+                </span>
+              </div>
+              <div className="flex-1">
+                <h3 className="font-['Manrope'] font-bold text-lg mb-1">
+                  Precision Intelligence Summary
+                </h3>
+                <p className="text-[#3d618c] leading-relaxed text-sm">
+                  Your account is performing{" "}
+                  <span className="text-[#005bc4] font-semibold">12.4% above benchmark</span> this
+                  month. Primary growth is driven by the 'Spring Collection' campaign on Instagram,
+                  which maintains a 4.2x ROAS. We recommend reallocating $2,500 from
+                  underperforming Search ads to expand this audience before Friday.
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <button className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#4388fd] text-[#000311]">
+                  View Insight
+                </button>
+                <button
+                  onClick={() => setInsightVisible(false)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[#5a7da9] hover:bg-[#e5eeff] transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* KPIs */}
+          <section className="grid grid-cols-5 gap-6 mb-10">
+            {kpis.map((kpi) => (
+              <div
+                key={kpi.label}
+                className="bg-white p-6 rounded-xl shadow-[0_16px_32px_-8px_rgba(5,52,92,0.06)] border border-[#91b4e4]/5"
+              >
+                <p className="text-[11px] font-bold text-[#3d618c]/60 uppercase tracking-widest mb-2">
+                  {kpi.label}
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <h4 className="text-2xl font-['Manrope'] font-extrabold tracking-tight">
+                    {kpi.value}
+                  </h4>
+                  <span
+                    className={`text-xs font-bold ${
+                      kpi.positive === true
+                        ? "text-emerald-600"
+                        : kpi.positive === false
+                        ? "text-red-500"
+                        : "text-[#3d618c]/50"
+                    }`}
+                  >
+                    {kpi.change}
+                  </span>
+                </div>
+                <div className="mt-4 h-1 w-full bg-[#eff4ff] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[#005bc4] rounded-full"
+                    style={{ width: `${kpi.progress}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </section>
+
+          {/* Chart + Highlights */}
+          <section className="grid grid-cols-12 gap-6 mb-10">
+            <div className="col-span-8 bg-white p-8 rounded-xl shadow-[0_16px_32px_-8px_rgba(5,52,92,0.06)]">
+              <div className="flex justify-between items-center mb-8">
+                <h3 className="font-['Manrope'] font-bold text-xl">Revenue vs Spend Trend</h3>
+                <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-widest">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-[#005bc4]" />
+                    Revenue
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-[#91b4e4]" />
+                    Spend
+                  </div>
+                </div>
+              </div>
+              <div className="relative h-64 w-full flex items-end gap-2 border-b border-l border-[#91b4e4]/20">
+                {chartBars.map((bar, i) => (
+                  <div key={i} className="flex-1 flex items-end gap-0.5 h-full">
+                    <div
+                      className="flex-1 bg-[#005bc4] rounded-t-sm transition-all hover:opacity-80"
+                      style={{ height: `${bar.revenue}%` }}
+                    />
+                    <div
+                      className="flex-1 bg-[#91b4e4]/40 rounded-t-sm"
+                      style={{ height: `${bar.spend}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between mt-4 px-2 text-[10px] font-bold text-[#3d618c] uppercase">
+                {days.map((d) => (
+                  <span key={d}>{d}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="col-span-4 flex flex-col gap-6">
+              <div className="flex-1 bg-white p-6 rounded-xl shadow-[0_16px_32px_-8px_rgba(5,52,92,0.06)] border-l-4 border-emerald-500">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-['Manrope'] font-bold">What's Working</h4>
+                  <span className="material-symbols-outlined text-emerald-500">trending_up</span>
+                </div>
+                <ul className="space-y-4">
+                  <li className="flex gap-3">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                    <p className="text-sm text-[#3d618c]">
+                      Video Retargeting CTR increased by 24% following Creative Update A.
+                    </p>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                    <p className="text-sm text-[#3d618c]">
+                      Organic referral traffic from TechCrunch feature scaling well.
+                    </p>
+                  </li>
+                </ul>
+              </div>
+              <div className="flex-1 bg-white p-6 rounded-xl shadow-[0_16px_32px_-8px_rgba(5,52,92,0.06)] border-l-4 border-red-500">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-['Manrope'] font-bold">Issues Detected</h4>
+                  <span className="material-symbols-outlined text-red-500">error</span>
+                </div>
+                <ul className="space-y-4">
+                  <li className="flex gap-3">
+                    <span className="w-2 h-2 rounded-full bg-red-500 mt-1.5 shrink-0" />
+                    <p className="text-sm text-[#3d618c]">
+                      Landing Page B conversion dropped below 1.5% - Check mobile assets.
+                    </p>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="w-2 h-2 rounded-full bg-red-500 mt-1.5 shrink-0" />
+                    <p className="text-sm text-[#3d618c]">
+                      Facebook API connection intermittently timing out in EMEA region.
+                    </p>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          {/* Campaign Table */}
+          <section className="bg-white rounded-xl shadow-[0_16px_32px_-8px_rgba(5,52,92,0.06)] overflow-hidden border border-[#91b4e4]/5">
+            <div className="p-8 border-b border-[#91b4e4]/10 flex justify-between items-center">
+              <div>
+                <h3 className="font-['Manrope'] font-bold text-xl">Campaign Performance Detail</h3>
+                <p className="text-sm text-[#3d618c]">
+                  Live breakdown of active ad sets across platforms
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button className="px-4 py-2 text-xs font-bold rounded-lg border border-[#91b4e4]/20 hover:bg-[#eff4ff] transition-colors">
+                  Export CSV
+                </button>
+                <button className="px-4 py-2 text-xs font-bold rounded-lg bg-[#05345c] text-white hover:opacity-90 transition-opacity">
+                  New Campaign
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-[#eff4ff]/50 text-[11px] font-bold uppercase tracking-widest text-[#3d618c]">
+                    <th className="px-8 py-4">Campaign Name</th>
+                    <th className="px-4 py-4">Platform</th>
+                    <th className="px-4 py-4">Spend</th>
+                    <th className="px-4 py-4">Revenue</th>
+                    <th className="px-4 py-4">ROAS</th>
+                    <th className="px-4 py-4">Status</th>
+                    <th className="px-8 py-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#91b4e4]/10">
+                  {campaigns.map((c) => (
+                    <tr key={c.name} className="hover:bg-[#eff4ff] transition-colors group">
+                      <td className="px-8 py-6 font-semibold text-sm">{c.name}</td>
+                      <td className="px-4 py-6">
+                        <div className="flex items-center gap-2 text-sm">
+                          <div
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold"
+                            style={{ backgroundColor: c.platformColor }}
+                          >
+                            {c.platformLetter}
+                          </div>
+                          <span>{c.platform}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-6 text-sm">{c.spend}</td>
+                      <td className="px-4 py-6 text-sm">{c.revenue}</td>
+                      <td className="px-4 py-6">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-bold ${
+                            c.roasType === "great"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : c.roasType === "bad"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-[#dbe2f9] text-[#4a5264]"
+                          }`}
+                        >
+                          {c.roas}
+                        </span>
+                      </td>
+                      <td className="px-4 py-6">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              c.statusType === "active"
+                                ? "bg-emerald-500 animate-pulse"
+                                : c.statusType === "warning"
+                                ? "bg-red-500"
+                                : "bg-[#3d618c]/30"
+                            }`}
+                          />
+                          <span className="text-xs font-medium">{c.status}</span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-6 text-right">
+                        <button className="material-symbols-outlined text-[#5a7da9] group-hover:text-[#005bc4] transition-colors">
+                          more_vert
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="p-4 bg-[#eff4ff]/30 flex justify-center">
+              <button className="text-xs font-bold text-[#005bc4] hover:underline transition-all">
+                Load More Records
+              </button>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+  );
+}
