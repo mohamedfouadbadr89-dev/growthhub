@@ -316,5 +316,5 @@ byok_openrouter_key: encrypted via Supabase Vault (nullable)
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/003-intelligence-layer/plan.md`.
+`specs/004-execution-layer/plan.md`.
 <!-- SPECKIT END -->
