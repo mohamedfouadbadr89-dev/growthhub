@@ -1,204 +1,227 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { Plus, Upload, Copy, CheckCircle2, Pencil, Trash2, Type, Palette, Image, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react"
+import { useAuth } from "@clerk/nextjs"
+import { Upload, Plus, X, Save, Loader2 } from "lucide-react"
+import { apiClient, ApiError } from "@/lib/api-client"
 
-const BRAND_COLORS = [
-  { name: "Primary Blue",    hex: "#005BC4", usage: "CTAs, Headlines" },
-  { name: "Deep Navy",       hex: "#05345C", usage: "Body text, Backgrounds" },
-  { name: "Sky Accent",      hex: "#2563EB", usage: "Gradients, Highlights" },
-  { name: "Surface Light",   hex: "#EFF4FF", usage: "Card backgrounds" },
-  { name: "Success Green",   hex: "#10B981", usage: "Positive signals" },
-  { name: "Alert Amber",     hex: "#F59E0B", usage: "Warnings, badges" },
-];
-
-const TYPOGRAPHY = [
-  { name: "Manrope",  role: "Display / Headings", weights: ["800 ExtraBold", "700 Bold", "600 SemiBold"], preview: "Aa" },
-  { name: "Inter",    role: "Body / UI",           weights: ["500 Medium", "400 Regular", "300 Light"],    preview: "Aa" },
-];
-
-const LOGOS = [
-  { name: "Primary Logo (Light)",  bg: "bg-primary",             text: "text-white" },
-  { name: "Primary Logo (Dark)",   bg: "bg-foreground",          text: "text-white" },
-  { name: "Monochrome",            bg: "bg-surface-container-high", text: "text-foreground" },
-  { name: "Favicon / Icon",        bg: "bg-primary",             text: "text-white", icon: true },
-];
-
-const ASSETS = [
-  { label: "Pattern Set A",   type: "SVG",  size: "24KB",  color: "bg-blue-50" },
-  { label: "Product Photos",  type: "ZIP",  size: "142MB", color: "bg-emerald-50" },
-  { label: "Icon Library",    type: "SVG",  size: "8KB",   color: "bg-amber-50" },
-  { label: "Social Templates",type: "PSD",  size: "56MB",  color: "bg-rose-50" },
-];
+interface BrandKit {
+  org_id: string
+  logo_url: string | null
+  colors: string[]
+  fonts: Record<string, string>
+  tone_of_voice: string | null
+}
 
 export default function BrandKitPage() {
-  const [copied, setCopied] = useState<string | null>(null);
+  const { getToken } = useAuth()
 
-  const copy = (hex: string) => {
-    navigator.clipboard.writeText(hex);
-    setCopied(hex);
-    setTimeout(() => setCopied(null), 1500);
-  };
+  const [colors, setColors] = useState<string[]>(["#005bc4", "#05345c"])
+  const [toneOfVoice, setToneOfVoice] = useState("")
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const token = await getToken()
+        if (!token) return
+        const data = await apiClient<BrandKit>("/api/v1/brand-kit", token)
+        setColors(data.colors?.length ? data.colors : ["#005bc4", "#05345c"])
+        setToneOfVoice(data.tone_of_voice ?? "")
+        setLogoUrl(data.logo_url)
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "Failed to load brand kit")
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [getToken])
+
+  async function handleSave() {
+    setSaving(true)
+    setError(null)
+    try {
+      const token = await getToken()
+      if (!token) throw new Error("Not authenticated")
+      await apiClient<BrandKit>("/api/v1/brand-kit", token, {
+        method: "PUT",
+        body: JSON.stringify({ colors, tone_of_voice: toneOfVoice }),
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to save")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleLogoUpload(file: File) {
+    setUploadingLogo(true)
+    setError(null)
+    try {
+      const token = await getToken()
+      if (!token) throw new Error("Not authenticated")
+      const form = new FormData()
+      form.append("logo", file)
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/brand-kit/logo`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form }
+      )
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error((body as { error?: string }).error ?? "Upload failed")
+      }
+      const data = (await res.json()) as { logo_url: string }
+      setLogoUrl(data.logo_url)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Logo upload failed")
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  function addColor() {
+    if (colors.length < 10) setColors([...colors, "#ffffff"])
+  }
+
+  function removeColor(i: number) {
+    setColors(colors.filter((_, idx) => idx !== i))
+  }
+
+  function updateColor(i: number, val: string) {
+    setColors(colors.map((c, idx) => (idx === i ? val : c)))
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-10 pb-12">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">Creatives</p>
-          <h2 className="text-4xl font-extrabold tracking-tight text-foreground font-sans">Brand Kit</h2>
-          <p className="text-muted-foreground mt-2 font-body">Your brand's visual identity — colours, fonts, logos, and assets.</p>
+          <h1 className="text-2xl font-sans font-semibold text-foreground">Brand Kit</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Define your visual identity — used in all AI-generated creatives
+          </p>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-[#2563eb] text-white rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:opacity-90 transition-all font-body">
-          <Sparkles size={15} /> AI Brand Refresh
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saved ? "Saved!" : "Save Brand Kit"}
         </button>
       </div>
 
-      {/* Colours */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-primary/10 rounded-xl flex items-center justify-center">
-              <Palette size={16} className="text-primary" />
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Logo */}
+      <div className="bg-white border border-border rounded-xl p-6">
+        <h2 className="font-sans font-semibold text-foreground mb-4">Logo</h2>
+        <div className="flex items-center gap-6">
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Brand logo"
+              className="w-20 h-20 object-contain rounded-lg border border-border"
+            />
+          ) : (
+            <div className="w-20 h-20 rounded-lg border-2 border-dashed border-border flex items-center justify-center bg-surface-container-low">
+              <Upload className="w-6 h-6 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-extrabold text-foreground font-sans">Brand Colours</h3>
+          )}
+          <div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingLogo}
+              className="flex items-center gap-2 border border-border px-3 py-2 rounded-lg text-sm hover:bg-surface-container-low disabled:opacity-50"
+            >
+              {uploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {uploadingLogo ? "Uploading…" : logoUrl ? "Replace Logo" : "Upload Logo"}
+            </button>
+            <p className="text-xs text-muted-foreground mt-1">PNG or JPEG, max 5 MB</p>
           </div>
-          <button className="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline font-body">
-            <Plus size={14} /> Add Colour
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) handleLogoUpload(f)
+              e.target.value = ""
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Colors */}
+      <div className="bg-white border border-border rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-sans font-semibold text-foreground">Brand Colors</h2>
+          <button
+            onClick={addColor}
+            disabled={colors.length >= 10}
+            className="flex items-center gap-1 text-sm text-primary hover:underline disabled:opacity-40"
+          >
+            <Plus className="w-4 h-4" /> Add color
           </button>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {BRAND_COLORS.map((c) => (
-            <div key={c.hex} className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden group">
-              <div className="h-20 w-full" style={{ background: c.hex }} />
-              <div className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-foreground font-body">{c.name}</p>
-                  <p className="text-[10px] text-muted-foreground font-body">{c.usage}</p>
-                </div>
-                <button
-                  onClick={() => copy(c.hex)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-container-low rounded-lg text-xs font-mono font-bold text-muted-foreground hover:text-primary transition-colors"
-                >
-                  {copied === c.hex ? <CheckCircle2 size={12} className="text-emerald-500" /> : <Copy size={12} />}
-                  {c.hex}
+        <div className="flex flex-wrap gap-3">
+          {colors.map((color, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 border border-border rounded-lg px-3 py-2 bg-surface-container-low"
+            >
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => updateColor(i, e.target.value)}
+                className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
+              />
+              <span className="text-sm font-mono text-muted-foreground">{color}</span>
+              {colors.length > 1 && (
+                <button onClick={() => removeColor(i)} className="text-muted-foreground hover:text-red-500">
+                  <X className="w-3.5 h-3.5" />
                 </button>
-              </div>
+              )}
             </div>
           ))}
         </div>
-      </section>
+      </div>
 
-      {/* Typography */}
-      <section className="space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary/10 rounded-xl flex items-center justify-center">
-            <Type size={16} className="text-primary" />
-          </div>
-          <h3 className="text-lg font-extrabold text-foreground font-sans">Typography</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {TYPOGRAPHY.map((t) => (
-            <div key={t.name} className="bg-white rounded-2xl border border-border shadow-sm p-6">
-              <div className="flex items-start justify-between mb-6">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1 font-body">{t.role}</p>
-                  <h4 className="text-xl font-extrabold text-foreground font-sans">{t.name}</h4>
-                </div>
-                <span className="text-5xl font-black text-primary/10 font-sans">{t.preview}</span>
-              </div>
-              <div className="space-y-2">
-                {t.weights.map((w) => {
-                  const [weight] = w.split(" ");
-                  return (
-                    <div key={w} className="flex items-center justify-between py-2 border-b border-surface-container-low last:border-none">
-                      <span className="text-sm text-foreground font-body" style={{ fontWeight: parseInt(weight) }}>
-                        The quick brown fox
-                      </span>
-                      <span className="text-[10px] font-bold text-muted-foreground font-body">{w}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Logos */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-primary/10 rounded-xl flex items-center justify-center">
-              <Image size={16} className="text-primary" />
-            </div>
-            <h3 className="text-lg font-extrabold text-foreground font-sans">Logo Variants</h3>
-          </div>
-          <button className="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline font-body">
-            <Upload size={14} /> Upload Logo
-          </button>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {LOGOS.map((l) => (
-            <div key={l.name} className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden group">
-              <div className={`${l.bg} h-28 flex items-center justify-center`}>
-                {l.icon ? (
-                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                    <span className={`text-lg font-black ${l.text}`}>P</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <div className={`w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center`}>
-                      <span className={`text-sm font-black ${l.text}`}>P</span>
-                    </div>
-                    <span className={`text-sm font-black uppercase tracking-widest ${l.text}`}>Precision</span>
-                  </div>
-                )}
-              </div>
-              <div className="p-3 flex items-center justify-between">
-                <p className="text-[11px] font-bold text-foreground font-body truncate">{l.name}</p>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button className="p-1 hover:bg-surface-container-low rounded-lg text-muted-foreground hover:text-primary transition-colors"><Pencil size={11} /></button>
-                  <button className="p-1 hover:bg-surface-container-low rounded-lg text-muted-foreground hover:text-red-500 transition-colors"><Trash2 size={11} /></button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Assets Library */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-extrabold text-foreground font-sans">Asset Library</h3>
-          <button className="flex items-center gap-1.5 px-4 py-2 border-2 border-dashed border-border rounded-xl text-xs font-bold text-muted-foreground hover:border-primary hover:text-primary transition-colors font-body">
-            <Upload size={14} /> Upload Assets
-          </button>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {ASSETS.map((a) => (
-            <div key={a.label} className="bg-white rounded-2xl border border-border shadow-sm p-5 flex flex-col gap-3 group hover:shadow-md transition-all">
-              <div className={`w-10 h-10 ${a.color} rounded-xl flex items-center justify-center`}>
-                <span className="text-[10px] font-black text-foreground font-body">{a.type}</span>
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground font-body">{a.label}</p>
-                <p className="text-[11px] text-muted-foreground font-body">{a.size}</p>
-              </div>
-              <button className="mt-auto w-full py-2 bg-surface-container-low text-xs font-bold text-foreground rounded-xl hover:bg-primary hover:text-white transition-colors font-body">
-                Download
-              </button>
-            </div>
-          ))}
-          {/* Upload placeholder */}
-          <button className="bg-surface-container-low rounded-2xl border-2 border-dashed border-border p-5 flex flex-col items-center justify-center gap-2 hover:border-primary hover:bg-primary/5 transition-all group">
-            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm group-hover:bg-primary group-hover:text-white transition-colors">
-              <Plus size={18} className="text-muted-foreground group-hover:text-white" />
-            </div>
-            <span className="text-xs font-bold text-muted-foreground font-body">Add Asset</span>
-          </button>
-        </div>
-      </section>
+      {/* Tone of Voice */}
+      <div className="bg-white border border-border rounded-xl p-6">
+        <h2 className="font-sans font-semibold text-foreground mb-4">Tone of Voice</h2>
+        <textarea
+          value={toneOfVoice}
+          onChange={(e) => setToneOfVoice(e.target.value)}
+          placeholder="Describe your brand's voice — e.g. 'Bold and direct. We speak to performance marketers who hate fluff. Short sentences. Data-driven.'"
+          className="w-full h-32 border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+          maxLength={1000}
+        />
+        <p className="text-xs text-muted-foreground mt-1 text-right">{toneOfVoice.length}/1000</p>
+      </div>
     </div>
-  );
+  )
 }

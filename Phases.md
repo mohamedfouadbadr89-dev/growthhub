@@ -128,22 +128,22 @@ User sees decision → clicks execute → action runs → result logged in Decis
 **Goal:** AI generates creatives from brand data + performance signals
 
 ### Brand Kit
-- [ ] `brand_kits` table
-- [ ] Logo + colors + fonts upload (Supabase Storage)
-- [ ] Tone of voice input
+- [x] `brand_kits` table
+- [x] Logo + colors + fonts upload (Supabase Storage)
+- [x] Tone of voice input
 
 ### Creative Generation
-- [ ] `creative_generations` table
-- [ ] `creatives` table
-- [ ] OpenRouter for copy generation (headlines, body)
-- [ ] SiliconFlow / Kolors for image generation
-- [ ] Creative scoring by performance data
+- [x] `creative_generations` table
+- [x] `creatives` table
+- [x] OpenRouter for copy generation (headlines, body)
+- [x] SiliconFlow / Kolors for image generation
+- [x] Creative scoring by performance data
 
 ### Pages (Real Data)
-- [ ] Brand Kit
-- [ ] Creative Generator
-- [ ] Creative Results
-- [ ] Creative Editor
+- [x] Brand Kit
+- [x] Creative Generator
+- [x] Creative Results
+- [x] Creative Editor
 
 ### Deliverable
 User uploads brand kit → generates creatives → ranks by predicted performance → pushes to campaign

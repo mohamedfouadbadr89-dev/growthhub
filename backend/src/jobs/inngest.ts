@@ -2,6 +2,7 @@ import { Inngest } from 'inngest'
 import { supabaseAdmin } from '../lib/supabase.js'
 import { dispatchSync } from '../services/sync/index.js'
 import { dispatchIntelligence } from '../services/intelligence/index.js'
+import { runGeneration } from '../services/creatives/creative-generator.js'
 
 export const inngest = new Inngest({ id: 'growthhub' })
 
@@ -109,4 +110,20 @@ const generateDecisions = inngest.createFunction(
   }
 )
 
-export const functions = [dailySyncAll, syncIntegration, generateDecisions]
+const generateCreative = inngest.createFunction(
+  { id: 'generate-creative', triggers: [{ event: 'creatives/generation.requested' }], timeouts: { finish: '5m' } },
+  async ({ event }) => {
+    const { orgId, generationId, generationType, adAccountId, campaignName } = event.data as {
+      orgId: string
+      generationId: string
+      generationType: 'copy' | 'image'
+      adAccountId: string | null
+      campaignName: string | null
+    }
+
+    await runGeneration({ orgId, generationId, generationType, adAccountId, campaignName })
+    return { generationId, status: 'completed' }
+  }
+)
+
+export const functions = [dailySyncAll, syncIntegration, generateDecisions, generateCreative]
