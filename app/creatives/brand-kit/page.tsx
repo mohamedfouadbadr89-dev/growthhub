@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useAuth } from "@clerk/nextjs"
 import { Upload, Plus, X, Save, Loader2 } from "lucide-react"
 import { apiClient, ApiError } from "@/lib/api-client"
@@ -24,27 +24,29 @@ export default function BrandKitPage() {
   const [saving, setSaving] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const token = await getToken()
-        if (!token) return
-        const data = await apiClient<BrandKit>("/api/v1/brand-kit", token)
-        setColors(data.colors?.length ? data.colors : ["#005bc4", "#05345c"])
-        setToneOfVoice(data.tone_of_voice ?? "")
-        setLogoUrl(data.logo_url)
-      } catch (e) {
-        setError(e instanceof ApiError ? e.message : "Failed to load brand kit")
-      } finally {
-        setLoading(false)
-      }
+  const load = useCallback(async function load() {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const token = await getToken()
+      if (!token) { setLoadError("Your session expired — please sign in again"); setLoading(false); return }
+      const data = await apiClient<BrandKit>("/api/v1/brand-kit", token)
+      setColors(data.colors?.length ? data.colors : ["#005bc4", "#05345c"])
+      setToneOfVoice(data.tone_of_voice ?? "")
+      setLogoUrl(data.logo_url)
+    } catch (e) {
+      setLoadError(e instanceof ApiError ? e.message : "Failed to load brand kit")
+    } finally {
+      setLoading(false)
     }
-    load()
   }, [getToken])
+
+  useEffect(() => { load() }, [load])
 
   async function handleSave() {
     setSaving(true)
@@ -104,8 +106,25 @@ export default function BrandKitPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      <div className="space-y-8 animate-pulse">
+        <div className="h-10 w-48 bg-surface-container-low rounded-xl" />
+        <div className="h-40 bg-surface-container-low rounded-xl" />
+        <div className="h-32 bg-surface-container-low rounded-xl" />
+        <div className="h-40 bg-surface-container-low rounded-xl" />
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="text-center py-20 space-y-4">
+        <p className="text-sm text-red-600 font-body">{loadError}</p>
+        <button
+          onClick={load}
+          className="px-4 py-2 text-sm font-bold border border-border rounded-xl hover:bg-surface-container-low transition-colors font-body"
+        >
+          Try Again
+        </button>
       </div>
     )
   }

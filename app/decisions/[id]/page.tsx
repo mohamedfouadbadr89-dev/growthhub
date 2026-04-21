@@ -186,7 +186,7 @@ export default function DecisionDetailPage() {
                 .map(([k, v]) => (
                   <DataRow key={k} label={k.replace(/_/g, " ")} value={v} />
                 ))}
-              {snapshot.date && <DataRow label="date" value={snapshot.date} />}
+              {snapshot.date != null && <DataRow label="date" value={String(snapshot.date)} />}
             </div>
           </div>
         </section>

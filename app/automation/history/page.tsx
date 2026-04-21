@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { Loader2, Bot, CheckCircle2, XCircle, SkipForward } from "lucide-react";
+import { Loader2, Bot, CheckCircle2, XCircle, SkipForward, AlertCircle } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 
 interface HistoryRecord {
@@ -37,23 +37,27 @@ export default function DecisionHistoryPage() {
   const { getToken } = useAuth();
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detail, setDetail] = useState<HistoryDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      const token = await getToken();
-      if (!token) { setLoading(false); return; }
-      try {
-        const data = await apiClient<{ history: HistoryRecord[] }>("/api/v1/history?limit=100", token);
-        setHistory(data.history);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const token = await getToken();
+    if (!token) { setError("Your session expired — please sign in again"); setLoading(false); return; }
+    try {
+      const data = await apiClient<{ history: HistoryRecord[] }>("/api/v1/history?limit=100", token);
+      setHistory(data.history ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load decision history");
+    } finally {
+      setLoading(false);
+    }
   }, [getToken]);
+
+  useEffect(() => { load(); }, [load]);
 
   const handleExpand = async (record: HistoryRecord) => {
     if (expanded === record.id) {
@@ -88,9 +92,14 @@ export default function DecisionHistoryPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-3 text-muted-foreground py-20 justify-center">
-          <Loader2 size={20} className="animate-spin" />
-          <span className="font-body text-sm">Loading history…</span>
+        <div className="space-y-3 animate-pulse">
+          {[1, 2, 3, 4].map((i) => <div key={i} className="h-14 bg-surface-container-low rounded-2xl" />)}
+        </div>
+      ) : error ? (
+        <div className="py-20 text-center space-y-4">
+          <AlertCircle size={40} className="mx-auto text-red-300" />
+          <p className="text-sm text-red-600 font-body">{error}</p>
+          <button onClick={load} className="px-4 py-2 text-sm font-bold border border-border rounded-xl hover:bg-surface-container-low transition-colors font-body">Try Again</button>
         </div>
       ) : history.length === 0 ? (
         <div className="py-20 text-center text-muted-foreground font-body text-sm">

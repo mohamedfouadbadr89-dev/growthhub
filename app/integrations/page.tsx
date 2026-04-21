@@ -65,6 +65,7 @@ export default function IntegrationsPage() {
   const { getToken } = useAuth();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
@@ -92,13 +93,15 @@ export default function IntegrationsPage() {
   }, [toast]);
 
   const fetchIntegrations = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
     const token = await getToken();
-    if (!token) return;
+    if (!token) { setLoadError("Your session expired — please sign in again"); setLoading(false); return; }
     try {
       const data = await apiClient<Integration[]>("/api/v1/integrations", token);
-      setIntegrations(data);
-    } catch {
-      // ignore on background refresh
+      setIntegrations(data ?? []);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load integrations");
     } finally {
       setLoading(false);
     }
@@ -186,9 +189,14 @@ export default function IntegrationsPage() {
 
         {/* Integrations Grid */}
         {loading ? (
-          <div className="flex items-center gap-3 text-muted-foreground py-12">
-            <Loader2 size={20} className="animate-spin" />
-            <span className="font-body text-sm">Loading integrations…</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
+            {[1, 2, 3].map((i) => <div key={i} className="h-64 bg-surface-container-low rounded-2xl" />)}
+          </div>
+        ) : loadError ? (
+          <div className="py-20 text-center space-y-4">
+            <AlertCircle size={40} className="mx-auto text-red-300" />
+            <p className="text-sm text-red-600 font-body">{loadError}</p>
+            <button onClick={fetchIntegrations} className="px-4 py-2 text-sm font-bold border border-border rounded-xl hover:bg-surface-container-low transition-colors font-body">Try Again</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
