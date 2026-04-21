@@ -1,0 +1,19 @@
+{
+  "name": "growthhub-api",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "@clerk/backend": "^3.2.13",
+    "@supabase/supabase-js": "^2.42.7",
+    "axios": "^1.15.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.3.2",
+    "svix": "^1.90.0"
+  }
+}

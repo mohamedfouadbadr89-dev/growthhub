@@ -1,38 +1,62 @@
 # Growth OS — Build Phases & Specs
 
+## PROJECT STATUS SUMMARY
+
+**Current Phase:** 1-4 Code Ready, Blocked at Backend Exposure
+**Blocker:** Backend server not accessible externally (0.0.0.0 binding issue)
+**Priority:** Fix backend first, then resume Phase 1-4 integration testing
+
 ---
 
 ## PHASE 1 — Foundation
+**Status:** ⚠️ Code Complete, Integration Blocked
+
 **Goal:** Auth + Database + Backend skeleton working end-to-end
 
-### Clerk
-- [ ] ClerkProvider in `app/layout.tsx`
-- [ ] Middleware protecting all private routes
-- [ ] Sign-in / Sign-up pages (`/sign-in`, `/sign-up`)
-- [ ] Auto-create Organization on sign-up
-- [ ] Redirect to `/dashboard/overview` after auth
+### Clerk ✅
+- [x] ClerkProvider in `app/layout.tsx`
+- [x] Middleware protecting all private routes
+- [x] Sign-in / Sign-up pages (`/sign-in`, `/sign-up`)
+- [x] Auto-create Organization on sign-up
+- [x] Redirect to `/dashboard/overview` after auth
+- [x] Webhooks configured (user.created)
+- [ ] **BLOCKED:** Webhook not being received (backend not exposed)
 
-### Supabase Schema
-- [ ] `organizations` table
-- [ ] `users` table
-- [ ] `subscriptions` table
-- [ ] `audit_logs` table
-- [ ] RLS enabled on all tables
-- [ ] All tables have `org_id` column
+### Supabase Schema ✅
+- [x] `organizations` table
+- [x] `users` table
+- [x] `subscriptions` table
+- [x] `audit_logs` table
+- [x] RLS enabled on all tables
+- [x] All tables have `org_id` column
+- [ ] **BLOCKED:** No data entering (webhook failure cascade)
 
-### Backend (Railway)
-- [ ] Express/Hono server setup
-- [ ] Clerk token verification middleware
-- [ ] Health check endpoint `GET /health`
-- [ ] Base API structure `/api/v1/`
-- [ ] Error handling + logging (Sentry)
+### Backend (Express on VPS) ⚠️
+- [x] Express server written
+- [x] Clerk token verification middleware
+- [x] Health check endpoint `GET /health`
+- [x] Base API structure `/api/v1/`
+- [x] Error handling + logging setup
+- [x] PM2 process manager
+- [ ] **CRITICAL:** Server binding to localhost, not 0.0.0.0
+- [ ] **CRITICAL:** Not accessible from external networks
+- [ ] **CRITICAL:** Webhook endpoint unreachable
 
-### Deliverable
-User can sign up → create org → land on dashboard → backend responds to authenticated requests
+### Deliverable Status
+❌ **NOT COMPLETE** — User can sign up but webhook fails, no data enters DB
+
+**What's Needed:**
+1. Fix backend binding to 0.0.0.0
+2. Verify Hostinger firewall allows port 3001
+3. Verify PM2 process not crashing
+4. Test webhook delivery from Clerk
+5. Confirm Supabase insert working
 
 ---
 
 ## PHASE 2 — Data Ingestion
+**Status:** ❌ Not Started (Blocked by Phase 1)
+
 **Goal:** Connect ad platforms + pull real data into DB
 
 ### Integrations
@@ -59,6 +83,8 @@ User connects Meta/Google/Shopify → data syncs → Dashboard shows real number
 ---
 
 ## PHASE 3 — Intelligence Layer
+**Status:** ❌ Not Started
+
 **Goal:** AI starts generating decisions from data
 
 ### Decision Engine
@@ -86,6 +112,8 @@ System detects anomalies → generates decisions → user sees prioritized actio
 ---
 
 ## PHASE 4 — Execution Layer
+**Status:** ❌ Not Started
+
 **Goal:** User can execute decisions as actions
 
 ### Actions
@@ -94,7 +122,7 @@ System detects anomalies → generates decisions → user sees prioritized actio
 - [ ] `automation_runs` table
 - [ ] `decision_history` table (CRITICAL — memory system)
 
-### Decision History Record
+### Decision History Record (SACRED)
 Every execution logs:
 - decision
 - action_taken
@@ -122,6 +150,8 @@ User sees decision → clicks execute → action runs → result logged in Decis
 ---
 
 ## PHASE 5 — Creatives
+**Status:** ❌ Not Started
+
 **Goal:** AI generates creatives from brand data + performance signals
 
 ### Brand Kit
@@ -148,6 +178,8 @@ User uploads brand kit → generates creatives → ranks by predicted performanc
 ---
 
 ## PHASE 6 — Campaigns
+**Status:** ❌ Not Started
+
 **Goal:** Full campaign management with AI assistance
 
 ### Campaigns
@@ -167,6 +199,8 @@ User creates campaign from inside the OS → AI suggests targeting + budget → 
 ---
 
 ## PHASE 7 — Monetization + Polish
+**Status:** ❌ Not Started
+
 **Goal:** Billing, settings, production-ready
 
 ### Billing (Stripe)
@@ -197,31 +231,21 @@ Full production-ready SaaS — paying customers can onboard, use, and be billed
 
 ---
 
-## BUILD ORDER SUMMARY
+## BUILD ORDER & STATUS
 
-| Phase | Focus | Duration |
-|-------|-------|----------|
-| 1 | Foundation (Auth + DB + Backend) | Week 1 |
-| 2 | Data Ingestion (Integrations + Sync) | Week 2-3 |
-| 3 | Intelligence (Decisions + AI) | Week 3-4 |
-| 4 | Execution (Actions + History) | Week 4-5 |
-| 5 | Creatives (AI Generation) | Week 5-6 |
-| 6 | Campaigns | Week 6 |
-| 7 | Monetization + Polish | Week 7-8 |
-
----
-
-## SPECKIT NOTES
-
-- Each phase = one Speckit spec
-- Never start next phase before current phase deliverable is working
-- Decision History (Phase 4) is the most critical table — never skip or simplify
-- RLS must be verified after every new table added
-- Every API endpoint must be tested with wrong `org_id` to verify isolation
+| Phase | Focus | Status | Notes |
+|-------|-------|--------|-------|
+| 1 | Foundation (Auth + DB + Backend) | ⚠️ Code done, blocked | Backend exposure issue |
+| 2 | Data Ingestion (Integrations + Sync) | ❌ Waiting | Can't start without Phase 1 |
+| 3 | Intelligence (Decisions + AI) | ❌ Waiting | Can't start without Phase 2 |
+| 4 | Execution (Actions + History) | ❌ Waiting | Can't start without Phase 3 |
+| 5 | Creatives (AI Generation) | ❌ Waiting | Can't start without Phase 4 |
+| 6 | Campaigns | ❌ Waiting | Can't start without Phase 5 |
+| 7 | Monetization + Polish | ❌ Waiting | Can't start without Phase 6 |
 
 ---
 
-## BILLING LOGIC — Applies to Phase 7
+## BILLING LOGIC (applies to all phases)
 
 ### Plan Types
 - `subscription` — pays monthly, gets credits, uses platform OpenRouter key
@@ -247,3 +271,28 @@ Credit costs per action:
 - `plan_type` set to `ltd`
 - Credits disabled automatically
 - Prompt to add BYOK key on first login
+
+---
+
+## SPECKIT NOTES
+
+- Each phase = one Speckit spec
+- Never start next phase before current phase deliverable is working
+- Decision History (Phase 4) is the most critical table — never skip or simplify
+- RLS must be verified after every new table added
+- Every API endpoint must be tested with wrong `org_id` to verify isolation
+
+---
+
+## NEXT IMMEDIATE ACTIONS
+
+1. **Fix Phase 1 Backend** (BLOCKER)
+   - Change binding from localhost to 0.0.0.0
+   - Verify PM2 process stability
+   - Verify Hostinger firewall
+   - Test webhook delivery from Clerk
+   - Confirm Supabase insert working
+
+2. **Once Phase 1 is fixed:**
+   - Test user signup → webhook → DB insert end-to-end
+   - Then proceed to Phase 2 with Speckit
