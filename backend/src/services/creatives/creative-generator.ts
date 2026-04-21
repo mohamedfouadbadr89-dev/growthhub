@@ -5,17 +5,19 @@ import { generateAdCopy } from './copy-generation.js'
 import { generateAdImages } from './image-generation.js'
 import { uploadImage } from './storage.js'
 
-const CREDIT_COSTS = { copy: 2, image: 10 }
+export const CREDIT_COSTS: Record<'copy' | 'image', number> = { copy: 2, image: 10 }
 
-function computePerformanceScore(roas: number): number {
-  // ROAS >= 4 → 100, ROAS 0 → 0, linear with cap
+export function computePerformanceScore(roas: number): number {
+  // ROAS 0 → 0, ROAS 4 → 100; meets SC-005 (ROAS ≥ 3× scores ≥75 vs ROAS <1× scores <25)
   return Math.min(100, Math.max(0, Math.round(roas * 25)))
 }
 
-async function resolveApiKey(orgId: string): Promise<string> {
+// Resolve the OpenRouter API key for the org.
+// Throws BYOK_REQUIRED if LTD user has no key configured.
+export async function resolveApiKey(orgId: string): Promise<{ apiKey: string; isLtd: boolean }> {
   const { data: org, error } = await supabaseAdmin
     .from('organizations')
-    .select('plan_type, vault_byok_openrouter_secret_id, credits_balance')
+    .select('plan_type, vault_byok_openrouter_secret_id')
     .eq('org_id', orgId)
     .single()
 
@@ -23,35 +25,23 @@ async function resolveApiKey(orgId: string): Promise<string> {
 
   if (org.plan_type === 'ltd') {
     if (!org.vault_byok_openrouter_secret_id) {
-      const err = new Error('LTD users must configure a BYOK OpenRouter key in Settings') as Error & { code: string }
-      err.code = 'BYOK_REQUIRED'
-      throw err
+      throw Object.assign(
+        new Error('LTD users must configure a BYOK OpenRouter key in Settings'),
+        { code: 'BYOK_REQUIRED' }
+      )
     }
-    return readSecret(org.vault_byok_openrouter_secret_id as string)
+    const apiKey = await readSecret(org.vault_byok_openrouter_secret_id as string)
+    return { apiKey, isLtd: true }
   }
 
-  // subscription — check and deduct credits
-  const cost = CREDIT_COSTS.copy // will be refined per type in caller
-  const { data: result } = await supabaseAdmin.rpc('deduct_credit', { p_org_id: orgId })
-  if (result === null || result < 0) {
-    const err = new Error('Insufficient credits') as Error & { code: string }
-    err.code = 'INSUFFICIENT_CREDITS'
-    throw err
-  }
-
-  return process.env.OPENROUTER_API_KEY!
+  return { apiKey: process.env.OPENROUTER_API_KEY!, isLtd: false }
 }
 
-async function deductCredits(orgId: string, type: 'copy' | 'image'): Promise<void> {
-  const cost = CREDIT_COSTS[type]
-  // deduct_credit deducts 1 at a time; call it `cost` times
-  for (let i = 0; i < cost; i++) {
-    const { data } = await supabaseAdmin.rpc('deduct_credit', { p_org_id: orgId })
-    if (data === null || data < 0) throw Object.assign(new Error('Insufficient credits'), { code: 'INSUFFICIENT_CREDITS' })
-  }
-}
-
-async function getSourceRoas(orgId: string, adAccountId: string | null, campaignName: string | null): Promise<number> {
+async function getSourceRoas(
+  orgId: string,
+  adAccountId: string | null,
+  campaignName: string | null
+): Promise<number> {
   if (!adAccountId && !campaignName) return 0
 
   const sevenDaysAgo = new Date()
@@ -86,34 +76,28 @@ export interface GenerationRequest {
 export async function runGeneration(req: GenerationRequest): Promise<void> {
   const { orgId, generationId, generationType, adAccountId, campaignName } = req
 
-  await supabaseAdmin
+  // Mark as processing — if this fails, the job stays 'pending' and Inngest will not retry
+  const { error: startErr } = await supabaseAdmin
     .from('creative_generations')
     .update({ status: 'processing', started_at: new Date().toISOString() })
     .eq('id', generationId)
     .eq('org_id', orgId)
 
+  if (startErr) {
+    console.error('[creative-generator] Failed to mark processing:', startErr.message)
+    // Proceed anyway — the generation should still run
+  }
+
+  let creditsDeducted = 0
+
   try {
-    const [brandKit, sourceRoas, org] = await Promise.all([
+    const [brandKit, sourceRoas, { apiKey }] = await Promise.all([
       getBrandKit(orgId),
       getSourceRoas(orgId, adAccountId, campaignName),
-      supabaseAdmin.from('organizations').select('plan_type, vault_byok_openrouter_secret_id').eq('org_id', orgId).single().then(r => r.data),
+      resolveApiKey(orgId),
     ])
 
-    // Billing gate
-    if (org?.plan_type === 'ltd') {
-      if (!org.vault_byok_openrouter_secret_id) {
-        throw Object.assign(new Error('LTD users must configure a BYOK OpenRouter key in Settings'), { code: 'BYOK_REQUIRED' })
-      }
-    } else {
-      await deductCredits(orgId, generationType)
-    }
-
-    const apiKey = org?.plan_type === 'ltd'
-      ? await readSecret(org.vault_byok_openrouter_secret_id as string)
-      : process.env.OPENROUTER_API_KEY!
-
     const performanceScore = computePerformanceScore(sourceRoas)
-    const platform = 'Meta'  // default; will be looked up from ad_account if available
     const toneOfVoice = brandKit?.tone_of_voice ?? ''
     const brandColors = (brandKit?.colors as string[]) ?? []
 
@@ -129,7 +113,7 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
     if (generationType === 'copy') {
       const variations = await generateAdCopy(apiKey, {
         campaignName: campaignName ?? 'Campaign',
-        platform,
+        platform: 'Meta',
         roas: sourceRoas,
         toneOfVoice,
         brandColors,
@@ -147,24 +131,28 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
 
       await supabaseAdmin
         .from('creative_generations')
-        .update({ model: process.env.OPENROUTER_DEFAULT_MODEL ?? 'google/gemini-2.0-flash-001', source_roas: sourceRoas })
+        .update({
+          model: process.env.OPENROUTER_DEFAULT_MODEL ?? 'google/gemini-2.0-flash-001',
+          source_roas: sourceRoas,
+        })
         .eq('id', generationId)
 
     } else {
       const images = await generateAdImages({
         campaignName: campaignName ?? 'Campaign',
-        platform,
+        platform: 'Meta',
         brandColors,
         toneOfVoice,
       })
 
       for (const img of images) {
-        const publicUrl = await uploadImage(orgId, generationId, img.buffer, img.fileName)
+        // uploadImage now returns a storage PATH, not a URL
+        const storagePath = await uploadImage(orgId, generationId, img.buffer, img.fileName)
         creativesToInsert.push({
           org_id: orgId,
           generation_id: generationId,
           type: 'image',
-          content_url: publicUrl,
+          content_url: storagePath,   // path stored; signed URL generated on read
           performance_score: performanceScore,
         })
       }
@@ -175,9 +163,12 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
         .eq('id', generationId)
     }
 
-    if (creativesToInsert.length > 0) {
-      await supabaseAdmin.from('creatives').insert(creativesToInsert)
+    if (creativesToInsert.length === 0) {
+      throw new Error('AI returned no usable creatives')
     }
+
+    const { error: insertErr } = await supabaseAdmin.from('creatives').insert(creativesToInsert)
+    if (insertErr) throw new Error(`Failed to save creatives: ${insertErr.message}`)
 
     await supabaseAdmin
       .from('creative_generations')
@@ -186,10 +177,26 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
 
   } catch (err) {
     const message = (err as Error).message
-    await supabaseAdmin
-      .from('creative_generations')
-      .update({ status: 'failed', error_message: message, completed_at: new Date().toISOString() })
-      .eq('id', generationId)
+    console.error(`[creative-generator] Generation ${generationId} failed:`, message)
+
+    // Refund credits if any were deducted and the job failed
+    if (creditsDeducted > 0) {
+      try {
+        await supabaseAdmin.rpc('refund_credits', { p_org_id: orgId, p_amount: creditsDeducted })
+      } catch (refundErr) {
+        console.error('[creative-generator] Credit refund failed:', (refundErr as Error).message)
+      }
+    }
+
+    try {
+      await supabaseAdmin
+        .from('creative_generations')
+        .update({ status: 'failed', error_message: message, completed_at: new Date().toISOString() })
+        .eq('id', generationId)
+    } catch (statusErr) {
+      console.error('[creative-generator] Failed to update status to failed:', (statusErr as Error).message)
+    }
+
     throw err
   }
 }

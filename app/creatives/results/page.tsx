@@ -253,9 +253,24 @@ export default function ResultsPage() {
                   </Link>
                 )}
                 <button
-                  onClick={() => {
-                    if (creative.type === "copy") downloadText(creative)
-                    else if (creative.content_url) window.open(creative.content_url, "_blank")
+                  onClick={async () => {
+                    if (creative.type === "copy") {
+                      downloadText(creative)
+                    } else {
+                      // Fetch a short-lived signed download URL from the backend
+                      try {
+                        const token = await getToken()
+                        if (!token) return
+                        const data = await apiClient<{ url: string }>(
+                          `/api/v1/creatives/${creative.id}/download-url`,
+                          token
+                        )
+                        window.open(data.url, "_blank")
+                      } catch {
+                        // Fall back to the signed display URL already in memory
+                        if (creative.content_url) window.open(creative.content_url, "_blank")
+                      }
+                    }
                   }}
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground ml-auto"
                 >
