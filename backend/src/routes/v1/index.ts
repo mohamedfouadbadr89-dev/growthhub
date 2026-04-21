@@ -11,6 +11,7 @@ import { historyRouter } from './history.js'
 import { automationRouter } from './automation.js'
 import { brandKitRouter } from './brand-kit.js'
 import { creativesRouter } from './creatives.js'
+import { campaignsRouter } from './campaigns.js'
 
 type Variables = { userId: string; orgId: string }
 
@@ -28,5 +29,6 @@ v1.route('/history', historyRouter)
 v1.route('/automation', automationRouter)
 v1.route('/brand-kit', brandKitRouter)
 v1.route('/creatives', creativesRouter)
+v1.route('/campaigns', campaignsRouter)
 
 export { v1 }

@@ -154,15 +154,15 @@ User uploads brand kit → generates creatives → ranks by predicted performanc
 **Goal:** Full campaign management with AI assistance
 
 ### Campaigns
-- [ ] `campaigns` table (connected to ad_accounts)
-- [ ] Campaign list with real metrics
-- [ ] Campaign detail with decisions overlay
-- [ ] AI-assisted campaign creation
+- [x] `campaigns` table (connected to ad_accounts)
+- [x] Campaign list with real metrics
+- [x] Campaign detail with decisions overlay
+- [x] AI-assisted campaign creation
 
 ### Pages (Real Data)
-- [ ] Campaigns List
-- [ ] Campaign Detail
-- [ ] Create Campaign
+- [x] Campaigns List
+- [x] Campaign Detail
+- [x] Create Campaign
 
 ### Deliverable
 User creates campaign from inside the OS → AI suggests targeting + budget → pushes to Meta/Google

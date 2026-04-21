@@ -22,6 +22,10 @@ const ACTION_HANDLERS: Record<string, ActionHandler> = {
     success: true,
     result_data: { simulated: true, action_type: 'send_alert_email', platform: ctx.platform, ...params },
   }),
+  create_campaign: async (params, ctx) => ({
+    success: true,
+    result_data: { simulated: true, action_type: 'create_campaign', platform: ctx.platform, ...params },
+  }),
 }
 
 interface ActionTemplate {
