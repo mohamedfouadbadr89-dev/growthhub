@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useState } from "react";
 import Link from "next/link";
 import {
   TriangleAlert,
@@ -9,14 +8,12 @@ import {
   Zap,
   Activity,
   Loader2,
-  AlertCircle,
-  RefreshCw,
   CheckCircle2,
   Sparkles,
   PlayCircle,
   Eye,
+  RefreshCw,
 } from "lucide-react";
-import { apiClient, ApiError } from "@/lib/api-client";
 
 interface Decision {
   id: string;
@@ -40,18 +37,82 @@ interface Integration {
   lastSyncedAt: string | null;
 }
 
-interface RunStatus {
-  id?: string;
-  status?: "in_progress" | "completed" | "failed";
-}
-
 type ActiveFilter = "all" | "critical" | "high" | "quick";
 
+const MOCK_DECISIONS: Decision[] = [
+  {
+    id: "d-001",
+    type: "ROAS_DROP",
+    status: "new",
+    platform: "meta",
+    campaign_id: "23856789012",
+    trigger_condition: "Meta Ads ROAS dropped below 1.5x threshold — 7-day average now at 0.9x",
+    confidence_score: 92,
+    recommended_action: "Reduce daily budget by 25% on underperforming ad sets and pause bottom 3 creatives",
+    priority_score: 94,
+    ai_status: "completed",
+    ai_explanation:
+      "ROAS has been declining steadily over the past 7 days. The drop correlates with creative fatigue in your top 3 ad sets. Historical data shows pausing these creatives recovers ROAS within 48–72 hours.",
+    created_at: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+  },
+  {
+    id: "d-002",
+    type: "SCALING_OPPORTUNITY",
+    status: "new",
+    platform: "google",
+    campaign_id: "98765432109",
+    trigger_condition: "Google Search campaign exceeding ROAS target by 2.3x with available budget headroom",
+    confidence_score: 88,
+    recommended_action: "Increase daily budget by 30% and expand match types to capture additional demand",
+    priority_score: 78,
+    ai_status: "completed",
+    ai_explanation:
+      "This campaign has maintained 4.6x ROAS for the past 10 days, well above the 2.0x target. Search impression share is only 62%, indicating significant untapped demand. Scaling now will maximise Q4 momentum.",
+    created_at: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+  },
+  {
+    id: "d-003",
+    type: "SPEND_SPIKE",
+    status: "new",
+    platform: "meta",
+    campaign_id: "23812345678",
+    trigger_condition: "Unexpected 43% spend increase detected on Meta Lookalike 1% audience",
+    confidence_score: 86,
+    recommended_action: "Review bid caps and set a daily spend limit to prevent further budget overrun",
+    priority_score: 88,
+    ai_status: "completed",
+    ai_explanation:
+      "Spend spiked 43% in the last 24 hours without a corresponding performance improvement. CPM increased by 18%, suggesting an auction pressure event. Immediate bid-cap review is recommended.",
+    created_at: new Date(Date.now() - 8 * 3_600_000).toISOString(),
+  },
+  {
+    id: "d-004",
+    type: "CONVERSION_DROP",
+    status: "new",
+    platform: "google",
+    campaign_id: "98709876543",
+    trigger_condition: "Checkout conversion rate dropped 31% over 48 hours — landing page issue suspected",
+    confidence_score: 79,
+    recommended_action: "Investigate landing page load speed and checkout funnel for technical regressions",
+    priority_score: 82,
+    ai_status: "completed",
+    ai_explanation:
+      "Conversion rate dropped from 3.2% to 2.2% over 48 hours. Click-through rates remain stable, pointing to a post-click issue consistent with a landing page or checkout flow degradation.",
+    created_at: new Date(Date.now() - 14 * 3_600_000).toISOString(),
+  },
+];
+
+const MOCK_INTEGRATIONS: Integration[] = [
+  { id: "int-001", platform: "meta",    status: "connected", lastSyncedAt: new Date(Date.now() - 30 * 60_000).toISOString() },
+  { id: "int-002", platform: "google",  status: "connected", lastSyncedAt: new Date(Date.now() - 45 * 60_000).toISOString() },
+  { id: "int-003", platform: "shopify", status: "connected", lastSyncedAt: new Date(Date.now() - 2 * 3_600_000).toISOString() },
+];
+
 const RISK_CONFIG = {
-  ROAS_DROP:           { label: "High Risk",   color: "text-error",         bg: "bg-[#ffdad6]",    rootCause: "ROAS Decline",   applyLabel: "Apply Decision" },
-  SPEND_SPIKE:         { label: "High Risk",   color: "text-error",         bg: "bg-[#ffdad6]",    rootCause: "Spend Spike",    applyLabel: "Apply Decision" },
-  CONVERSION_DROP:     { label: "High Risk",   color: "text-error",         bg: "bg-[#ffdad6]",    rootCause: "Conv. Drop",     applyLabel: "Apply Decision" },
-  SCALING_OPPORTUNITY: { label: "Opportunity", color: "text-emerald-700",   bg: "bg-emerald-100",  rootCause: "Growth Signal",  applyLabel: "Scale Campaign" },
+  ROAS_DROP:           { label: "High Risk",   color: "text-error",       bg: "bg-[#ffdad6]",   rootCause: "ROAS Decline",  applyLabel: "Apply Decision" },
+  SPEND_SPIKE:         { label: "High Risk",   color: "text-error",       bg: "bg-[#ffdad6]",   rootCause: "Spend Spike",   applyLabel: "Apply Decision" },
+  CONVERSION_DROP:     { label: "High Risk",   color: "text-error",       bg: "bg-[#ffdad6]",   rootCause: "Conv. Drop",    applyLabel: "Apply Decision" },
+  SCALING_OPPORTUNITY: { label: "Opportunity", color: "text-emerald-700", bg: "bg-emerald-100", rootCause: "Growth Signal", applyLabel: "Scale Campaign" },
 } as const;
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -75,120 +136,31 @@ function timeAgo(iso: string): string {
 }
 
 export default function DecisionsPage() {
-  const { getToken } = useAuth();
-  const [decisions, setDecisions] = useState<Decision[]>([]);
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
   const [applying, setApplying] = useState<Record<string, boolean>>({});
   const [applied, setApplied] = useState<Record<string, boolean>>({});
-  const [applyError, setApplyError] = useState<Record<string, string>>({});
-  const [refreshing, setRefreshing] = useState(false);
-  const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  }, []);
-
-  const fetchDecisions = useCallback(async (token: string) => {
-    try {
-      const data = await apiClient<{ decisions: Decision[] }>("/api/v1/decisions?limit=50", token);
-      setDecisions(data.decisions ?? []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load decisions");
-    }
-  }, []);
-
-  const startPolling = useCallback(async (token: string) => {
-    stopPolling();
-    pollRef.current = setInterval(async () => {
-      try {
-        const status = await apiClient<RunStatus>("/api/v1/decisions/run-status", token);
-        setRunStatus(status);
-        if (status.status === "completed" || status.status === "failed") {
-          stopPolling();
-          setRefreshing(false);
-          await fetchDecisions(token);
-        }
-      } catch {
-        stopPolling();
-        setRefreshing(false);
-      }
-    }, 3000);
-  }, [stopPolling, fetchDecisions]);
-
-  useEffect(() => {
-    const init = async () => {
-      const token = await getToken();
-      if (!token) { setError("Your session expired — please sign in again"); setLoading(false); return; }
-      try {
-        const status = await apiClient<RunStatus>("/api/v1/decisions/run-status", token);
-        if (status?.status === "in_progress") { setRefreshing(true); setRunStatus(status); startPolling(token); }
-      } catch { /* ignore */ }
-      await Promise.all([
-        fetchDecisions(token),
-        apiClient<Integration[]>("/api/v1/integrations", token)
-          .then((data) => setIntegrations(data ?? []))
-          .catch(() => {}),
-      ]);
-      setLoading(false);
-    };
-    init();
-    return () => stopPolling();
-  }, [getToken, fetchDecisions, startPolling, stopPolling]);
-
-  const handleRefresh = async () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    const token = await getToken();
-    if (!token) { setRefreshing(false); return; }
-    try {
-      const result = await apiClient<{ run_id: string }>("/api/v1/decisions/refresh", token, { method: "POST" });
-      setRunStatus({ id: result.run_id, status: "in_progress" });
-      startPolling(token);
-    } catch (err: unknown) {
-      if ((err as { status?: number })?.status === 409) {
-        startPolling(token);
-      } else {
-        setRefreshing(false);
-      }
-    }
-  };
-
-  const handleApply = async (id: string) => {
+  function handleApply(id: string) {
     setApplying((s) => ({ ...s, [id]: true }));
-    setApplyError((s) => { const n = { ...s }; delete n[id]; return n; });
-    const token = await getToken();
-    if (!token) { setApplying((s) => ({ ...s, [id]: false })); return; }
-    try {
-      await apiClient(`/api/v1/decisions/${id}/apply`, token, { method: "POST" });
-      setApplied((s) => ({ ...s, [id]: true }));
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Failed to apply decision";
-      setApplyError((s) => ({ ...s, [id]: msg }));
-    } finally {
+    setTimeout(() => {
       setApplying((s) => ({ ...s, [id]: false }));
-    }
-  };
+      setApplied((s) => ({ ...s, [id]: true }));
+    }, 1000);
+  }
 
-  const criticalDecisions = decisions.filter((d) => d.type !== "SCALING_OPPORTUNITY");
-  const highDecisions = decisions.filter((d) => d.type === "SCALING_OPPORTUNITY");
-  const quickDecisions = decisions.filter((d) => d.confidence_score >= 85);
+  const criticalDecisions = MOCK_DECISIONS.filter((d) => d.type !== "SCALING_OPPORTUNITY");
+  const highDecisions     = MOCK_DECISIONS.filter((d) => d.type === "SCALING_OPPORTUNITY");
+  const quickDecisions    = MOCK_DECISIONS.filter((d) => d.confidence_score >= 85);
 
   const filteredDecisions =
     activeFilter === "critical" ? criticalDecisions
-    : activeFilter === "high" ? highDecisions
-    : activeFilter === "quick" ? quickDecisions
-    : decisions;
+    : activeFilter === "high"   ? highDecisions
+    : activeFilter === "quick"  ? quickDecisions
+    : MOCK_DECISIONS;
 
-  const avgConfidence = decisions.length
-    ? Math.round(decisions.reduce((s, d) => s + (d.confidence_score ?? 0), 0) / decisions.length)
-    : 0;
-
-  const connectedIntegrations = integrations.filter((i) => i.status === "connected");
+  const avgConfidence = Math.round(
+    MOCK_DECISIONS.reduce((s, d) => s + d.confidence_score, 0) / MOCK_DECISIONS.length
+  );
 
   return (
     <div className="flex gap-8 pb-12">
@@ -201,24 +173,11 @@ export default function DecisionsPage() {
             <h2 className="text-4xl font-extrabold tracking-tight text-foreground font-sans">Decisions</h2>
             <p className="text-muted-foreground mt-2 font-body">AI-powered insights and actions across your campaigns.</p>
           </div>
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing || loading}
-            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-60 font-body"
-          >
-            {refreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            {refreshing ? "Refreshing…" : "Refresh Decisions"}
+          <button className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity font-body">
+            <RefreshCw size={16} />
+            Refresh Decisions
           </button>
         </div>
-
-        {/* Engine running banner */}
-        {refreshing && (
-          <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 text-primary px-5 py-3 rounded-xl text-sm font-body">
-            <Loader2 size={16} className="animate-spin shrink-0" />
-            Decision engine is running… This usually takes under 60 seconds.
-            {runStatus?.id && <span className="text-xs opacity-60 font-mono ml-auto">{runStatus.id}</span>}
-          </div>
-        )}
 
         {/* Priority Filter Tabs */}
         <section className="grid grid-cols-3 gap-4">
@@ -235,7 +194,7 @@ export default function DecisionsPage() {
               <TriangleAlert size={18} className="text-error" />
             </div>
             <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-extrabold text-foreground font-sans">{loading ? "—" : String(criticalDecisions.length).padStart(2, "0")}</p>
+              <p className="text-2xl font-extrabold text-foreground font-sans">{String(criticalDecisions.length).padStart(2, "0")}</p>
               <p className="text-xs text-muted-foreground font-body leading-tight">Immediate intervention required.</p>
             </div>
           </button>
@@ -253,8 +212,8 @@ export default function DecisionsPage() {
               <TrendingUp size={18} className="text-primary" />
             </div>
             <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-extrabold text-foreground font-sans">{loading ? "—" : String(highDecisions.length).padStart(2, "0")}</p>
-              <p className="text-xs text-muted-foreground font-body leading-tight">Significant ROAS optimization.</p>
+              <p className="text-2xl font-extrabold text-foreground font-sans">{String(highDecisions.length).padStart(2, "0")}</p>
+              <p className="text-xs text-muted-foreground font-body leading-tight">Significant ROAS optimisation.</p>
             </div>
           </button>
 
@@ -271,7 +230,7 @@ export default function DecisionsPage() {
               <Zap size={18} className="text-emerald-600" />
             </div>
             <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-extrabold text-foreground font-sans">{loading ? "—" : String(quickDecisions.length).padStart(2, "0")}</p>
+              <p className="text-2xl font-extrabold text-foreground font-sans">{String(quickDecisions.length).padStart(2, "0")}</p>
               <p className="text-xs text-muted-foreground font-body leading-tight">Low-effort, high confidence.</p>
             </div>
           </button>
@@ -284,66 +243,28 @@ export default function DecisionsPage() {
             <span className="px-3 py-1 rounded-full bg-surface-container-high text-xs font-semibold text-muted-foreground font-body">
               All Platforms
             </span>
-            {!loading && decisions.length > 0 && (
-              <span className="px-3 py-1 rounded-full bg-primary/10 text-xs font-semibold text-primary font-body">
-                {decisions.length} Active
-              </span>
-            )}
+            <span className="px-3 py-1 rounded-full bg-primary/10 text-xs font-semibold text-primary font-body">
+              {MOCK_DECISIONS.length} Active
+            </span>
           </div>
         </div>
 
-        {/* Loading skeleton */}
-        {loading && (
-          <div className="space-y-4 animate-pulse">
-            {[1, 2, 3].map((i) => <div key={i} className="h-56 bg-surface-container-low rounded-2xl" />)}
-          </div>
-        )}
-
-        {/* Error state */}
-        {!loading && error && (
-          <div className="py-16 text-center space-y-4">
-            <AlertCircle size={40} className="mx-auto text-red-300" />
-            <p className="text-sm text-red-600 font-body">{error}</p>
-            <button
-              onClick={async () => {
-                setLoading(true);
-                const token = await getToken();
-                if (token) await fetchDecisions(token);
-                setLoading(false);
-              }}
-              className="px-5 py-2 text-sm font-bold border border-border rounded-xl hover:bg-surface-container-low transition-colors font-body"
-            >
-              Try Again
-            </button>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!loading && !error && filteredDecisions.length === 0 && (
+        {/* Empty state for filter */}
+        {filteredDecisions.length === 0 && (
           <div className="py-16 text-center bg-white rounded-2xl border border-border space-y-4">
             <Sparkles size={36} className="mx-auto text-muted-foreground/30" />
-            <p className="text-muted-foreground font-body text-sm">
-              {decisions.length === 0
-                ? "No decisions generated yet. Connect a platform to start."
-                : "No decisions match this filter."}
-            </p>
-            {decisions.length === 0 && (
-              <Link href="/integrations" className="inline-block px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-bold font-body hover:opacity-90 transition-opacity">
-                Connect a Platform
-              </Link>
-            )}
+            <p className="text-muted-foreground font-body text-sm">No decisions match this filter.</p>
           </div>
         )}
 
         {/* Decision cards */}
-        {!loading && !error && filteredDecisions.length > 0 && (
+        {filteredDecisions.length > 0 && (
           <div className="space-y-6">
             {filteredDecisions.map((decision) => {
-              const risk = RISK_CONFIG[decision.type] ?? RISK_CONFIG.ROAS_DROP;
+              const risk      = RISK_CONFIG[decision.type] ?? RISK_CONFIG.ROAS_DROP;
               const isApplying = applying[decision.id];
-              const isApplied = applied[decision.id];
-              const applyErr = applyError[decision.id];
-              const platform = PLATFORM_LABELS[decision.platform] ?? decision.platform;
+              const isApplied  = applied[decision.id];
+              const platform   = PLATFORM_LABELS[decision.platform] ?? decision.platform;
 
               return (
                 <article
@@ -373,10 +294,10 @@ export default function DecisionsPage() {
                   <div className="grid grid-cols-5 gap-3 mb-5">
                     {[
                       { label: "Confidence", value: `${decision.confidence_score}%`, extra: "" },
-                      { label: "Risk", value: decision.type === "SCALING_OPPORTUNITY" ? "Low" : "High", extra: decision.type === "SCALING_OPPORTUNITY" ? "text-emerald-600" : "text-error" },
+                      { label: "Risk",       value: decision.type === "SCALING_OPPORTUNITY" ? "Low" : "High", extra: decision.type === "SCALING_OPPORTUNITY" ? "text-emerald-600" : "text-error" },
                       { label: "Root Cause", value: risk.rootCause, extra: decision.type === "SCALING_OPPORTUNITY" ? "text-emerald-600" : "text-error" },
-                      { label: "Urgency", value: getUrgency(decision.priority_score), extra: "" },
-                      { label: "Status", value: decision.status || "New Signal", extra: "" },
+                      { label: "Urgency",    value: getUrgency(decision.priority_score), extra: "" },
+                      { label: "Status",     value: decision.status || "New Signal", extra: "" },
                     ].map(({ label, value, extra }) => (
                       <div key={label} className="bg-surface-container-low p-3 rounded-xl">
                         <p className="text-[10px] text-muted-foreground font-bold uppercase mb-1 font-body">{label}</p>
@@ -410,7 +331,6 @@ export default function DecisionsPage() {
                       <span className="text-xs text-muted-foreground font-body">{timeAgo(decision.created_at)}</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      {applyErr && <p className="text-xs text-error font-body max-w-[140px] text-right">{applyErr}</p>}
                       <Link
                         href={`/decisions/${decision.id}`}
                         className="px-4 py-2 text-sm font-bold text-muted-foreground hover:text-primary transition-colors font-body flex items-center gap-1.5"
@@ -461,18 +381,18 @@ export default function DecisionsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground font-body font-medium">Active Decisions</p>
-                  <p className="text-xl font-bold text-foreground font-sans">{loading ? "—" : decisions.length}</p>
+                  <p className="text-xl font-bold text-foreground font-sans">{MOCK_DECISIONS.length}</p>
                 </div>
                 <div className="w-12 h-12 rounded-full border-4 border-primary/10 flex items-center justify-center">
-                  <span className="text-xs font-bold text-primary font-sans">{loading ? "—" : `${avgConfidence}%`}</span>
+                  <span className="text-xs font-bold text-primary font-sans">{avgConfidence}%</span>
                 </div>
               </div>
 
-              {/* Impact placeholder */}
+              {/* Signal Summary */}
               <div className="p-4 bg-surface-container-low rounded-xl">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase font-body mb-2">Signal Summary</p>
                 <p className="text-2xl font-black text-primary font-sans">
-                  {loading ? "—" : `${criticalDecisions.length + highDecisions.length}`}
+                  {criticalDecisions.length + highDecisions.length}
                 </p>
                 <p className="text-xs text-emerald-600 font-body font-medium mt-1 flex items-center gap-1">
                   <TrendingUp size={10} />
@@ -484,12 +404,12 @@ export default function DecisionsPage() {
               <div>
                 <div className="flex justify-between text-xs font-bold mb-2 font-body">
                   <span className="text-muted-foreground">Avg. Confidence</span>
-                  <span className="text-foreground">{loading ? "—" : `${avgConfidence}%`}</span>
+                  <span className="text-foreground">{avgConfidence}%</span>
                 </div>
                 <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary rounded-full transition-all duration-700"
-                    style={{ width: loading ? "0%" : `${avgConfidence}%` }}
+                    style={{ width: `${avgConfidence}%` }}
                   />
                 </div>
               </div>
@@ -510,30 +430,22 @@ export default function DecisionsPage() {
           {/* Operational Status */}
           <section className="bg-foreground text-white p-6 rounded-2xl">
             <h4 className="text-sm font-bold mb-5 font-sans">Operational Status</h4>
-            {loading ? (
-              <div className="space-y-3 animate-pulse">
-                {[1, 2, 3].map((i) => <div key={i} className="h-8 bg-white/10 rounded-lg" />)}
-              </div>
-            ) : connectedIntegrations.length === 0 ? (
-              <p className="text-sm text-white/50 font-body">No platforms connected yet.</p>
-            ) : (
-              <ul className="space-y-4">
-                {connectedIntegrations.map((integration) => {
-                  const lastSync = integration.lastSyncedAt
-                    ? `Synced ${timeAgo(integration.lastSyncedAt)}`
-                    : "Never synced";
-                  return (
-                    <li key={integration.id} className="flex items-start gap-3">
-                      <span className={`w-2 h-2 mt-1.5 rounded-full shrink-0 ${integration.status === "connected" ? "bg-emerald-500" : "bg-amber-500"}`} />
-                      <div>
-                        <p className="text-xs font-bold font-body">{PLATFORM_LABELS[integration.platform] ?? integration.platform} Connected</p>
-                        <p className="text-[10px] text-white/50 font-body">{lastSync}</p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            <ul className="space-y-4">
+              {MOCK_INTEGRATIONS.map((integration) => {
+                const lastSync = integration.lastSyncedAt
+                  ? `Synced ${timeAgo(integration.lastSyncedAt)}`
+                  : "Never synced";
+                return (
+                  <li key={integration.id} className="flex items-start gap-3">
+                    <span className="w-2 h-2 mt-1.5 rounded-full shrink-0 bg-emerald-500" />
+                    <div>
+                      <p className="text-xs font-bold font-body">{PLATFORM_LABELS[integration.platform] ?? integration.platform} Connected</p>
+                      <p className="text-[10px] text-white/50 font-body">{lastSync}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
         </div>
       </aside>
