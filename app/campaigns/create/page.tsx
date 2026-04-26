@@ -1,380 +1,435 @@
 "use client"
 
 import { useState } from "react"
-import { useAuth } from "@clerk/nextjs"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Sparkles, Loader2, Send, Save } from "lucide-react"
-import { apiClient, ApiError } from "@/lib/api-client"
+import {
+  ArrowLeft, Bell, HelpCircle, ShoppingCart, TrendingUp, Eye,
+  Sparkles, CheckCircle2, Zap, Settings2, Check, X, Search, Cloud,
+} from "lucide-react"
 
-interface AiSuggestions {
-  interests: string[]
-  age_min: number
-  age_max: number
-  gender: string
-  daily_budget_recommendation: number
-  rationale: string
-  generated_at: string
+type Objective = "conversion" | "traffic" | "awareness"
+type Platform = "Meta" | "Google" | "TikTok" | "Snapchat"
+type BudgetType = "daily" | "lifetime"
+type BiddingStrategy = "auto" | "manual"
+
+interface StepHeaderProps { num: number; active?: boolean; label: string }
+function StepHeader({ num, active = true, label }: StepHeaderProps) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${active ? "bg-primary text-white" : "bg-surface-container-high text-muted-foreground"}`}>
+        {num}
+      </div>
+      <h2 className="font-sans font-semibold text-foreground text-base">{label}</h2>
+    </div>
+  )
 }
 
-const PLATFORMS = ["meta", "google"] as const
-type Platform = (typeof PLATFORMS)[number]
+const OBJECTIVES: { key: Objective; icon: React.ReactNode; label: string; desc: string }[] = [
+  { key: "conversion", icon: <ShoppingCart className="w-5 h-5" />, label: "Conversion", desc: "Drive purchases & sign-ups" },
+  { key: "traffic", icon: <TrendingUp className="w-5 h-5" />, label: "Traffic", desc: "Send visitors to your site" },
+  { key: "awareness", icon: <Eye className="w-5 h-5" />, label: "Awareness", desc: "Reach new audiences" },
+]
+
+const ALL_PLATFORMS: Platform[] = ["Meta", "Google", "TikTok", "Snapchat"]
+
+const CREATIVE_GRADIENTS = [
+  "linear-gradient(135deg,#005bc4,#3b82f6)",
+  "linear-gradient(135deg,#7c3aed,#a855f7)",
+  "linear-gradient(135deg,#059669,#10b981)",
+]
+
+const CREATIVE_LABELS = ["Summer Flash Sale", "Brand Awareness Reel", "New Arrivals Showcase"]
 
 export default function CreateCampaignPage() {
-  const { getToken } = useAuth()
-  const router = useRouter()
+  const [objective, setObjective] = useState<Objective>("conversion")
+  const [platforms, setPlatforms] = useState<Set<Platform>>(new Set(["Meta", "Google"]))
+  const [budgetType, setBudgetType] = useState<BudgetType>("daily")
+  const [budgetAmount, setBudgetAmount] = useState(500)
+  const [locations, setLocations] = useState(["United States", "Canada"])
+  const [locationInput, setLocationInput] = useState("")
+  const [ageMin, setAgeMin] = useState(25)
+  const [ageMax, setAgeMax] = useState(44)
+  const [interests, setInterests] = useState("Fashion, Lifestyle, Online Shopping")
+  const [selectedCreative, setSelectedCreative] = useState(0)
+  const [biddingStrategy, setBiddingStrategy] = useState<BiddingStrategy>("auto")
+  const [launching, setLaunching] = useState(false)
+  const [launched, setLaunched] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
+  const [draftSaved, setDraftSaved] = useState(false)
+  const [applyingBoost, setApplyingBoost] = useState(false)
+  const [boostApplied, setBoostApplied] = useState(false)
 
-  const [name, setName]              = useState("")
-  const [platform, setPlatform]      = useState<Platform>("meta")
-  const [dailyBudget, setDailyBudget] = useState<string>("")
-  const [interests, setInterests]    = useState("")
-  const [ageMin, setAgeMin]          = useState("25")
-  const [ageMax, setAgeMax]          = useState("44")
-  const [gender, setGender]          = useState("all")
+  const togglePlatform = (p: Platform) =>
+    setPlatforms(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n })
 
-  const [campaignId, setCampaignId]   = useState<string | null>(null)
-  const [suggestions, setSuggestions] = useState<AiSuggestions | null>(null)
-
-  const [saving, setSaving]            = useState(false)
-  const [gettingAI, setGettingAI]      = useState(false)
-  const [pushing, setPushing]          = useState(false)
-
-  const [error, setError]             = useState<string | null>(null)
-  const [aiError, setAiError]         = useState<string | null>(null)
-  const [pushError, setPushError]      = useState<string | null>(null)
-
-  function buildTargeting() {
-    const t: Record<string, unknown> = { gender }
-    if (ageMin) t.age_min = parseInt(ageMin, 10)
-    if (ageMax) t.age_max = parseInt(ageMax, 10)
-    if (interests.trim()) {
-      t.interests = interests.split(",").map((s) => s.trim()).filter(Boolean)
-    }
-    return t
-  }
-
-  async function saveDraft(): Promise<string | null> {
-    if (!name.trim()) { setError("Campaign name is required"); return null }
-    setSaving(true)
-    setError(null)
-    try {
-      const token = await getToken()
-      if (!token) return null
-      const body: Record<string, unknown> = {
-        name:     name.trim(),
-        platform,
-        targeting: buildTargeting(),
-      }
-      if (dailyBudget) body.daily_budget = parseFloat(dailyBudget)
-
-      const data = await apiClient<{ id: string }>("/api/v1/campaigns", token, {
-        method: "POST",
-        body:   JSON.stringify(body),
-      })
-      setCampaignId(data.id)
-      return data.id
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Save failed"
-      setError(msg)
-      return null
-    } finally {
-      setSaving(false)
+  const addLocation = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && locationInput.trim()) {
+      setLocations(prev => [...prev, locationInput.trim()])
+      setLocationInput("")
     }
   }
 
-  async function handleGetAI() {
-    setAiError(null)
-    let id = campaignId
-    if (!id) {
-      id = await saveDraft()
-      if (!id) return
-    }
-    setGettingAI(true)
-    try {
-      const token = await getToken()
-      if (!token) return
-      const data = await apiClient<{ suggestions: AiSuggestions }>(
-        `/api/v1/campaigns/${id}/ai-suggestions`,
-        token,
-        { method: "POST", body: JSON.stringify({}) }
-      )
-      setSuggestions(data.suggestions)
-      // Apply suggestions to form fields
-      if (data.suggestions.interests?.length) {
-        setInterests(data.suggestions.interests.join(", "))
-      }
-      if (data.suggestions.age_min) setAgeMin(String(data.suggestions.age_min))
-      if (data.suggestions.age_max) setAgeMax(String(data.suggestions.age_max))
-      if (data.suggestions.gender)  setGender(data.suggestions.gender)
-      if (data.suggestions.daily_budget_recommendation) {
-        setDailyBudget(String(data.suggestions.daily_budget_recommendation))
-      }
-    } catch (e) {
-      const err = e instanceof ApiError ? e : null
-      if (err?.status === 402) {
-        setAiError("AI suggestions require a BYOK OpenRouter key. Add yours in Settings.")
-      } else {
-        setAiError(e instanceof Error ? e.message : "AI suggestion failed")
-      }
-    } finally {
-      setGettingAI(false)
-    }
+  const removeLocation = (loc: string) => setLocations(prev => prev.filter(l => l !== loc))
+
+  const handleLaunch = () => {
+    if (launched) return
+    setLaunching(true)
+    setTimeout(() => { setLaunching(false); setLaunched(true) }, 1400)
   }
 
-  async function handleSaveDraft() {
-    const id = await saveDraft()
-    if (id) router.push("/campaigns")
+  const handleSaveDraft = () => {
+    if (draftSaved) return
+    setSavingDraft(true)
+    setTimeout(() => { setSavingDraft(false); setDraftSaved(true) }, 900)
   }
 
-  async function handlePush() {
-    setPushError(null)
-    let id = campaignId
-    if (!id) {
-      id = await saveDraft()
-      if (!id) return
-    }
-    setPushing(true)
-    try {
-      const token = await getToken()
-      if (!token) return
-      await apiClient<{ history_id: string }>(
-        `/api/v1/campaigns/${id}/push`,
-        token,
-        { method: "POST", body: JSON.stringify({ platform }) }
-      )
-      router.push("/actions/logs")
-    } catch (e) {
-      const err = e instanceof ApiError ? e : null
-      if (err?.status === 422) {
-        setPushError(`${platform.charAt(0).toUpperCase() + platform.slice(1)} integration not connected. Connect it in Integrations.`)
-      } else if (err?.status === 400) {
-        setPushError("Campaign must be in draft or paused status to push.")
-      } else {
-        setPushError(e instanceof Error ? e.message : "Push failed")
-      }
-    } finally {
-      setPushing(false)
-    }
+  const handleApplyBoost = () => {
+    if (boostApplied) return
+    setApplyingBoost(true)
+    setTimeout(() => { setApplyingBoost(false); setBoostApplied(true) }, 1200)
   }
+
+  const estReach = platforms.size * 18 + budgetAmount * 0.6
+  const estCPA = biddingStrategy === "auto" ? 4.2 : 5.8
+  const estROAS = biddingStrategy === "auto" ? 4.1 : 3.3
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 pb-12">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Link href="/campaigns">
-          <button className="p-2 rounded-xl hover:bg-surface-container-low text-muted-foreground transition-colors">
-            <ArrowLeft size={18} />
-          </button>
+    <div
+      className="-mx-6 -mt-6 flex flex-col bg-background"
+      style={{ height: "calc(100vh - 4rem)" }}
+    >
+      {/* Topbar */}
+      <div className="shrink-0 h-14 border-b border-border bg-white flex items-center gap-3 px-6">
+        <Link href="/campaigns" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="w-4 h-4" />
+          Back
         </Link>
-        <h1 className="text-2xl font-extrabold text-foreground font-sans">New Campaign</h1>
-        {campaignId && (
-          <span className="ml-auto text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full font-body">
-            Saved as draft
-          </span>
-        )}
-      </div>
-
-      {/* Main form card */}
-      <div className="bg-white rounded-2xl border border-border shadow-sm p-8 space-y-6">
-        {/* Name */}
-        <div>
-          <label className="block text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 font-body">
-            Campaign Name *
-          </label>
+        <div className="w-px h-5 bg-border" />
+        <span className="font-sans font-semibold text-foreground text-sm">Create Campaign</span>
+        <div className="flex-1" />
+        <div className="relative">
+          <Search className="w-4 h-4 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Q3 Growth Push"
-            className="w-full bg-surface-container-low border-none rounded-xl py-3 px-4 text-sm focus:ring-2 ring-primary/20 font-body"
+            className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-border bg-surface-container-low text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary w-48"
+            placeholder="Search creatives…"
           />
         </div>
-
-        {/* Platform */}
-        <div>
-          <label className="block text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 font-body">
-            Platform *
-          </label>
-          <div className="flex gap-3">
-            {PLATFORMS.map((p) => (
-              <button
-                key={p}
-                onClick={() => setPlatform(p)}
-                className={`flex-1 py-3 rounded-xl text-sm font-bold capitalize transition-colors font-body ${
-                  platform === p
-                    ? "bg-primary text-white"
-                    : "bg-surface-container-low text-muted-foreground hover:bg-surface-container-high"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Daily Budget */}
-        <div>
-          <label className="block text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 font-body">
-            Daily Budget (USD)
-          </label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground text-sm">$</span>
-            <input
-              type="number"
-              value={dailyBudget}
-              onChange={(e) => setDailyBudget(e.target.value)}
-              placeholder="500"
-              min="1"
-              className="w-full bg-surface-container-low border-none rounded-xl py-3 pl-8 pr-4 text-sm focus:ring-2 ring-primary/20 font-body"
-            />
-          </div>
-          {suggestions?.daily_budget_recommendation && (
-            <p className="mt-1 text-[11px] text-primary font-semibold font-body">
-              AI recommends: ${suggestions.daily_budget_recommendation.toLocaleString()}/day
-            </p>
-          )}
-        </div>
-
-        {/* Targeting */}
-        <div className="space-y-4">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest font-body">Targeting</p>
-
-          <div>
-            <label className="block text-xs font-semibold text-muted-foreground mb-1 font-body">
-              Interests (comma-separated)
-            </label>
-            <input
-              type="text"
-              value={interests}
-              onChange={(e) => setInterests(e.target.value)}
-              placeholder="fitness, nutrition, wellness"
-              className="w-full bg-surface-container-low border-none rounded-xl py-2.5 px-4 text-sm focus:ring-2 ring-primary/20 font-body"
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1 font-body">Age Min</label>
-              <input
-                type="number"
-                value={ageMin}
-                onChange={(e) => setAgeMin(e.target.value)}
-                className="w-full bg-surface-container-low border-none rounded-xl py-2.5 px-4 text-sm focus:ring-2 ring-primary/20 font-body"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1 font-body">Age Max</label>
-              <input
-                type="number"
-                value={ageMax}
-                onChange={(e) => setAgeMax(e.target.value)}
-                className="w-full bg-surface-container-low border-none rounded-xl py-2.5 px-4 text-sm focus:ring-2 ring-primary/20 font-body"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1 font-body">Gender</label>
-              <select
-                value={gender}
-                onChange={(e) => setGender(e.target.value)}
-                className="w-full bg-surface-container-low border-none rounded-xl py-2.5 px-4 text-sm focus:ring-2 ring-primary/20 font-body"
-              >
-                <option value="all">All</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 font-body">
-            {error}
-          </div>
-        )}
+        <button className="p-2 rounded-lg hover:bg-surface-container-low text-muted-foreground"><Bell className="w-4 h-4" /></button>
+        <button className="p-2 rounded-lg hover:bg-surface-container-low text-muted-foreground"><HelpCircle className="w-4 h-4" /></button>
       </div>
 
-      {/* AI Suggestions panel */}
-      <div className="bg-primary/5 border border-primary/10 rounded-2xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles size={18} className="text-primary" />
-            <h3 className="text-sm font-bold text-foreground font-sans">AI Targeting Suggestions</h3>
+      {/* Body */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Left scrollable */}
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="max-w-3xl mx-auto space-y-6">
+
+            {/* Step 1 — Objective */}
+            <div className="bg-white rounded-2xl border border-border p-6">
+              <StepHeader num={1} label="Campaign Objective" />
+              <div className="grid grid-cols-3 gap-3">
+                {OBJECTIVES.map(obj => (
+                  <button
+                    key={obj.key}
+                    onClick={() => setObjective(obj.key)}
+                    className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-all ${objective === obj.key ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                  >
+                    <div className={`p-2 rounded-lg ${objective === obj.key ? "bg-primary text-white" : "bg-surface-container-low text-muted-foreground"}`}>
+                      {obj.icon}
+                    </div>
+                    <div>
+                      <div className="font-sans font-semibold text-foreground text-sm">{obj.label}</div>
+                      <div className="font-body text-xs text-muted-foreground mt-0.5">{obj.desc}</div>
+                    </div>
+                    {objective === obj.key && <Check className="w-4 h-4 text-primary absolute top-3 right-3" style={{ position: "absolute" }} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Step 2 — Platforms */}
+            <div className="bg-white rounded-2xl border border-border p-6">
+              <StepHeader num={2} label="Platform Selection" />
+              <div className="grid grid-cols-2 gap-3">
+                {ALL_PLATFORMS.map(p => (
+                  <label key={p} className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${platforms.has(p) ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${platforms.has(p) ? "border-primary bg-primary" : "border-border"}`}>
+                      {platforms.has(p) && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <input type="checkbox" className="sr-only" checked={platforms.has(p)} onChange={() => togglePlatform(p)} />
+                    <span className="font-body text-sm font-medium text-foreground">{p}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Step 3 — Budget */}
+            <div className="bg-white rounded-2xl border border-border p-6">
+              <StepHeader num={3} label="Budget Setup" />
+              <div className="flex gap-2 mb-4">
+                {(["daily", "lifetime"] as BudgetType[]).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setBudgetType(t)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${budgetType === t ? "bg-primary text-white" : "bg-surface-container-low text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {t === "daily" ? "Daily Budget" : "Lifetime Budget"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-muted-foreground font-sans font-semibold text-lg">$</span>
+                <input
+                  type="number"
+                  value={budgetAmount}
+                  onChange={e => setBudgetAmount(Number(e.target.value))}
+                  className="w-40 px-4 py-3 rounded-xl border border-border bg-surface-container-low text-foreground font-sans font-bold text-xl focus:outline-none focus:border-primary"
+                />
+                <span className="text-muted-foreground text-sm font-body">per {budgetType === "daily" ? "day" : "campaign"}</span>
+              </div>
+            </div>
+
+            {/* Step 4 — Audience */}
+            <div className="bg-white rounded-2xl border border-border p-6">
+              <StepHeader num={4} label="Audience Targeting" />
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">Locations</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {locations.map(loc => (
+                      <span key={loc} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
+                        {loc}
+                        <button onClick={() => removeLocation(loc)}><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    value={locationInput}
+                    onChange={e => setLocationInput(e.target.value)}
+                    onKeyDown={addLocation}
+                    placeholder="Type a location and press Enter…"
+                    className="w-full px-3 py-2.5 rounded-lg border border-border bg-surface-container-low text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">Age Min</label>
+                    <input type="number" value={ageMin} onChange={e => setAgeMin(Number(e.target.value))}
+                      className="w-full px-3 py-2.5 rounded-lg border border-border bg-surface-container-low text-sm text-foreground focus:outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">Age Max</label>
+                    <input type="number" value={ageMax} onChange={e => setAgeMax(Number(e.target.value))}
+                      className="w-full px-3 py-2.5 rounded-lg border border-border bg-surface-container-low text-sm text-foreground focus:outline-none focus:border-primary" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">Interests</label>
+                  <textarea
+                    value={interests}
+                    onChange={e => setInterests(e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2.5 rounded-lg border border-border bg-surface-container-low text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Step 5 — Creatives */}
+            <div className="bg-white rounded-2xl border border-border p-6">
+              <StepHeader num={5} label="Creative Selection" />
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {CREATIVE_GRADIENTS.map((grad, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setSelectedCreative(i)}
+                    className={`relative rounded-xl overflow-hidden border-2 transition-all ${selectedCreative === i ? "border-primary" : "border-transparent"}`}
+                  >
+                    <div className="aspect-square" style={{ background: grad }} />
+                    <div className="p-2 text-left">
+                      <div className="text-xs font-medium text-foreground truncate">{CREATIVE_LABELS[i]}</div>
+                    </div>
+                    {selectedCreative === i && (
+                      <div className="absolute top-2 right-2 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                        <Check className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-primary/40 text-primary text-sm font-medium hover:bg-primary/5 transition-colors w-full justify-center">
+                <Sparkles className="w-4 h-4" />
+                Generate New AI Creative
+              </button>
+            </div>
+
+            {/* Step 6 — Bidding */}
+            <div className="bg-white rounded-2xl border border-border p-6">
+              <StepHeader num={6} label="Bidding Strategy" />
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setBiddingStrategy("auto")}
+                  className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-all ${biddingStrategy === "auto" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                >
+                  <div className={`p-2 rounded-lg ${biddingStrategy === "auto" ? "bg-primary text-white" : "bg-surface-container-low text-muted-foreground"}`}>
+                    <Zap className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-sans font-semibold text-foreground text-sm">Auto-Optimized</div>
+                    <div className="font-body text-xs text-muted-foreground mt-0.5">AI adjusts bids for best ROAS</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setBiddingStrategy("manual")}
+                  className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-all ${biddingStrategy === "manual" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                >
+                  <div className={`p-2 rounded-lg ${biddingStrategy === "manual" ? "bg-primary text-white" : "bg-surface-container-low text-muted-foreground"}`}>
+                    <Settings2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-sans font-semibold text-foreground text-sm">Manual</div>
+                    <div className="font-body text-xs text-muted-foreground mt-0.5">You control max bid amounts</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
           </div>
-          <button
-            onClick={handleGetAI}
-            disabled={gettingAI || !name.trim()}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold font-body hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {gettingAI ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-            {gettingAI ? "Generating…" : "Get AI Suggestions"}
-          </button>
         </div>
 
-        {aiError && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 font-body">
-            {aiError}
-            {aiError.includes("BYOK") && (
-              <Link href="/settings" className="ml-2 underline font-bold">
-                Go to Settings →
-              </Link>
-            )}
-          </div>
-        )}
+        {/* Right panel */}
+        <div className="w-96 shrink-0 border-l border-border bg-white overflow-y-auto">
+          <div className="p-5 space-y-5">
+            <h3 className="font-sans font-semibold text-foreground text-sm">Campaign Preview</h3>
 
-        {suggestions ? (
-          <div className="space-y-3">
-            <p className="text-[11px] text-primary font-bold font-body uppercase tracking-wide">
-              Suggestions applied to form
-            </p>
-            {suggestions.rationale && (
-              <p className="text-xs text-muted-foreground leading-relaxed font-body">
-                {suggestions.rationale}
+            {/* Est Reach */}
+            <div className="bg-surface-container-low rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground font-body">Est. Daily Reach</span>
+                <span className="font-sans font-bold text-foreground">{Math.round(estReach).toLocaleString()}</span>
+              </div>
+              <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{ width: `${Math.min(100, (platforms.size / 4) * 100)}%` }}
+                />
+              </div>
+              <div className="text-xs text-muted-foreground mt-1.5 font-body">{platforms.size} platform{platforms.size !== 1 ? "s" : ""} selected</div>
+            </div>
+
+            {/* CPA / ROAS */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-surface-container-low rounded-xl p-3 text-center">
+                <div className="text-xs text-muted-foreground font-body mb-1">Est. CPA</div>
+                <div className="font-sans font-bold text-foreground text-lg">${estCPA}</div>
+              </div>
+              <div className="bg-surface-container-low rounded-xl p-3 text-center">
+                <div className="text-xs text-muted-foreground font-body mb-1">Est. ROAS</div>
+                <div className="font-sans font-bold text-primary text-lg">{estROAS}x</div>
+              </div>
+            </div>
+
+            {/* Funnel Allocation */}
+            <div>
+              <div className="text-xs text-muted-foreground font-body mb-2">Funnel Allocation</div>
+              <div className="flex h-3 rounded-full overflow-hidden gap-0.5">
+                <div className="bg-primary" style={{ width: "50%" }} />
+                <div className="bg-blue-400" style={{ width: "30%" }} />
+                <div className="bg-blue-200" style={{ width: "20%" }} />
+              </div>
+              <div className="flex gap-4 mt-2">
+                {[["Conversion", "50%", "bg-primary"], ["Traffic", "30%", "bg-blue-400"], ["Awareness", "20%", "bg-blue-200"]].map(([label, pct, bg]) => (
+                  <div key={label} className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${bg}`} />
+                    <span className="text-xs text-muted-foreground font-body">{label} {pct}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* AI Recommendation */}
+            <div
+              className="rounded-xl p-4"
+              style={{ background: "linear-gradient(135deg,#05345c,#005bc4)" }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-blue-300" />
+                <span className="text-white text-xs font-sans font-semibold">AI Recommendation</span>
+              </div>
+              <p className="text-blue-100 text-xs font-body leading-relaxed mb-3">
+                {biddingStrategy === "auto"
+                  ? "Your auto-bid setup looks strong. Consider adding TikTok for +22% reach at minimal CPA increase."
+                  : "Manual bidding detected. Switch to Auto-Optimized to save ~18% on CPA while maintaining ROAS targets."}
               </p>
-            )}
-            <div className="flex flex-wrap gap-1">
-              {suggestions.interests.map((i) => (
-                <span key={i} className="text-[11px] font-semibold px-2 py-0.5 bg-white border border-primary/20 rounded-full text-primary font-body">
-                  {i}
-                </span>
+              <button
+                onClick={handleApplyBoost}
+                disabled={applyingBoost || boostApplied}
+                className="w-full py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
+              >
+                {applyingBoost ? (
+                  <><span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /><span>Applying…</span></>
+                ) : boostApplied ? (
+                  <><Check className="w-3 h-3" /><span>Applied!</span></>
+                ) : (
+                  <><Zap className="w-3 h-3" /><span>Apply AI Boost</span></>
+                )}
+              </button>
+            </div>
+
+            {/* Summary checklist */}
+            <div className="bg-surface-container-low rounded-xl p-4 space-y-2">
+              <div className="text-xs font-medium text-foreground font-sans mb-3">Ready to Launch?</div>
+              {[
+                ["Objective set", true],
+                [`${platforms.size} platform${platforms.size !== 1 ? "s" : ""} selected`, platforms.size > 0],
+                ["Budget configured", budgetAmount > 0],
+                ["Audience defined", locations.length > 0],
+                ["Creative selected", true],
+                ["Bidding strategy set", true],
+              ].map(([label, ok]) => (
+                <div key={label as string} className="flex items-center gap-2">
+                  <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${ok ? "bg-emerald-500" : "bg-surface-container-high"}`}>
+                    {ok && <Check className="w-2.5 h-2.5 text-white" />}
+                  </div>
+                  <span className={`text-xs font-body ${ok ? "text-foreground" : "text-muted-foreground"}`}>{label as string}</span>
+                </div>
               ))}
             </div>
           </div>
-        ) : (
-          <p className="text-xs text-muted-foreground font-body">
-            Enter a campaign name and click "Get AI Suggestions" to receive personalized targeting recommendations based on your historical ROAS data.
-          </p>
-        )}
+        </div>
       </div>
 
-      {/* Push error */}
-      {pushError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 font-body">
-          {pushError}
-          {pushError.includes("integration not connected") && (
-            <Link href="/integrations" className="ml-2 underline font-bold">
-              Connect Integration →
-            </Link>
-          )}
+      {/* Footer */}
+      <div className="shrink-0 h-14 border-t border-border bg-white flex items-center gap-3 px-6">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground font-body">
+          <Cloud className="w-3.5 h-3.5" />
+          Changes saved automatically
         </div>
-      )}
-
-      {/* Action buttons */}
-      <div className="flex items-center gap-3 justify-end">
+        <div className="flex-1" />
         <button
           onClick={handleSaveDraft}
-          disabled={saving || !name.trim()}
-          className="flex items-center gap-2 px-5 py-2.5 border border-border rounded-xl text-sm font-bold font-body hover:bg-surface-container-low transition-colors disabled:opacity-50"
+          disabled={savingDraft}
+          className="px-5 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-surface-container-low transition-colors flex items-center gap-2 disabled:opacity-60"
         >
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          Save Draft
+          {savingDraft ? (
+            <><span className="w-3.5 h-3.5 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" /><span>Saving…</span></>
+          ) : draftSaved ? (
+            <><Check className="w-3.5 h-3.5 text-emerald-500" /><span>Draft Saved</span></>
+          ) : "Save Draft"}
         </button>
         <button
-          onClick={handlePush}
-          disabled={pushing || saving || !name.trim()}
-          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-bold font-body shadow-md hover:opacity-90 transition-all disabled:opacity-50"
+          onClick={handleLaunch}
+          disabled={launching || launched}
+          className="px-6 py-2 rounded-lg text-sm font-semibold text-white flex items-center gap-2 transition-all disabled:opacity-70"
+          style={{ background: launched ? "#059669" : "linear-gradient(135deg,#005bc4,#3b82f6)" }}
         >
-          {pushing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-          {pushing ? "Pushing…" : `Push to ${platform.charAt(0).toUpperCase() + platform.slice(1)}`}
+          {launching ? (
+            <><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /><span>Launching…</span></>
+          ) : launched ? (
+            <><Check className="w-3.5 h-3.5" /><span>Launched!</span></>
+          ) : (
+            <><Zap className="w-3.5 h-3.5" /><span>Launch Campaign</span></>
+          )}
         </button>
       </div>
     </div>
