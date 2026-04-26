@@ -1,12 +1,78 @@
 actions-overview.md
 
-PAGE: dashboard/actions/page.tsx
+🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+
+* NO direct AI calls from frontend
+* NO AI generation on GET requests
+* NO “if missing → generate”
+* AI only triggered via POST endpoints
+* ALL AI responses must be cached
+
+CACHE:
+
+* required for all AI outputs
+* key: org_id + entity_id + type
+
+RATE LIMIT:
+
+* per user
+* per org
+* prevent duplicate execution within 60s
+
+⸻
+
+🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+
+* NO local database
+* NO prisma migrations
+* NO mock data in production
+* ALL tables must exist in Supabase
+* ALL writes go through Supabase API / RPC
+
+⸻
+
+🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+
+* OpenRouter keys
+* BYOK users
+* external APIs
+
+RULES:
+
+* NEVER expose keys to frontend
+* NEVER log secrets
+* fetch at runtime only
+
+⸻
+
+⚡ AI EXECUTION RULE
+
+* AI must NEVER run on page load
+* AI must be triggered ONLY by user action
+* AI must be cached after execution
+
+⸻
+
+PAGE: actions/page.tsx
 
 ⸻
 
 🧩 1. UI → Data Mapping
 
-Pending Actions:
+Pending Actions
 
 * id
 * title
@@ -18,7 +84,7 @@ Pending Actions:
 
 ⸻
 
-Recommended Actions:
+Recommended Actions
 
 * id
 * title
@@ -27,9 +93,15 @@ Recommended Actions:
 * confidence
 * effort
 
+RULES:
+
+* recommendations are advisory ONLY
+* MUST NOT be executable directly
+* MUST go through execution flow
+
 ⸻
 
-Executed Actions (History):
+Executed Actions (History)
 
 * id
 * title
@@ -39,7 +111,7 @@ Executed Actions (History):
 
 ⸻
 
-Filters:
+Filters
 
 * platform
 * urgency
@@ -47,47 +119,58 @@ Filters:
 
 ⸻
 
-Bulk Actions:
+Bulk Actions
 
 * selected_ids[]
-* action_type (execute / schedule)
+* action_type (execute | schedule)
+
+RULES:
+
+* bulk execution MUST validate each action individually
+* MUST stop execution if any action is HIGH risk
+* MUST require confirmation before execution
+* MUST support partial success (not all-or-nothing)
 
 ⸻
 
 🧱 2. Data Shape (Normalized)
 
 type Action = {
-  id: string
-  title: string
-  description: string
+id: string
+title: string
+description: string
 
-  source: "decision" | "automation" | "manual"
-  platform: "meta" | "google" | "tiktok"
+source: “decision” | “automation” | “manual”
+platform: “meta” | “google” | “tiktok”
 
-  impact_score: number
-  urgency: "low" | "medium" | "high"
-  effort: "low" | "medium" | "high"
+impact_score: number
+urgency: “low” | “medium” | “high”
+effort: “low” | “medium” | “high”
 
-  confidence?: number
+confidence?: number
 
-  status: "pending" | "executed" | "failed"
+risk_level?: “low” | “medium” | “high”
+validation_passed?: boolean
 
-  created_at: string
-  executed_at?: string
+status: “pending” | “executed” | “failed” | “blocked”
 
-  performance_delta?: number
+created_at: string
+executed_at?: string
+
+performance_delta?: number
 }
 
 type ActionsResponse = {
-  pending: Action[]
-  recommended: Action[]
-  history: Action[]
+pending: Action[]
+recommended: Action[]
+history: Action[]
 }
-
 
 ⸻
 
 🌐 3. API Contracts
+
+Get Actions
 
 GET /api/v1/actions
 
@@ -102,9 +185,20 @@ ActionsResponse
 
 ⸻
 
+Execute Action
+
 POST /api/v1/actions/:id/execute
 
+RULES:
+
+* MUST require user confirmation
+* MUST pass validation layer
+* MUST include risk evaluation
+* MUST NOT execute if risk = HIGH (unless override)
+
 ⸻
+
+Bulk Execute
 
 POST /api/v1/actions/bulk
 
@@ -112,9 +206,24 @@ Body:
 
 * action_ids[]
 
+RULES:
+
+* MUST validate each action individually
+* MUST stop unsafe actions
+* MUST log per-action result
+* MUST support partial execution
+
 ⸻
 
+Schedule Action
+
 POST /api/v1/actions/:id/schedule
+
+RULES:
+
+* MUST validate before scheduling
+* MUST store schedule safely
+* MUST NOT execute immediately
 
 ⸻
 
@@ -144,62 +253,106 @@ action_logs
 * status
 * result
 * performance_delta
+* risk_level
+* validation_passed
 * timestamp
 
 ⸻
 
 ⚙️ 5. Execution Logic
 
-Priority:
+Priority
 
 priority = impact_score × urgency_weight
 
 ⸻
 
-Execution Flow:
+Execution Flow
 
-* validate action
-* check API availability
-* execute
-* log result
-* update metrics
-
-⸻
-
-💳 6. Credits System
-
-execute action → consumes credits
-
-bulk execution → higher cost
-
-⸻
-
-🧠 7. AI Usage Classification
-
-action_generation → MEDIUM
-execution → NONE
+1. user triggers execution
+2. confirmation modal appears
+3. validation layer:
+    * check API availability
+    * check platform constraints
+    * check risk level
+4. execution decision:
+    * approved → execute
+    * blocked → log only
+    * pending → require approval
+5. execute action
+6. log result
+7. update metrics
 
 ⸻
 
-📊 8. Marketing Rules
+🧠 6. AI Layer
 
-if impact_score high + effort low → auto execute suggestion
+AI Usage
 
-if urgency high → push to top
+* action generation (backend only)
+* recommendations (precomputed or cached)
 
-if repeated action → suggest automation
+RULES:
+
+* NO AI execution in UI
+* NO AI on GET
+* ALL AI must be cached
 
 ⸻
 
-🧾 9. Comments (FOR CLAUDE)
+🧠 AI Cost Protection
+
+* actions generated periodically (not per request)
+* reused across sessions
+* regenerated manually or via background jobs
+
+⸻
+
+💳 7. Credits System
+
+* execute action → consumes credits
+* bulk execution → higher cost
+* viewing actions → FREE
+
+⸻
+
+🧠 8. AI Usage Classification
+
+* action_generation → MEDIUM
+* execution → NONE
+
+⸻
+
+📊 9. Marketing Rules
+
+* if impact_score high + effort low → suggest for execution (manual approval required)
+* if urgency high → push to top
+* if repeated action → suggest automation
+
+NOTE:
+
+* rules generate suggestions ONLY
+* NEVER trigger execution
+
+⸻
+
+⚠️ Execution Rules
+
+* ALL actions require explicit trigger
+* NO auto-execution from UI
+* suggestions are NOT executable directly
+* ALL executions must pass validation + approval
+
+⸻
+
+🧾 10. Comments (FOR CLAUDE)
 
 Replace static UI with:
-
 GET /api/v1/actions
 
 ⸻
 
-Requirements:
+Requirements
 
 * loading state
 * error state
@@ -207,32 +360,31 @@ Requirements:
 
 ⸻
 
-Important:
+Security
+
+* filter by org_id
+* no cross-org execution
+
+⸻
+
+Performance
+
+* cache actions list
+* debounce bulk operations
+
+⸻
+
+Important
 
 * backend handles execution
 * frontend triggers only
+* NO direct execution from UI
 
 ⸻
 
-Security:
-
-* filter by org_id
-
-⸻
-
-Performance:
-
-* cache actions list
-
-⸻
-
-Future:
+Future
 
 feeds:
 
 * automation engine
 * decision feedback loop
-
-⸻
-
-✅ DONE

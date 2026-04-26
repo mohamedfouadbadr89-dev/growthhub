@@ -1,6 +1,6 @@
 decisions-alerts.md
 
-PAGE: dashboard/decisions/alerts/page.tsx
+PAGE: decisions/alerts/page.tsx
 
 ⸻
 

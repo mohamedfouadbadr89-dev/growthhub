@@ -1,6 +1,6 @@
 decisions-overview.md
 
-PAGE: dashboard/decisions/page.tsx
+PAGE: decisions/page.tsx
 
 ⸻
 

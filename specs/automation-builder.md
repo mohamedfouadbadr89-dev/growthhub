@@ -1,12 +1,76 @@
 automation-builder.md
 
+🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+
+* NO direct AI calls from frontend
+* NO AI generation on GET requests
+* NO “if missing → generate”
+* AI only triggered via POST endpoints
+* ALL AI responses must be cached
+
+CACHE:
+
+* required for all AI outputs
+* key: org_id + entity_id + type
+
+RATE LIMIT:
+
+* per user
+* per org
+* prevent duplicate execution within 60s
+
+⸻
+
+🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+
+* NO local database
+* NO prisma migrations
+* NO mock data in production
+* ALL tables must exist in Supabase
+* ALL writes go through Supabase API / RPC
+
+⸻
+
+🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+
+* OpenRouter keys
+* BYOK users
+* external APIs
+
+RULES:
+
+* NEVER expose keys to frontend
+* NEVER log secrets
+* fetch at runtime only
+
+⸻
+
+⚡ AI EXECUTION RULE
+
+* AI must NEVER run on page load
+* AI must be triggered ONLY by user action
+* AI must be cached after execution
+
+⸻
+
 PAGE: automation/builder/page.tsx
 
 ⸻
 
 🧩 1. UI → Data Mapping
-
-⸻
 
 Canvas (Workflow Builder)
 
@@ -28,15 +92,17 @@ Connections
 
 ⸻
 
-⸻
-
 Top Actions
 
 * test_workflow
 * save_draft
 * activate_workflow
 
-⸻
+RULES:
+
+* activate_workflow MUST NOT execute immediately
+* MUST pass validation + approval before activation
+* test_workflow MUST NOT affect real campaigns
 
 ⸻
 
@@ -45,7 +111,11 @@ AI Builder Input
 * prompt_input
 * suggestions[]
 
-⸻
+RULES:
+
+* AI generation MUST be user-triggered
+* suggestions MUST be cached
+* NO auto-generation
 
 ⸻
 
@@ -67,55 +137,56 @@ Rule Config
 
 ⸻
 
-⸻
-
 Logic Preview
 
 * parsed_logic_tree
 
 ⸻
 
-⸻
-
 🧱 2. Data Shape
 
-
 type AutomationWorkflow = {
-  id: string
-  name: string
-  status: "draft" | "active" | "paused"
+id: string
+name: string
+status: “draft” | “active” | “paused”
 
-  nodes: {
-    id: string
-    type: "trigger" | "condition" | "action"
-    position: { x: number; y: number }
+nodes: {
+id: string
+type: “trigger” | “condition” | “action”
+position: { x: number; y: number }
+data: {
+  title: string
+  description?: string
 
-    data: {
-      title: string
-      description?: string
+  config: {
+    metric?: string
+    operator?: ">" | "<" | "="
+    value?: number
+    timeframe?: string
 
-      config: {
-        metric?: string
-        operator?: ">" | "<" | "="
-        value?: number
-        timeframe?: string
+    action_type?: string
+    action_value?: number
+    target?: string
+  }
+}
+}[]
 
-        action_type?: string
-        action_value?: number
-        target?: string
-      }
-    }
-  }[]
+edges: {
+from: string
+to: string
+}[]
 
-  edges: {
-    from: string
-    to: string
-  }[]
-
-  created_at: string
-  updated_at: string
+validation?: {
+passed: boolean
+errors?: string[]
+risk_level?: “low” | “medium” | “high”
 }
 
+created_at: string
+updated_at: string
+}
+
+⸻
 
 🌐 3. API Contracts
 
@@ -123,25 +194,54 @@ Create Workflow
 
 POST /api/v1/automation/workflows
 
+⸻
+
 Update Workflow
 
 PUT /api/v1/automation/workflows/:id
+
+⸻
 
 Get Workflow
 
 GET /api/v1/automation/workflows/:id
 
+⸻
+
 Activate Workflow
 
 POST /api/v1/automation/workflows/:id/activate
+
+RULES:
+
+* MUST pass validation layer
+* MUST check risk level
+* MUST require approval for medium/high risk
+* MUST NOT auto-execute actions on activation
+
+⸻
 
 Test Workflow
 
 POST /api/v1/automation/workflows/:id/test
 
+RULES:
+
+* simulation only
+* MUST NOT affect real campaigns
+* MUST NOT execute real actions
+
+⸻
+
 AI Generate Workflow
 
 POST /api/v1/automation/workflows/generate
+
+RULES:
+
+* user-triggered only
+* cached per prompt
+* rate-limited
 
 Input:
 
@@ -149,11 +249,7 @@ Input:
 
 ⸻
 
-⸻
-
 🗄️ 4. DB Schema
-
-⸻
 
 automation_workflows
 
@@ -177,18 +273,34 @@ automation_versions
 
 ⸻
 
+validation_logs
+
+* id
+* workflow_id
+* errors
+* risk_level
+* created_at
+
 ⸻
 
 ⚙️ 5. Execution Logic
 
+Workflow Engine (SAFE)
+
+1. trigger fires
+2. evaluate condition nodes
+3. validation layer:
+    * check constraints
+    * check risk level
+    * check action safety
+4. execution decision:
+    * if approved → allow execution
+    * if blocked → log only
+    * if pending → wait approval
+5. execution handled by execution engine (NOT builder)
+6. log result
+
 ⸻
-
-Workflow Engine
-
-1. trigger fires  
-2. evaluate condition nodes  
-3. if true → execute action  
-4. log result  
 
 Node Execution
 
@@ -200,9 +312,10 @@ Trigger
 
 Condition
 
-if metric operator value → pass
-else → stop
+* if metric operator value → pass
+* else → stop
 
+⸻
 
 Action
 
@@ -211,13 +324,14 @@ Action
 * send notification
 * trigger webhook
 
-⸻
+RULES:
+
+* MUST NOT execute inside builder
+* MUST be executed via execution engine only
 
 ⸻
 
 🧠 6. AI Layer
-
-⸻
 
 AI Builder
 
@@ -226,10 +340,7 @@ Input:
 * natural language prompt
 
 Example:
-
-"Pause campaigns with low ROAS"
-
-⸻
+“Pause campaigns with low ROAS”
 
 Output:
 
@@ -238,12 +349,36 @@ Output:
 
 ⸻
 
-Suggestions
+AI Builder Rules
 
-* prebuilt prompts
-* strategy-based shortcuts
+* AI generates draft workflows ONLY
+* workflows MUST be reviewed before activation
+* NO auto-activation
+* NO execution permissions
 
 ⸻
+
+⚠️ Validation Layer
+
+* validate all nodes before activation
+* block unsafe actions (budget spikes, full shutdowns)
+* enforce platform constraints
+
+⸻
+
+🔒 Activation Rules
+
+* activation requires validation pass
+* high-impact workflows require approval
+* unsafe workflows MUST be blocked
+
+⸻
+
+🧠 AI Cost Protection
+
+* generation triggered manually
+* cached per prompt
+* reused across sessions
 
 ⸻
 
@@ -255,40 +390,37 @@ Suggestions
 
 ⸻
 
-⸻
-
 🧠 8. AI Usage Classification
 
 * workflow_generation → MEDIUM
 * node_suggestions → LOW
-
-⸻
+* execution → NONE
 
 ⸻
 
 📊 9. Marketing Rules
 
-⸻
+Example Logic:
 
-Example Logic
+* if ROAS < 2.5 → reduce budget
+* if ROAS > 3 → scale
+* if frequency > 3.5 → rotate creatives
 
-if ROAS < 2.5 → reduce budget  
-if ROAS > 3 → scale  
-if frequency > 3.5 → rotate creatives  
+NOTE:
 
-⸻
+* rules generate logic ONLY
+* NEVER trigger execution
 
 ⸻
 
 🧾 10. Comments (FOR CLAUDE)
 
-⸻
-
 Replace static UI with:
-
 GET /api/v1/automation/workflows/:id
 
-Requirements:
+⸻
+
+UX Requirements
 
 * drag & drop nodes
 * connect nodes visually
@@ -297,21 +429,22 @@ Requirements:
 
 ⸻
 
-Security:
+Security
 
 * org_id isolation
 * validate actions before execution
 
 ⸻
 
-Performance:
+Performance
 
 * debounce updates
 * autosave draft
 
 ⸻
 
-Important:
+Important
 
 * workflows must be saved before activation
-* test mode must NOT affect real campaigns
+* test mode MUST NOT affect real campaigns
+* builder MUST NOT execute actions directly

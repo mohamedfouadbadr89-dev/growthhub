@@ -1,5 +1,64 @@
 decisions-detail.md
 
+## 🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+- ❌ NO direct AI calls from frontend
+- ❌ NO AI generation on GET requests
+- ❌ NO "if missing → generate"
+- ✅ AI only triggered via POST endpoints
+- ✅ ALL AI responses must be cached
+
+CACHE:
+- required for all AI outputs
+- key: org_id + entity_id + type
+
+RATE LIMIT:
+- per user
+- per org
+- prevent duplicate execution within 60s
+
+---
+
+## 🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+- ❌ NO local database
+- ❌ NO prisma migrations
+- ❌ NO mock data in production
+- ✅ ALL tables must exist in Supabase
+- ✅ ALL writes go through Supabase API / RPC
+
+---
+
+## 🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+- OpenRouter keys
+- BYOK users
+- external APIs
+
+RULES:
+- ❌ NEVER expose keys to frontend
+- ❌ NEVER log secrets
+- ✅ fetch at runtime only
+
+---
+
+## ⚡ AI EXECUTION RULE
+
+- AI must NEVER run on page load
+- AI must be triggered ONLY by user action
+- AI must be cached after execution
+
+
 PAGE: dashboard/decisions/[id]/page.tsx
 
 ⸻
@@ -17,8 +76,7 @@ Header:
 
 AI Reasoning:
 
-* reasoning_text
-
+Decision Reasoning (precomputed explanation)
 ⸻
 
 Causal Analysis:
@@ -158,7 +216,20 @@ Purpose:
 
 ⸻
 
-POST /api/v1/decisions/:id/simulate
+POST /api/v1/decisions/:id/simulate (optional, backend only)
+
+RULES:
+- rate-limited
+- NOT auto-triggered
+- requires explicit user action
+
+## ⚠️ Cost Protection
+
+- simulation is NOT auto-run
+- UI must not trigger simulation on load
+- cache simulation results
+- reuse existing results if available
+
 
 Purpose:
 
@@ -269,14 +340,7 @@ detect correlation between:
 
 ⸻
 
-Simulation Engine:
-
-simulate:
-
-* revenue change
-* cost efficiency
-* ROAS impact
-
+Simulation (PRECOMPUTED ONLY)
 ⸻
 
 Risk Engine:
@@ -395,6 +459,17 @@ feeds:
 * predictive optimization
 
 ⸻
+
+## 🧠 AI Layer
+
+SOURCE: BACKEND ONLY
+
+RULES:
+- simulation MUST be precomputed
+- NO live AI calls
+- NO on-demand simulation from frontend
+- NO Claude generation allowed
+
 
 ✅ DONE
 

@@ -12,6 +12,7 @@
     "@clerk/nextjs": "^7.2.3",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.3",
+    "@tailwindcss/forms": "^0.5.11",
     "@tremor/react": "^3.18.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

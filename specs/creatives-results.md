@@ -1,6 +1,6 @@
 creatives-results.md
 
-PAGE: dashboard/creatives/page.tsx
+PAGE: creatives/page.tsx
 
 ⸻
 

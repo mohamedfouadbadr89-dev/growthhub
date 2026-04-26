@@ -1,6 +1,64 @@
 action-detail.md
+## 🔒 SYSTEM ENFORCEMENT LAYER
 
-PAGE: dashboard/actions/[id]/page.tsx
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+- ❌ NO direct AI calls from frontend
+- ❌ NO AI generation on GET requests
+- ❌ NO "if missing → generate"
+- ✅ AI only triggered via POST endpoints
+- ✅ ALL AI responses must be cached
+
+CACHE:
+- required for all AI outputs
+- key: org_id + entity_id + type
+
+RATE LIMIT:
+- per user
+- per org
+- prevent duplicate execution within 60s
+
+---
+
+## 🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+- ❌ NO local database
+- ❌ NO prisma migrations
+- ❌ NO mock data in production
+- ✅ ALL tables must exist in Supabase
+- ✅ ALL writes go through Supabase API / RPC
+
+---
+
+## 🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+- OpenRouter keys
+- BYOK users
+- external APIs
+
+RULES:
+- ❌ NEVER expose keys to frontend
+- ❌ NEVER log secrets
+- ✅ fetch at runtime only
+
+---
+
+## ⚡ AI EXECUTION RULE
+
+- AI must NEVER run on page load
+- AI must be triggered ONLY by user action
+- AI must be cached after execution
+
+
+PAGE: actions/[id]/page.tsx
 
 ⸻
 
@@ -103,9 +161,11 @@ Response:
 ActionDetail
 
 ⸻
+POST /actions/:id/execute
 
-POST /api/v1/actions/:id/execute
-
+RULES:
+- requires confirmation if risk ≥ medium
+- blocked if risk = high (unless override)
 ⸻
 
 🗄️ 4. DB Schema
@@ -116,8 +176,11 @@ extends actions + action_logs
 
 ⚙️ 5. Execution Logic
 
-simulate before execute
+## 🧠 Simulation Rules
 
+- simulation is BACKEND ONLY
+- MUST NOT auto-trigger
+- runs only on explicit user request
 if risk high → require confirmation
 
 ⸻
@@ -148,6 +211,17 @@ if risk high → block auto execution
 backend owns simulation
 
 ⸻
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
 
 ✅ DONE
 
