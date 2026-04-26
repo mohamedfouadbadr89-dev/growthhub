@@ -1,267 +1,334 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import Link from "next/link";
-import { useAuth } from "@clerk/nextjs";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { useState } from "react"
 import {
-  ArrowLeft,
-  Globe,
-  MousePointerClick,
-  Store,
-  Lock,
-  Key,
-  CheckCircle2,
-  Zap,
-  Clock,
-  CalendarDays,
-  ChevronsRight,
-  Loader2,
-  AlertCircle,
-} from "lucide-react";
+  Search, Bell, History, ShoppingBag, BarChart2, Cloud,
+  CloudOff, Loader2, Check, Sparkles,
+} from "lucide-react"
 
-const PLATFORMS = [
-  { key: "meta",    Icon: Globe,             iconColor: "text-primary",   label: "Meta Ads",   sub: "Facebook & Instagram" },
-  { key: "google",  Icon: MousePointerClick, iconColor: "text-red-500",   label: "Google Ads", sub: "Search & Display" },
-  { key: "shopify", Icon: Store,             iconColor: "text-green-600", label: "Shopify",    sub: "E-commerce Data" },
-] as const;
+type Category = "All" | "Ads Platforms" | "Analytics" | "Data" | "CRM"
+type StatusFilter = "all" | "connected" | "not-connected"
 
-type Platform = typeof PLATFORMS[number]["key"];
+interface Integration {
+  id: string
+  name: string
+  desc: string
+  category: Category
+  connected: boolean
+  entities: string[]
+  iconBg: string
+  iconColor: string
+  icon: React.ReactNode
+}
 
-const PERMISSIONS = [
-  { label: "Campaign data",       sub: "Read access to structures and settings" },
-  { label: "Ad performance",      sub: "Real-time delivery and spend metrics" },
-  { label: "Conversion tracking", sub: "Pixel and event measurement data" },
-];
+const INTEGRATIONS: Integration[] = [
+  {
+    id: "meta",
+    name: "Meta Ads",
+    desc: "Automate ad spend optimizations and creative rotations across FB and Instagram.",
+    category: "Ads Platforms",
+    connected: true,
+    entities: ["Campaigns", "Creatives"],
+    iconBg: "bg-blue-50",
+    iconColor: "text-blue-600",
+    icon: <Sparkles className="w-6 h-6" />,
+  },
+  {
+    id: "google-ads",
+    name: "Google Ads",
+    desc: "Execution for Search, Display, and Video campaigns based on real-time ROI.",
+    category: "Ads Platforms",
+    connected: true,
+    entities: ["Campaigns", "Keywords"],
+    iconBg: "bg-amber-50",
+    iconColor: "text-amber-600",
+    icon: <BarChart2 className="w-6 h-6" />,
+  },
+  {
+    id: "tiktok",
+    name: "TikTok Ads",
+    desc: "Leverage high-velocity creative testing and automated bid management.",
+    category: "Ads Platforms",
+    connected: false,
+    entities: ["Creatives", "Events"],
+    iconBg: "bg-slate-900",
+    iconColor: "text-white",
+    icon: <Sparkles className="w-6 h-6" />,
+  },
+  {
+    id: "snapchat",
+    name: "Snapchat Ads",
+    desc: "Reach younger demographics with automated Snap-native creative execution.",
+    category: "Ads Platforms",
+    connected: false,
+    entities: ["Campaigns"],
+    iconBg: "bg-yellow-400",
+    iconColor: "text-black",
+    icon: <Cloud className="w-6 h-6" />,
+  },
+  {
+    id: "shopify",
+    name: "Shopify",
+    desc: "Pull first-party order data to fuel precision AI optimization algorithms.",
+    category: "Data",
+    connected: true,
+    entities: ["Orders", "Customers"],
+    iconBg: "bg-emerald-50",
+    iconColor: "text-emerald-600",
+    icon: <ShoppingBag className="w-6 h-6" />,
+  },
+  {
+    id: "ga4",
+    name: "Google Analytics 4",
+    desc: "Track events and user behavior to inform cross-channel execution decisions.",
+    category: "Analytics",
+    connected: true,
+    entities: ["Events", "Audiences"],
+    iconBg: "bg-orange-50",
+    iconColor: "text-orange-600",
+    icon: <BarChart2 className="w-6 h-6" />,
+  },
+]
 
-const SYNC_OPTIONS = [
-  { key: "daily",    Icon: CalendarDays, label: "Daily",    sub: "Automated daily sync at 2am UTC." },
-  { key: "manual",   Icon: Zap,          label: "+ Manual", sub: "Trigger on-demand from the Integrations page." },
-  { key: "backfill", Icon: Clock,        label: "30-day",   sub: "Historical backfill covers the last 30 days." },
-];
+const CATEGORIES: Category[] = ["All", "Ads Platforms", "Analytics", "Data", "CRM"]
 
-export default function ConnectIntegrationPage() {
-  const { getToken } = useAuth();
-  const [selectedPlatform, setSelectedPlatform] = useState<Platform>("meta");
-  const [shopDomain, setShopDomain] = useState("");
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const API_STATUS = [
+  { label: "Meta Graph", status: "healthy", uptime: "99.9%", icon: <Cloud className="w-4 h-4 text-blue-600" /> },
+  { label: "Google Ads", status: "delayed", uptime: "Delayed", icon: <Cloud className="w-4 h-4 text-amber-500" /> },
+  { label: "TikTok API", status: "offline", uptime: "Offline", icon: <CloudOff className="w-4 h-4 text-muted-foreground" /> },
+]
 
-  const handleConnect = async () => {
-    setError(null);
+export default function IntegrationsConnectPage() {
+  const [category, setCategory] = useState<Category>("All")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+  const [search, setSearch] = useState("")
+  const [connected, setConnected] = useState<Set<string>>(
+    new Set(INTEGRATIONS.filter(i => i.connected).map(i => i.id))
+  )
+  const [connecting, setConnecting] = useState<Set<string>>(new Set())
+  const [disconnecting, setDisconnecting] = useState<Set<string>>(new Set())
 
-    if (selectedPlatform === "shopify" && !shopDomain.trim()) {
-      setError("Please enter your Shopify store URL.");
-      return;
-    }
+  const handleConnect = (id: string) => {
+    setConnecting(prev => new Set(prev).add(id))
+    setTimeout(() => {
+      setConnecting(prev => { const n = new Set(prev); n.delete(id); return n })
+      setConnected(prev => new Set(prev).add(id))
+    }, 1300)
+  }
 
-    setConnecting(true);
-    const token = await getToken();
-    if (!token) { setConnecting(false); return; }
+  const handleDisconnect = (id: string) => {
+    setDisconnecting(prev => new Set(prev).add(id))
+    setTimeout(() => {
+      setDisconnecting(prev => { const n = new Set(prev); n.delete(id); return n })
+      setConnected(prev => { const n = new Set(prev); n.delete(id); return n })
+    }, 1000)
+  }
 
-    try {
-      const body: Record<string, string> = { platform: selectedPlatform };
-      if (selectedPlatform === "shopify") body.shop = shopDomain.trim();
-
-      const { authUrl } = await apiClient<{ authUrl: string; state: string }>(
-        "/api/v1/integrations/connect/start",
-        token,
-        { method: "POST", body: JSON.stringify(body) }
-      );
-      window.location.href = authUrl;
-    } catch (err) {
-      setConnecting(false);
-      if (err instanceof ApiError && err.status === 400) {
-        setError(err.message);
-      } else {
-        setError("Failed to start the connection. Please try again.");
-      }
-    }
-  };
+  const filtered = INTEGRATIONS.filter(i => {
+    const matchCat = category === "All" || i.category === category
+    const matchStatus =
+      statusFilter === "all" ||
+      (statusFilter === "connected" && connected.has(i.id)) ||
+      (statusFilter === "not-connected" && !connected.has(i.id))
+    const matchSearch = i.name.toLowerCase().includes(search.toLowerCase())
+    return matchCat && matchStatus && matchSearch
+  })
 
   return (
-    <div className="space-y-0 pb-12">
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-10">
-        <Link href="/integrations" className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors font-medium text-sm font-body">
-          <ArrowLeft size={16} /> Back to Integrations
-        </Link>
-        <div className="h-4 w-px bg-border" />
-        <h2 className="text-xl font-bold text-foreground tracking-tight font-sans">Connect Integration</h2>
-      </div>
-
-      <div className="grid grid-cols-12 gap-8 items-start">
-        <div className="col-span-8 flex flex-col gap-8">
-
-          {/* Step 01: Select Platform */}
-          <section className="bg-white rounded-3xl p-8 shadow-sm border border-border">
-            <div className="mb-8">
-              <span className="text-[11px] font-bold text-primary uppercase tracking-[0.2em] font-body">Step 01</span>
-              <h3 className="text-2xl font-extrabold text-foreground mt-2 font-sans">Select Platform</h3>
-              <p className="text-muted-foreground text-sm mt-1 font-body">
-                Choose the data source you want to synchronize with the Execution Engine.
-              </p>
+    <div className="flex min-h-full -mx-6 -mt-6">
+      {/* Center Content */}
+      <div className="flex-1 p-8 space-y-8 min-w-0">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-sans font-extrabold text-foreground text-3xl tracking-tight">Integrations</h2>
+            <p className="font-body text-muted-foreground mt-1">Connect and manage your AI data ecosystem.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search integrations…"
+                className="pl-9 pr-4 py-2 bg-surface-container-high border-none rounded-full text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 w-52"
+              />
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              {PLATFORMS.map((p) => {
-                const active = selectedPlatform === p.key;
-                return (
-                  <button
-                    key={p.key}
-                    onClick={() => { setSelectedPlatform(p.key); setError(null); }}
-                    className={`p-6 rounded-2xl cursor-pointer transition-all flex flex-col items-center text-center gap-4 border-2 ${
-                      active ? "border-primary bg-primary/5" : "border-transparent bg-surface-container-low hover:bg-white hover:shadow-md"
-                    }`}
-                  >
-                    <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center">
-                      <p.Icon size={24} className={p.iconColor} />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-foreground font-body">{p.label}</h4>
-                      <p className="text-[11px] text-muted-foreground mt-1 font-body">{p.sub}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* Step 02: Authentication */}
-          <section className="bg-white rounded-3xl p-8 shadow-sm border border-border">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <span className="text-[11px] font-bold text-primary uppercase tracking-[0.2em] font-body">Step 02</span>
-                <h3 className="text-2xl font-extrabold text-foreground mt-2 font-sans">Authentication</h3>
-              </div>
-              <div className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold flex items-center gap-2 font-body">
-                <Lock size={14} /> Secure OAuth 2.0
-              </div>
-            </div>
-
-            <div className="bg-surface-container-low rounded-2xl p-6 flex items-center gap-6">
-              <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shrink-0 shadow-sm">
-                <Key size={32} className="text-primary" />
-              </div>
-              <div className="flex-1">
-                <h4 className="font-bold text-foreground font-body">
-                  Connect {PLATFORMS.find((p) => p.key === selectedPlatform)?.label} Account
-                </h4>
-                <p className="text-sm text-muted-foreground font-body">
-                  You&apos;ll be redirected to authorize GrowthHub to read your campaign data securely.
-                  No write permissions are requested.
-                </p>
-              </div>
-            </div>
-
-            {/* Shopify store URL input */}
-            {selectedPlatform === "shopify" && (
-              <div className="mt-6">
-                <label className="block">
-                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider block mb-2 font-body">
-                    Shopify Store URL
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="mystore.myshopify.com"
-                    value={shopDomain}
-                    onChange={(e) => setShopDomain(e.target.value)}
-                    className="w-full bg-surface-container-low rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 ring-primary/20 font-body"
-                  />
-                </label>
-              </div>
-            )}
-
-            {error && (
-              <div className="mt-4 flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3 font-body">
-                <AlertCircle size={16} />
-                {error}
-              </div>
-            )}
-          </section>
-
-          {/* Step 03: Permissions */}
-          <section className="bg-white rounded-3xl p-8 shadow-sm border border-border">
-            <span className="text-[11px] font-bold text-primary uppercase tracking-[0.2em] font-body">Step 03</span>
-            <h3 className="text-2xl font-extrabold text-foreground mt-2 mb-6 font-sans">Permissions Requested</h3>
-            <div className="space-y-4">
-              {PERMISSIONS.map((perm) => (
-                <div key={perm.label} className="flex items-start gap-3">
-                  <CheckCircle2 size={20} className="text-primary fill-primary/10 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold text-foreground font-body">{perm.label}</p>
-                    <p className="text-xs text-muted-foreground font-body">{perm.sub}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Step 04: Sync Schedule */}
-          <section className="bg-white rounded-3xl p-8 shadow-sm border border-border">
-            <span className="text-[11px] font-bold text-primary uppercase tracking-[0.2em] font-body">Step 04</span>
-            <h3 className="text-2xl font-extrabold text-foreground mt-2 mb-8 font-sans">Sync Schedule</h3>
-            <div className="grid grid-cols-3 gap-6">
-              {SYNC_OPTIONS.map((opt) => (
-                <div key={opt.key} className="p-6 rounded-2xl bg-primary/5 border-2 border-primary/20 text-left">
-                  <opt.Icon size={22} className="mb-3 text-primary" />
-                  <h4 className="font-bold text-sm text-foreground font-body">{opt.label}</h4>
-                  <p className="text-xs text-muted-foreground mt-1 font-body">{opt.sub}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-4 py-4">
-            <Link href="/integrations">
-              <button className="px-8 py-4 text-muted-foreground font-bold hover:text-foreground transition-colors font-body">
-                Cancel
-              </button>
-            </Link>
-            <button
-              onClick={handleConnect}
-              disabled={connecting}
-              className="px-12 py-4 bg-gradient-to-br from-primary to-[#2563eb] text-white rounded-2xl font-bold shadow-xl shadow-primary/30 flex items-center gap-3 active:scale-95 transition-transform disabled:opacity-60 font-body"
-            >
-              {connecting ? (
-                <><Loader2 size={18} className="animate-spin" /> Connecting…</>
-              ) : (
-                <>Authorize &amp; Connect <ChevronsRight size={20} /></>
-              )}
+            <button className="p-2 text-muted-foreground hover:bg-surface-container-low rounded-full transition-colors"><Bell className="w-5 h-5" /></button>
+            <button className="p-2 text-muted-foreground hover:bg-surface-container-low rounded-full transition-colors"><History className="w-5 h-5" /></button>
+            <button className="bg-primary text-white px-5 py-2 rounded-full font-bold text-sm hover:shadow-lg transition-all active:scale-95">
+              Connect New Integration
             </button>
           </div>
         </div>
 
-        {/* Right: Info Panel */}
-        <aside className="col-span-4 sticky top-24 flex flex-col gap-6 h-fit">
-          <div className="bg-surface-container-high p-8 rounded-3xl">
-            <h4 className="text-lg font-extrabold text-foreground mb-4 font-sans">What happens next?</h4>
-            <ol className="space-y-4">
-              {[
-                "You authorize GrowthHub via the platform's secure OAuth page.",
-                "Your token is encrypted and stored in Supabase Vault — never exposed to the browser.",
-                "An initial 30-day backfill runs automatically.",
-                "Daily syncs keep your dashboard data fresh.",
-              ].map((step, i) => (
-                <li key={i} className="flex gap-3">
-                  <span className="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 font-body">
-                    {i + 1}
-                  </span>
-                  <p className="text-sm text-muted-foreground font-body">{step}</p>
-                </li>
-              ))}
-            </ol>
+        {/* Filters */}
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="flex bg-surface-container-low rounded-xl p-1 gap-1">
+            {CATEGORIES.map(c => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${category === c ? "bg-white text-primary font-bold shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {c}
+              </button>
+            ))}
           </div>
+          <div className="w-px h-6 bg-border" />
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider px-2">Status:</span>
+            {(["all", "connected", "not-connected"] as StatusFilter[]).map(s => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-4 py-1.5 text-sm rounded-full transition-colors border ${statusFilter === s ? "font-semibold text-primary border-primary/20 bg-primary/5" : "font-medium text-muted-foreground border-transparent hover:bg-surface-container-low"}`}
+              >
+                {s === "all" ? "All" : s === "connected" ? "Connected" : "Not Connected"}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-border">
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 font-body">Security</p>
-            <p className="text-sm text-muted-foreground font-body leading-relaxed">
-              Credentials are encrypted at rest using Supabase Vault (pgsodium). GrowthHub only requests
-              read permissions — no ability to modify your campaigns.
-            </p>
-          </div>
-        </aside>
+        {/* Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.map(integ => {
+            const isConnected = connected.has(integ.id)
+            const isConnecting = connecting.has(integ.id)
+            const isDisconnecting = disconnecting.has(integ.id)
+            return (
+              <div
+                key={integ.id}
+                className="bg-white p-6 rounded-xl border border-border hover:shadow-lg hover:border-primary/10 transition-all duration-300"
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <div className={`w-12 h-12 rounded-xl ${integ.iconBg} ${integ.iconColor} flex items-center justify-center`}>
+                    {integ.icon}
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${isConnected ? "bg-emerald-100 text-emerald-700" : "bg-surface-container-low text-muted-foreground"}`}>
+                    {isConnected ? "Connected" : "Not Connected"}
+                  </span>
+                </div>
+                <h3 className="font-sans font-bold text-foreground text-lg">{integ.name}</h3>
+                <p className="font-body text-sm text-muted-foreground mt-2 leading-relaxed">{integ.desc}</p>
+                <div className="mt-6">
+                  <div className={`flex items-center justify-between text-xs font-medium ${!isConnected ? "opacity-50" : ""}`}>
+                    <span className="text-muted-foreground">{isConnected ? "Synced Entities" : "Available Entities"}</span>
+                    <div className="flex gap-1.5">
+                      {integ.entities.map(e => (
+                        <span key={e} className="bg-surface-container-low px-2 py-0.5 rounded text-muted-foreground">{e}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-8 flex gap-3">
+                  {isConnected ? (
+                    <>
+                      <button className="flex-1 py-2 rounded-lg bg-surface-container-low text-foreground text-sm font-bold hover:bg-surface-container-high transition-colors">
+                        Manage
+                      </button>
+                      <button
+                        onClick={() => handleDisconnect(integ.id)}
+                        disabled={isDisconnecting}
+                        className="px-3 py-2 rounded-lg text-red-500 text-sm font-medium hover:bg-red-50 transition-colors flex items-center gap-1.5 disabled:opacity-60"
+                      >
+                        {isDisconnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        {isDisconnecting ? "…" : "Disconnect"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => handleConnect(integ.id)}
+                      disabled={isConnecting}
+                      className="w-full py-2.5 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                    >
+                      {isConnecting ? (
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Connecting…</span></>
+                      ) : (
+                        `Connect ${integ.name}`
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {filtered.length === 0 && (
+            <div className="col-span-3 py-20 text-center text-muted-foreground font-body text-sm">
+              No integrations match your filters.
+            </div>
+          )}
+        </div>
+
+        <footer className="pt-8 border-t border-border">
+          <p className="text-xs text-muted-foreground text-center uppercase tracking-[0.2em] font-bold">
+            All integrations power the execution system in real-time
+          </p>
+        </footer>
       </div>
+
+      {/* Right Panel */}
+      <aside className="w-80 shrink-0 bg-surface-container-low border-l border-border p-6 space-y-6">
+        <h4 className="font-sans font-black text-foreground text-sm uppercase tracking-widest">Data Pipeline Health</h4>
+
+        {/* Sync Health */}
+        <div className="bg-white p-5 rounded-xl border border-primary/10 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="font-sans font-bold text-foreground text-sm">Overall Sync Status</span>
+          </div>
+          <div className="flex justify-between items-end">
+            <div>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Sync State</p>
+              <p className="font-sans font-black text-emerald-600 text-lg">Healthy</p>
+            </div>
+            <p className="text-[10px] text-muted-foreground font-body">Last sync: 2m ago</p>
+          </div>
+        </div>
+
+        {/* API Monitor */}
+        <div>
+          <h5 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-4">Live API Monitor</h5>
+          <div className="space-y-3">
+            {API_STATUS.map(api => (
+              <div key={api.label} className={`flex items-center justify-between p-3 bg-surface-container-low rounded-lg ${api.status === "offline" ? "opacity-60" : ""}`}>
+                <div className="flex items-center gap-2">
+                  {api.icon}
+                  <span className="font-body font-bold text-foreground text-xs">{api.label}</span>
+                </div>
+                <span className={`text-[10px] font-black ${api.status === "healthy" ? "text-emerald-600" : api.status === "delayed" ? "text-amber-600" : "text-muted-foreground"}`}>
+                  {api.uptime}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Data throughput */}
+        <div className="bg-primary/10 p-5 rounded-xl border border-primary/20">
+          <p className="font-body text-xs text-primary/80 leading-relaxed">
+            System is currently processing <span className="font-black text-primary">1.2GB</span> of execution data per hour.
+          </p>
+          <button className="mt-4 w-full py-2 bg-white text-primary text-[10px] font-black uppercase tracking-widest rounded-lg shadow-sm hover:bg-surface-container-low transition-colors">
+            View Logs
+          </button>
+        </div>
+
+        {/* Connected count */}
+        <div className="bg-white rounded-xl border border-border p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-sans font-bold text-foreground text-sm">Connected</span>
+            <span className="font-sans font-bold text-primary text-xl">{connected.size}</span>
+          </div>
+          <div className="h-2 bg-surface-container-low rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary rounded-full transition-all"
+              style={{ width: `${(connected.size / INTEGRATIONS.length) * 100}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground font-body mt-2">{connected.size} of {INTEGRATIONS.length} integrations active</p>
+        </div>
+      </aside>
     </div>
-  );
+  )
 }
