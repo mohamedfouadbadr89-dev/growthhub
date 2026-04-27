@@ -1,309 +1,369 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
-import { Loader2, Bot, CheckCircle2, XCircle, SkipForward, AlertCircle } from "lucide-react";
-import { apiClient } from "@/lib/api-client";
+import { useState } from "react";
+import {
+  TrendingUp, PauseCircle, AlertTriangle, Bell, Database,
+  CheckCircle2, SkipForward, XCircle, ChevronUp, ChevronDown,
+  Sparkles, Lightbulb, Download, Search,
+} from "lucide-react";
 
-interface HistoryRecord {
+type ResultFilter = "All" | "Success" | "Failed" | "Skipped";
+
+interface HistoryEntry {
   id: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  iconBg: string;
+  iconColor: string;
   decision: string;
-  action_taken: string;
-  trigger_condition: string;
-  result: "success" | "failed" | "skipped";
-  ai_explanation: string | null;
-  confidence_score: number | null;
-  executed_by: "manual" | "automation";
-  created_at: string;
+  timestamp: string;
+  actionTaken: string;
+  actionTag?: string;
+  result: "Success" | "Failed" | "Skipped";
+  trigger: string;
+  dataUsed: string;
+  resultDetail: string;
+  confidence: number;
 }
 
-interface HistoryDetail extends HistoryRecord {
-  data_used: Record<string, unknown>;
-}
+const MOCK_HISTORY: HistoryEntry[] = [
+  {
+    id: "h-001",
+    icon: TrendingUp,
+    iconBg: "bg-primary/10",
+    iconColor: "text-primary",
+    decision: "Scale FB Lookalike 1%",
+    timestamp: "Oct 24, 2023 · 14:32:05",
+    actionTaken: "Budget increased by 20%",
+    actionTag: "+$400/day",
+    result: "Success",
+    trigger: "ROAS > 3.5 over 72h",
+    dataUsed: "Calculated ROAS = 3.8",
+    resultDetail: "Action Executed",
+    confidence: 94,
+  },
+  {
+    id: "h-002",
+    icon: PauseCircle,
+    iconBg: "bg-surface-container-high",
+    iconColor: "text-muted-foreground",
+    decision: "Sunset Low-Perf Adset",
+    timestamp: "Oct 24, 2023 · 12:15:42",
+    actionTaken: "No action taken",
+    result: "Skipped",
+    trigger: "CPA > $18 for 48h",
+    dataUsed: "CPA = $15.20 (below threshold)",
+    resultDetail: "Condition not met",
+    confidence: 76,
+  },
+  {
+    id: "h-003",
+    icon: AlertTriangle,
+    iconBg: "bg-red-100",
+    iconColor: "text-red-500",
+    decision: "Creative Rotation — Fall Pack",
+    timestamp: "Oct 24, 2023 · 09:10:00",
+    actionTaken: "API Connection Error",
+    result: "Failed",
+    trigger: "Frequency > 3.5 (7 days)",
+    dataUsed: "Frequency = 4.1",
+    resultDetail: "Meta API 503 — retry queued",
+    confidence: 88,
+  },
+  {
+    id: "h-004",
+    icon: Bell,
+    iconBg: "bg-primary/10",
+    iconColor: "text-primary",
+    decision: "Bid Cap Adjustment",
+    timestamp: "Oct 23, 2023 · 23:55:12",
+    actionTaken: "Bid lowered to $12.50",
+    result: "Success",
+    trigger: "CPM > $45 for 24h",
+    dataUsed: "CPM = $49.80",
+    resultDetail: "Action Executed",
+    confidence: 91,
+  },
+  {
+    id: "h-005",
+    icon: TrendingUp,
+    iconBg: "bg-primary/10",
+    iconColor: "text-primary",
+    decision: "Budget Scale — Google Branded",
+    timestamp: "Oct 23, 2023 · 18:05:00",
+    actionTaken: "Daily budget +15%",
+    actionTag: "+$120/day",
+    result: "Success",
+    trigger: "ROAS > 4.0 for 5 consecutive days",
+    dataUsed: "7-day ROAS = 4.6x",
+    resultDetail: "Action Executed",
+    confidence: 97,
+  },
+];
 
-const RESULT_STYLE: Record<string, string> = {
-  success: "bg-emerald-100 text-emerald-700",
-  failed:  "bg-[#ffdad6] text-error",
-  skipped: "bg-surface-container-high text-muted-foreground",
+const RESULT_BADGES: Record<string, { label: string; class: string; Icon: React.ComponentType<{ size?: number; className?: string }> }> = {
+  Success: { label: "Success", class: "bg-emerald-100 text-emerald-700", Icon: CheckCircle2 },
+  Failed:  { label: "Failed",  class: "bg-red-100 text-red-600",         Icon: XCircle      },
+  Skipped: { label: "Skipped", class: "bg-surface-container-high text-muted-foreground", Icon: SkipForward },
 };
 
-const MOCK_RECOMMENDATIONS: Record<string, string> = {
-  success: "This decision performed well. Consider applying similar logic to adjacent campaigns with matching ROAS profiles.",
-  failed:  "Review the trigger conditions — this decision may have been fired with insufficient data volume. Raise the confidence threshold.",
-  skipped: "Execution was skipped due to a rule conflict. Verify strategy priority ordering in the Decision Center.",
-};
-
-const ResultIcon = ({ result }: { result: string }) => {
-  if (result === "success") return <CheckCircle2 size={16} className="text-emerald-600" />;
-  if (result === "failed")  return <XCircle size={16} className="text-error" />;
-  return <SkipForward size={16} className="text-muted-foreground" />;
-};
+const RESULT_FILTERS: ResultFilter[] = ["All", "Success", "Failed", "Skipped"];
 
 export default function DecisionHistoryPage() {
-  const { getToken } = useAuth();
-  const [history, setHistory] = useState<HistoryRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [detail, setDetail] = useState<HistoryDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [resultFilter, setResultFilter] = useState<ResultFilter>("All");
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(["h-001"]));
 
-  const selectedRecord = history.find((r) => r.id === expanded) ?? null;
+  function toggleExpand(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const token = await getToken();
-    if (!token) { setError("Your session expired — please sign in again"); setLoading(false); return; }
-    try {
-      const data = await apiClient<{ history: HistoryRecord[] }>("/api/v1/history?limit=100", token);
-      setHistory(data.history ?? []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load decision history");
-    } finally {
-      setLoading(false);
-    }
-  }, [getToken]);
+  const filtered = MOCK_HISTORY.filter((h) => {
+    if (resultFilter !== "All" && h.result !== resultFilter) return false;
+    if (search && !h.decision.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
-  useEffect(() => { load(); }, [load]);
-
-  const handleExpand = async (record: HistoryRecord) => {
-    if (expanded === record.id) {
-      setExpanded(null);
-      setDetail(null);
-      return;
-    }
-    setExpanded(record.id);
-    setDetail(null);
-    setDetailLoading(true);
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const data = await apiClient<HistoryDetail>(`/api/v1/history/${record.id}`, token);
-      setDetail(data);
-    } finally {
-      setDetailLoading(false);
-    }
-  };
+  const activeEntry = MOCK_HISTORY.find((h) => expanded.has(h.id)) ?? MOCK_HISTORY[0];
 
   return (
     <div className="space-y-8 pb-12">
-      {/* 1. HEADER */}
-      <div>
-        <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">
-          Automation
-        </p>
-        <h2 className="text-4xl font-extrabold tracking-tight text-foreground font-sans">Decision History</h2>
-        <p className="text-muted-foreground mt-2 font-body">
-          Every decision, action, trigger, and result — the system memory and explainability layer.
-        </p>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">Automation</p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-sans leading-none mb-1">
+            Decision History
+          </h1>
+          <p className="text-muted-foreground font-body">Full memory — every decision, trigger, data snapshot, and outcome</p>
+        </div>
+        <button className="inline-flex items-center gap-2 bg-surface-container-high text-foreground px-6 py-2.5 rounded-full font-bold text-sm hover:bg-surface-container-highest transition-all font-body self-start md:self-auto">
+          <Download size={15} />
+          Export Log
+        </button>
       </div>
 
-      {/* 2. STATS — full-width, isolated, not inside grid */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-border">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Efficiency Gain</p>
-          <p className="text-3xl font-extrabold text-foreground font-sans">+34%</p>
-          <p className="text-xs text-muted-foreground font-body mt-1">vs. manual execution baseline</p>
+      {/* Filter Bar */}
+      <div className="bg-surface-container-low rounded-2xl p-4 flex flex-wrap items-center gap-4">
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search decisions…"
+            className="bg-white border border-border/40 rounded-xl py-2.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 font-body w-52"
+          />
         </div>
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-border">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Time Saved</p>
-          <p className="text-3xl font-extrabold text-foreground font-sans">18h</p>
-          <p className="text-xs text-muted-foreground font-body mt-1">this month across all decisions</p>
+
+        <div className="h-5 w-px bg-border" />
+
+        <div className="flex gap-2">
+          {RESULT_FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setResultFilter(f)}
+              className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all font-body ${
+                resultFilter === f
+                  ? "bg-primary text-white"
+                  : "bg-surface-container-high text-foreground hover:bg-surface-container-highest"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* 3. DATA SECTION — wraps all conditional states */}
-      <div>
-        {loading ? (
-          <div className="space-y-3 animate-pulse">
-            {[1, 2, 3, 4].map((i) => <div key={i} className="h-14 bg-surface-container-low rounded-2xl" />)}
-          </div>
-        ) : error ? (
-          <div className="py-20 text-center space-y-4">
-            <AlertCircle size={40} className="mx-auto text-red-300" />
-            <p className="text-sm text-red-600 font-body">{error}</p>
-            <button onClick={load} className="px-4 py-2 text-sm font-bold border border-border rounded-xl hover:bg-surface-container-low transition-colors font-body">Try Again</button>
-          </div>
-        ) : history.length === 0 ? (
-          <div className="py-20 text-center text-muted-foreground font-body text-sm">
-            No decision history yet. Execute an action or run the intelligence engine to create records.
-          </div>
-        ) : (
-        <div className="grid grid-cols-12 gap-6 items-start">
-          {/* Left: existing table — unchanged */}
-          <div className="col-span-8">
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-surface-container-low">
-                  {["", "Decision", "Action Taken", "Trigger", "By", "Confidence", "Result", "Time"].map((h) => (
-                    <th key={h} className="px-5 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest font-body whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container-low">
-                {history.map((record) => (
-                  <>
-                    <tr
-                      key={record.id}
-                      onClick={() => handleExpand(record)}
-                      className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
-                    >
-                      <td className="px-5 py-4">
-                        <ResultIcon result={record.result} />
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm font-bold text-foreground font-body line-clamp-1 max-w-[180px] block">{record.decision}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-muted-foreground font-body line-clamp-1 max-w-[180px] block">{record.action_taken}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-xs text-muted-foreground font-body line-clamp-1 max-w-[160px] block">{record.trigger_condition}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={`px-2 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider font-body ${record.executed_by === "manual" ? "bg-surface-container-high text-muted-foreground" : "bg-primary/10 text-primary"}`}>
-                          {record.executed_by}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm font-bold text-foreground font-sans">
-                          {record.confidence_score != null ? `${record.confidence_score}%` : "—"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider font-body ${RESULT_STYLE[record.result]}`}>
-                          {record.result}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-xs text-muted-foreground font-body whitespace-nowrap">
-                        {new Date(record.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </td>
-                    </tr>
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
 
-                    {expanded === record.id && (
-                      <tr key={`${record.id}-detail`} className="bg-surface-container-low/30">
-                        <td colSpan={8} className="px-8 py-6">
-                          {detailLoading ? (
-                            <div className="flex items-center gap-2 text-muted-foreground text-sm font-body">
-                              <Loader2 size={14} className="animate-spin" /> Loading details…
-                            </div>
-                          ) : detail ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                              {/* AI Explanation */}
-                              <div>
-                                <div className="flex items-center gap-2 mb-3">
-                                  <Bot size={16} className="text-primary" />
-                                  <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground font-body">AI Explanation</h4>
-                                </div>
-                                <p className="text-sm text-foreground leading-relaxed font-body">
-                                  {detail.ai_explanation ?? "No AI explanation recorded for this entry."}
-                                </p>
-                              </div>
-                              {/* Data Used */}
-                              <div>
-                                <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 font-body">Data Used</h4>
-                                <div className="bg-white rounded-xl p-4 space-y-2">
-                                  {Object.keys(detail.data_used).length === 0 ? (
-                                    <p className="text-xs text-muted-foreground font-body">No data snapshot recorded.</p>
-                                  ) : (
-                                    Object.entries(detail.data_used).map(([k, v]) => (
-                                      <div key={k} className="flex items-center justify-between py-1 border-b border-surface-container-low last:border-0">
-                                        <span className="text-xs font-bold text-muted-foreground uppercase font-body">{k.replace(/_/g, " ")}</span>
-                                        <span className="text-xs font-bold text-foreground font-sans">{String(v ?? "—")}</span>
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                ))}
-              </tbody>
-            </table>
+        {/* LEFT — Automation Feed */}
+        <div className="xl:col-span-8 flex flex-col gap-4">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-lg font-bold text-foreground font-sans">Automation Feed</h3>
+            <p className="text-xs text-muted-foreground font-body">Showing {filtered.length} decisions</p>
           </div>
-        </div>
-          </div>{/* end left col */}
 
-          {/* Right: AI Insights panel */}
-          <div className="col-span-4 sticky top-6">
-            {selectedRecord ? (
-              <div className="bg-white rounded-2xl shadow-sm border border-border p-6 space-y-6">
-                <div className="flex items-center gap-2">
-                  <Bot size={16} className="text-primary" />
-                  <h3 className="font-body font-black text-[10px] uppercase tracking-widest text-muted-foreground">AI Insights</h3>
-                </div>
-
-                {/* confidence_score bar */}
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Confidence Score</p>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-2 bg-surface-container-low rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          (selectedRecord.confidence_score ?? 0) >= 80
-                            ? "bg-emerald-500"
-                            : (selectedRecord.confidence_score ?? 0) >= 50
-                            ? "bg-amber-400"
-                            : "bg-red-400"
-                        }`}
-                        style={{ width: `${selectedRecord.confidence_score ?? 0}%` }}
-                      />
+          {filtered.length === 0 ? (
+            <div className="bg-surface-container-low rounded-2xl p-12 text-center">
+              <p className="text-muted-foreground font-body">No decisions match the selected filters.</p>
+            </div>
+          ) : (
+            filtered.map((entry) => {
+              const isExpanded = expanded.has(entry.id);
+              const badge = RESULT_BADGES[entry.result];
+              return (
+                <div
+                  key={entry.id}
+                  className={`rounded-2xl overflow-hidden shadow-sm transition-all ${
+                    isExpanded
+                      ? "border-2 border-primary/10 bg-surface-container-high"
+                      : "bg-surface-container-low hover:bg-surface-container border border-transparent"
+                  }`}
+                >
+                  {/* Row */}
+                  <div className="p-5 flex items-start gap-4">
+                    <div className={`w-12 h-12 ${entry.iconBg} rounded-xl flex items-center justify-center shrink-0`}>
+                      <entry.icon size={20} className={entry.iconColor} />
                     </div>
-                    <span className="text-sm font-bold font-sans text-foreground w-10 text-right">
-                      {selectedRecord.confidence_score != null ? `${selectedRecord.confidence_score}%` : "—"}
-                    </span>
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 min-w-0">
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body">Decision</p>
+                        <h4 className="font-bold text-foreground font-sans text-sm">{entry.decision}</h4>
+                        <p className="text-xs text-muted-foreground font-body">{entry.timestamp}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body">Action Taken</p>
+                        <p className="text-sm font-semibold text-foreground font-body">{entry.actionTaken}</p>
+                        {entry.actionTag && (
+                          <span className="text-[10px] bg-surface-container-high text-foreground px-2 py-0.5 rounded-full inline-block font-body font-bold">
+                            {entry.actionTag}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-start md:items-end gap-2">
+                        <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-body ${badge.class}`}>
+                          <badge.Icon size={12} />
+                          {badge.label}
+                        </span>
+                        <button
+                          onClick={() => toggleExpand(entry.id)}
+                          className="text-muted-foreground hover:text-primary transition-colors"
+                        >
+                          {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                {/* explanation from existing data */}
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Explanation</p>
-                  {detailLoading ? (
-                    <div className="flex items-center gap-2 text-muted-foreground text-sm font-body">
-                      <Loader2 size={12} className="animate-spin" /> Loading…
+                  {/* Expanded Detail */}
+                  {isExpanded && (
+                    <div className="bg-surface-container-low p-6 border-t border-primary/5">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 size={15} className="text-primary" />
+                            <p className="text-[10px] font-bold text-foreground uppercase tracking-widest font-body">Trigger Condition</p>
+                          </div>
+                          <div className="bg-white p-3 rounded-xl text-sm border-l-4 border-primary font-body text-foreground">
+                            {entry.trigger}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Database size={15} className="text-primary" />
+                            <p className="text-[10px] font-bold text-foreground uppercase tracking-widest font-body">Data Used</p>
+                          </div>
+                          <div className="bg-white p-3 rounded-xl text-sm font-body text-foreground">
+                            {entry.dataUsed}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 size={15} className="text-primary" />
+                            <p className="text-[10px] font-bold text-foreground uppercase tracking-widest font-body">Result</p>
+                          </div>
+                          <div className="bg-white p-3 rounded-xl text-sm font-body text-foreground">
+                            {entry.resultDetail}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-foreground leading-relaxed font-body">
-                      {detail?.ai_explanation ?? selectedRecord.ai_explanation ?? "No AI explanation recorded for this entry."}
-                    </p>
                   )}
                 </div>
+              );
+            })
+          )}
+        </div>
 
-                {/* recommendation (mock) */}
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Recommendation</p>
-                  <div className="bg-surface-container-low rounded-xl p-4">
-                    <p className="text-sm text-foreground leading-relaxed font-body">
-                      {MOCK_RECOMMENDATIONS[selectedRecord.result]}
-                    </p>
-                  </div>
+        {/* RIGHT — AI Insights + Quick Stats */}
+        <aside className="xl:col-span-4 flex flex-col gap-6 xl:sticky xl:top-6">
+
+          {/* AI Decision Insights */}
+          <div className="bg-foreground text-white rounded-2xl p-7 relative overflow-hidden">
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-primary/20 blur-3xl rounded-full pointer-events-none" />
+            <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-blue-500/10 blur-3xl rounded-full pointer-events-none" />
+            <div className="relative z-10 space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/20 border border-white/10 rounded-full flex items-center justify-center">
+                  <Sparkles size={16} className="text-blue-200" />
+                </div>
+                <h3 className="font-bold text-lg font-sans">AI Decision Insights</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                  <p className="text-[10px] font-bold text-blue-200 uppercase tracking-wider mb-2 font-body">Detailed Explanation</p>
+                  <p className="text-sm text-slate-300 leading-relaxed italic font-body">
+                    "This rule triggered because the{" "}
+                    <span className="text-white font-semibold underline decoration-primary decoration-2 underline-offset-4">
+                      ROAS threshold
+                    </span>{" "}
+                    was consistently met. Your target of 3.5 was exceeded at 3.8 over the 72h window — a reliable signal."
+                  </p>
                 </div>
 
-                {/* Apply Adjustment — no logic */}
-                <button className="w-full py-2.5 rounded-xl bg-primary text-white text-sm font-bold font-body hover:bg-primary/90 transition-colors active:scale-[0.98]">
-                  Apply Adjustment
-                </button>
+                <div className="bg-primary/20 p-4 rounded-xl border border-primary/30">
+                  <div className="flex items-start gap-3">
+                    <Lightbulb size={16} className="text-blue-200 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-white uppercase font-body">Growth Suggestion</p>
+                      <p className="text-sm text-slate-200 font-body">
+                        Lower threshold to{" "}
+                        <span className="text-white font-bold">2.5</span>{" "}
+                        to capture higher volume during the current seasonal upswing.
+                      </p>
+                    </div>
+                  </div>
+                  <button className="w-full mt-4 bg-white text-foreground py-2 rounded-xl font-bold text-xs hover:bg-blue-50 transition-colors font-body active:scale-95">
+                    Apply Adjustment
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="bg-white rounded-2xl shadow-sm border border-border p-6 flex flex-col items-center justify-center min-h-[280px] text-center">
-                <Bot size={32} className="text-muted-foreground/25 mb-3" />
-                <p className="text-sm font-bold text-muted-foreground font-body">Select a record</p>
-                <p className="text-xs text-muted-foreground font-body mt-1 max-w-[160px]">Click any row to see AI insights</p>
+
+              {/* Confidence bar */}
+              <div className="pt-4 border-t border-white/10">
+                <div className="flex items-center justify-between text-xs text-slate-400 mb-2 font-body">
+                  <span>Confidence Score</span>
+                  <span className="text-white font-bold">{activeEntry.confidence}%</span>
+                </div>
+                <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${activeEntry.confidence}%` }} />
+                </div>
               </div>
-            )}
-          </div>{/* end right col */}
-        </div>
-        )}
-      </div>{/* end Data Section */}
+            </div>
+          </div>
+
+          {/* Quick Stats */}
+          <div className="bg-surface-container-high rounded-2xl p-6 space-y-4">
+            <h4 className="font-bold text-sm text-foreground font-sans">Quick Stats</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white p-4 rounded-xl">
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body mb-1">Efficiency</p>
+                <p className="text-xl font-bold text-primary font-sans">+12.4%</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl">
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body mb-1">Time Saved</p>
+                <p className="text-xl font-bold text-primary font-sans">18h/wk</p>
+              </div>
+            </div>
+            <div className="h-24 bg-white rounded-xl flex items-end px-4 pb-3 pt-3 gap-1.5">
+              {[40, 55, 35, 70, 60, 85, 75, 90, 65, 80, 95, 88].map((h, i) => (
+                <div
+                  key={i}
+                  className="flex-1 bg-primary/20 rounded-t"
+                  style={{ height: `${h}%` }}
+                />
+              ))}
+            </div>
+          </div>
+
+        </aside>
+      </div>
     </div>
   );
 }
