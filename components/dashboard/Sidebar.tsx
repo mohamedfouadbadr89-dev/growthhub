@@ -71,7 +71,7 @@ const AUTOMATION_CHILDREN: NavItem[] = [
   { label: 'Decision Center', href: '/automation',            icon: Cpu },
   { label: 'Builder',         href: '/automation/builder',    icon: GitBranch },
   { label: 'Strategies',      href: '/automation/strategies', icon: Lightbulb },
-  { label: 'History',         href: '/decisions/history',     icon: ScrollText },
+  { label: 'History',         href: '/automation/history',    icon: ScrollText },
 ];
 
 const ACTIONS_CHILDREN: NavItem[] = [
