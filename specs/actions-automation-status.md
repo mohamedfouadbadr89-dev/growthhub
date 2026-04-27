@@ -59,7 +59,7 @@ RULES:
 - AI must be cached after execution
 
 
-PAGE: dashboard/actions/automation-status/page.tsx
+PAGE: app/actions/automation/page.tsx
 
 ⸻
 

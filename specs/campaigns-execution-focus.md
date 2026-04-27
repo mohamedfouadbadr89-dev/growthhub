@@ -66,7 +66,7 @@ RULES:
 
 ⸻
 
-PAGE: campaigns/execution-focus/page.tsx
+PAGE: app/campaigns/[id]/page.tsx
 
 ⸻
 
@@ -340,3 +340,10 @@ Important
 ## 🧬 SCHEMA CONTROL
 - schema.sql is source of truth
 - no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI

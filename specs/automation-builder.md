@@ -231,6 +231,23 @@ RULES:
 * MUST NOT affect real campaigns
 * MUST NOT execute real actions
 
+## 🧪 WORKFLOW SIMULATION ENGINE
+
+INPUT:
+
+- historical data
+- current state
+
+OUTPUT:
+
+- expected executions
+- projected impact
+- risk exposure
+
+RULE:
+
+- simulation MUST NOT execute real actions
+- results MUST be cached
 ⸻
 
 AI Generate Workflow
@@ -261,6 +278,15 @@ automation_workflows
 * edges (jsonb)
 * created_at
 * updated_at
+
+## ⚠️ EXECUTION VERSION LOCK
+
+- active workflows MUST use fixed version
+
+RULE:
+
+- editing workflow creates new version
+- running workflow NOT affected
 
 ⸻
 
@@ -347,6 +373,19 @@ Output:
 * generated nodes
 * connected workflow
 
+## 🧠 AI SAFETY GUARDRAILS
+
+AI MUST NOT:
+
+- generate high-risk actions without warning
+- create full shutdown workflows
+- exceed budget thresholds
+
+AI OUTPUT MUST INCLUDE:
+
+- risk_score
+- explanation
+- required approval
 ⸻
 
 AI Builder Rules
@@ -448,3 +487,88 @@ Important
 * workflows must be saved before activation
 * test mode MUST NOT affect real campaigns
 * builder MUST NOT execute actions directly
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🧠 WORKFLOW GRAPH VALIDATION
+
+VALIDATE:
+
+- no circular loops
+- max depth limit
+- valid trigger → condition → action flow
+
+BLOCK IF:
+
+- action before trigger
+- multiple triggers without routing logic
+- disconnected nodes
+
+
+## 🛑 EXECUTION LIMITS
+
+PER WORKFLOW:
+
+- max executions per hour
+- max budget impact per day
+- max actions per run
+
+BLOCK IF:
+
+- thresholds exceeded
+
+
+## 🔴 EVENT-DRIVEN ENGINE
+
+SOURCE: SUPABASE REALTIME
+
+CHANNELS:
+
+- decisions:{org_id}
+- alerts:{org_id}
+- metrics:{org_id}
+
+TRIGGERS MUST LISTEN TO EVENTS:
+
+- decision_created
+- alert_triggered
+- metric_updated
+
+
+## 🔗 DECISION-BASED TRIGGERS
+
+TRIGGER TYPES:
+
+- decision_based
+- alert_based
+- metric_based
+
+PRIORITY:
+
+decision > alert > metric
+
+
+## 🔗 FULL SYSTEM FLOW
+
+1. data ingestion
+2. signal detection
+3. decision generation
+4. workflow trigger
+5. validation layer
+6. execution engine
+7. logging
+8. feedback loop
+
+RULE:
+
+system MUST be event-driven

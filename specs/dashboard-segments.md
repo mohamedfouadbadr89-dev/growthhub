@@ -317,4 +317,105 @@ RULES:
 - segmentation is rule-based
 - no AI inference
 
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: EVENT-DRIVEN (USER LEVEL)
+
+---
+
+1. BROADCAST
+
+CHANNEL:
+
+- segment_updates:{org_id}
+
+EVENTS:
+
+segment_user_update:
+- user_id
+- segment_type (new → vip / churn_risk)
+
+segment_metrics_update:
+- segment_id
+- users_count
+- revenue
+- ltv
+- conversion_rate
+
+top_segments_update:
+- segment_id
+- performance_score
+- growth_rate
+
+---
+
+RULES:
+
+- segment counts MUST update instantly
+- top segments MUST reflect latest ranking
+- segment_type MUST always be latest classification
+
+---
+
+2. POSTGRES_CHANGES
+
+TABLES:
+
+- segments (UPDATE)
+- segment_metrics (INSERT)
+
+---
+
+3. FALLBACK
+
+- refetch GET /api/v1/dashboard/segments every 60s
+
+---
+
+SECURITY:
+
+- org_id isolation
+
+## ⚠️ SEGMENTATION RULE
+
+- segmentation MUST be backend-only
+- frontend MUST NOT assign users to segments
+- all segment logic centralized in backend
+
+REASON:
+
+- consistency across system
+- integration with decision engine
+
+## ⚠️ LTV CALCULATION RULE
+
+- LTV MUST be cohort-based (not global average)
+- calculate per segment cohort
+
+RECOMMENDED:
+
+LTV = avg_revenue_per_user over lifetime window
+
+---
+
+OPTIONAL:
+
+- 30-day LTV
+- 60-day LTV
+- predicted LTV (future)
+
 ✅ DONE

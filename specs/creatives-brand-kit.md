@@ -117,7 +117,16 @@ GET /api/v1/brand-kit
 PUT /api/v1/brand-kit
 
 ⸻
+POST /api/v1/brand-kit/validate
 
+Purpose:
+
+* validate creative against brand kit
+
+Response:
+
+* valid: boolean
+* errors[]
 ⸻
 
 🗄️ 4. DB Schema
@@ -133,6 +142,13 @@ brand_kits
 * locked
 * updated_at
 
+brand_kit_versions
+
+* id
+* brand_kit_id
+* snapshot (jsonb)
+* created_at
+
 ⸻
 
 ⸻
@@ -145,6 +161,24 @@ brand_kits
 
 ⸻
 
+## ⚡ PERFORMANCE
+
+- cache brand kit
+- load once per session
+- sync with editor
+
+## ⚠️ ENFORCEMENT ENGINE
+
+- all creatives MUST validate against brand kit
+
+VALIDATION:
+
+- color must be in allowed_colors
+- font must be in allowed_fonts
+
+BLOCK IF:
+
+- rule violated AND locked = true
 ⸻
 
 🧠 6. AI Layer
@@ -152,8 +186,21 @@ brand_kits
 * auto-apply brand styles
 * reject off-brand creatives
 
-⸻
+## 🧠 AI LAYER (SAFE MODE)
 
+- AI suggestions MUST respect brand rules
+
+RULES:
+
+- no off-brand generation
+- auto-correct suggestions to match brand kit
+- use cached suggestions only
+⸻
+## 🔗 EDITOR INTEGRATION
+
+- creatives/editor MUST consume brand-kit
+- enforce styles in real-time
+- prevent invalid save if locked
 ⸻
 
 💳 7. Credits System
@@ -189,3 +236,10 @@ Apply brand rules inside editor automatically
 ## 🧬 SCHEMA CONTROL
 - schema.sql is source of truth
 - no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI

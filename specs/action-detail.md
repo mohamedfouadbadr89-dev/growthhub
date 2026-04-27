@@ -223,5 +223,103 @@ AUTH: CLERK
 - NO auto AI
 - NO fallback AI
 
+
+## 🔁 ACTION STATE MACHINE
+
+status:
+
+- pending
+- validated
+- approved
+- executing
+- success
+- failed
+- rolled_back
+
+---
+
+RULE:
+
+- every action MUST go through state transitions
+- no direct execution jump
+
+## ⚠️ IDEMPOTENCY
+
+- every execution MUST include idempotency_key
+
+RULE:
+
+- same action MUST NOT execute twice
+- duplicate requests MUST return same result
+
+## 🔁 RETRY SYSTEM
+
+IF execution fails:
+
+- retry max 3 times
+- exponential backoff
+
+IF still fails:
+
+- mark as failed
+- trigger alert
+
+## 🛑 ROLLBACK SYSTEM
+
+REQUIRED FOR:
+
+- budget changes
+- bid changes
+- audience changes
+
+---
+
+RULE:
+
+- every action MUST have rollback plan
+
+## 🔴 REALTIME EXECUTION
+
+CHANNEL:
+
+action_updates:{org_id}
+
+EVENTS:
+
+- action_started
+- action_completed
+- action_failed
+
+---
+
+RULE:
+
+- UI MUST reflect execution instantly
+
+
+## ⚠️ SIMULATION RULES
+
+- simulation MUST be cached
+- MUST reuse previous results if unchanged
+
+---
+
+KEY:
+
+org_id + action_id + input_hash
+
+## 🔗 DECISION → ACTION FLOW
+
+audience recommendation → creates action
+
+action → goes to execution engine
+
+execution → logs result
+
+result → feeds back to:
+
+- decision engine
+- audience scoring
+
 ✅ DONE
 

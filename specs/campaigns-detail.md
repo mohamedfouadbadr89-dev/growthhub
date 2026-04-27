@@ -1,3 +1,4 @@
+
 campaigns-detail.md
 
 🔒 SYSTEM ENFORCEMENT LAYER
@@ -386,3 +387,80 @@ Important
 * NO auto execution
 * NO AI on page load
 * ALL execution must pass validation + approval
+
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: HYBRID
+
+---
+
+1. BROADCAST (PRIMARY)
+
+CHANNEL:
+
+- campaign_execution:{org_id}:{campaign_id}
+
+EVENTS:
+
+action_triggered:
+- action_id
+- type
+- timestamp
+
+action_validated:
+- action_id
+- risk_level
+- status
+
+action_executed:
+- action_id
+- result
+- performance_delta
+- timestamp
+
+action_blocked:
+- action_id
+- reason
+
+---
+
+2. POSTGRES_CHANGES (SECONDARY)
+
+TABLES:
+
+- campaign_metrics (UPDATE)
+- adsets (UPDATE)
+
+---
+
+RULES:
+
+- UI MUST reflect execution instantly
+- NO optimistic UI (always wait backend)
+- KPI cards MUST update after execution
+
+---
+
+FALLBACK:
+
+- refetch campaign API after action
+
+---
+
+SECURITY:
+
+- org_id + campaign_id isolation

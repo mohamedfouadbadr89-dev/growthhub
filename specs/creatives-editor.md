@@ -150,6 +150,19 @@ POST /api/v1/creatives/:id/publish
 
 POST /api/v1/creatives/:id/export
 
+
+POST /api/v1/creatives/:id/ai/suggest
+
+Purpose:
+
+* generate copy / layout suggestions
+
+RULES:
+
+- user-triggered only
+- cached per creative_id
+- rate-limited
+
 ⸻
 
 ⸻
@@ -167,6 +180,18 @@ creative_drafts
 * updated_at
 
 ⸻
+creative_versions
+
+* id
+* creative_id
+* snapshot (jsonb)
+* created_at
+
+## ⚠️ VERSION CONTROL
+
+- every save creates new version
+- publish uses latest stable version
+- rollback supported
 
 ⸻
 
@@ -180,6 +205,24 @@ creative_drafts
 
 ⸻
 
+## ⚡ REAL-TIME SYNC
+
+SOURCE: SUPABASE REALTIME
+
+CHANNEL:
+
+- creatives:{org_id}:{creative_id}
+
+EVENTS:
+
+- content_updated
+- elements_updated
+- preview_updated
+
+RULE:
+
+- UI must update instantly across sessions
+
 ⸻
 
 🧠 6. AI Layer
@@ -190,6 +233,19 @@ creative_drafts
 * performance prediction
 
 ⸻
+
+## 🧠 AI GUARDRAILS
+
+AI MUST NOT:
+
+- generate misleading claims
+- violate ad policies
+- exceed character limits
+
+OUTPUT MUST INCLUDE:
+
+- confidence_score
+- predicted_metrics
 
 ⸻
 
@@ -238,3 +294,23 @@ Requirements:
 - schema.sql is source of truth
 - no runtime creation
 
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🛑 CREATIVE VALIDATION
+
+BEFORE PUBLISH:
+
+- headline exists
+- CTA exists
+- media valid
+- mobile preview OK
+
+BLOCK IF:
+
+- missing required fields

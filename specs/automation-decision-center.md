@@ -372,3 +372,90 @@ Security:
 * no cross-account decisions
 
 ⸻
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: BROADCAST (PRIMARY)
+
+CHANNELS:
+
+- decision_feed:{org_id}
+  → emits new decisions in real-time
+
+- decision_streams:{org_id}
+  → emits updates on strategy state
+
+---
+
+EVENT STRUCTURE:
+
+decision_created:
+- id
+- type
+- message
+- confidence
+- impact
+- timestamp
+
+decision_updated:
+- id
+- status
+- confidence
+- impact_score
+
+---
+
+RULES:
+
+- realtime MUST NOT trigger AI
+- realtime is read-only layer
+- AI generation ONLY via POST APIs
+- all events scoped by org_id
+- no cross-org subscription
+
+---
+
+FALLBACK:
+
+- if realtime fails → refetch via:
+GET /api/v1/automation/decision-center
+
+---
+
+SECURITY:
+
+- enforce RLS on realtime.messages
+- channel subscription must validate org_id
+
+
+## 🔗 DECISION → ACTION FLOW
+
+decision → creates action
+
+RULE:
+
+- decision NEVER executes
+- decision MUST generate action
+- action goes to execution engine
+
+---
+
+## ⚠️ CONFLICT RESOLUTION
+
+IF multiple decisions affect same entity:
+
+- choose highest confidence + impact
+- discard lower priority decisions

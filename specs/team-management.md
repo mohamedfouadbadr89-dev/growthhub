@@ -142,6 +142,29 @@ total: number
 
 3. API Contracts
 
+POST /api/v1/team/approve
+
+Body:
+
+* action_id
+
+RULES:
+
+- admin only
+
+## 🧾 AUDIT LOGGING
+
+log all:
+
+- role changes
+- member removal
+- invite actions
+- approvals
+
+RULE:
+
+- logs immutable
+
 GET /api/v1/team
 
 Query:
@@ -176,6 +199,23 @@ DELETE /api/v1/team/:id
 
 🗄️ 4. DB Schema
 
+team_permissions
+
+* id
+* role
+* permissions (jsonb)
+
+audit_logs
+
+* id
+* org_id
+* user_id
+* action
+* entity
+* entity_id
+* metadata (jsonb)
+* created_at
+
 team_members
 
 * id
@@ -207,8 +247,40 @@ team_invites
 * update roles
 * manage invites
 
-⸻
 
+## ⚡ PERFORMANCE
+
+- cache team members
+- invalidate on change
+⸻
+## 🔐 RBAC SYSTEM
+
+ROLES:
+
+- admin → full access
+- manager → execute + edit
+- viewer → read-only
+
+RULES:
+
+- all endpoints MUST check role
+- no privilege escalation
+
+## ⚠️ APPROVAL SYSTEM
+
+REQUIRED FOR:
+
+- high-risk actions
+- automation activation
+- budget changes
+
+FLOW:
+
+1. user triggers action
+2. system checks role
+3. if requires approval:
+   → create approval request
+   → wait admin approval
 ⸻
 
 🧠 6. AI Layer
@@ -217,7 +289,14 @@ team_invites
 * suggest least-privilege roles
 
 ⸻
+## 🧠 AI LAYER (ADVISORY ONLY)
 
+- role recommendations are suggestions only
+
+RULES:
+
+- NO auto role assignment
+- MUST require manual confirmation
 ⸻
 
 💳 7. Credits System
@@ -249,3 +328,17 @@ team_invites
 ## 🧬 SCHEMA CONTROL
 - schema.sql is source of truth
 - no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔒 SECURITY
+
+- strict org isolation
+- no cross-org access
+- validate org_id on every request

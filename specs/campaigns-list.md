@@ -1,4 +1,63 @@
+
 campaigns-list.md
+
+## 🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+- ❌ NO direct AI calls from frontend
+- ❌ NO AI generation on GET requests
+- ❌ NO "if missing → generate"
+- ✅ AI only triggered via POST endpoints
+- ✅ ALL AI responses must be cached
+
+CACHE:
+- required for all AI outputs
+- key: org_id + entity_id + type
+
+RATE LIMIT:
+- per user
+- per org
+- prevent duplicate execution within 60s
+
+---
+
+## 🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+- ❌ NO local database
+- ❌ NO prisma migrations
+- ❌ NO mock data in production
+- ✅ ALL tables must exist in Supabase
+- ✅ ALL writes go through Supabase API / RPC
+
+---
+
+## 🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+- OpenRouter keys
+- BYOK users
+- external APIs
+
+RULES:
+- ❌ NEVER expose keys to frontend
+- ❌ NEVER log secrets
+- ✅ fetch at runtime only
+
+---
+
+## ⚡ AI EXECUTION RULE
+
+- AI must NEVER run on page load
+- AI must be triggered ONLY by user action
+- AI must be cached after execution
 
 PAGE: campaigns/page.tsx
 
@@ -32,6 +91,15 @@ PAGE: campaigns/page.tsx
 * duplicate
 * export
 
+## ⚠️ BULK ACTION RULES
+
+- each campaign MUST be validated individually
+- MUST check risk before execution
+- MUST support partial success
+
+BLOCK IF:
+
+- any campaign risk = HIGH (unless override)
 ⸻
 
 🧱 2. Data Shape
@@ -56,7 +124,18 @@ status: string
 
 3. API Contracts
 
+
 GET /api/v1/campaigns
+
+Query:
+
+- page
+- limit
+- date_range
+- platform
+- status
+- sort_by (spend | revenue | roas)
+- order (asc | desc)
 
 ⸻
 
@@ -73,12 +152,42 @@ campaign_metrics
 * sort by performance
 * filter by status/platform
 
+## ⚡ REAL-TIME UPDATES
+
+SOURCE: SUPABASE REALTIME
+
+CHANNEL:
+
+- campaigns:{org_id}
+
+EVENTS:
+
+- campaign_updated
+- campaign_status_changed
+- metrics_updated
+
+RULE:
+
+- UI must auto-update without refresh
+
 ⸻
 
 🧠 6. AI Layer
 
-* highlight top campaigns
+* 
 * flag underperformers
+
+## 🧠 AI LAYER (BACKEND ONLY)
+
+SOURCE:
+
+- precomputed rankings
+- cached insights
+
+RULES:
+
+- NO AI execution on GET
+- rankings fetched from DB/cache only
 
 ⸻
 
@@ -105,3 +214,15 @@ campaign_metrics
 
 * pagination required
 * sorting enabled
+
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+

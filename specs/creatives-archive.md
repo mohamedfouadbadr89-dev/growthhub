@@ -58,7 +58,7 @@ RULES:
 - AI must be triggered ONLY by user action
 - AI must be cached after execution
 
-PAGE: dashboard/creatives/archive/page.tsx
+PAGE: 
 
 ⸻
 
@@ -94,6 +94,15 @@ Actions
 * relaunch
 
 ⸻
+## ⚠️ RELAUNCH SAFETY
+
+- MUST validate campaign compatibility
+- MUST check current performance trends
+
+BLOCK IF:
+
+- creative outdated
+- performance declining
 
 ⸻
 
@@ -125,6 +134,13 @@ POST /api/v1/creatives/:id/duplicate
 
 ⸻
 
+POST /api/v1/creatives/bulk/reuse
+
+RULES:
+
+- validate each creative
+- support partial execution
+
 ⸻
 
 🗄️ 4. DB Schema
@@ -139,6 +155,13 @@ creative_archive
 * created_at
 
 ⸻
+creative_history
+
+* id
+* creative_id
+* version_id
+* performance_score
+* created_at
 
 ⸻
 
@@ -148,7 +171,35 @@ creative_archive
 2. filter + search
 3. allow reuse / relaunch
 
+
+## 📊 PERFORMANCE SCORING
+
+score based on:
+
+- roas
+- ctr
+- engagement
+- recency
+
+RULE:
+
+- prioritize recent high performers
+
 ⸻
+
+## ⚡ REAL-TIME ARCHIVE SYNC
+
+SOURCE: SUPABASE REALTIME
+
+CHANNEL:
+
+- creatives_archive:{org_id}
+
+EVENTS:
+
+- creative_archived
+- creative_reused
+- performance_updated
 
 ⸻
 
@@ -158,7 +209,14 @@ creative_archive
 * identify evergreen creatives
 
 ⸻
+## 🧠 AI LAYER (BACKEND ONLY)
 
+- reusable creatives detection is precomputed
+- fetched from cache / DB
+
+RULES:
+
+- NO AI execution on GET
 ⸻
 
 💳 7. Credits System
@@ -203,3 +261,9 @@ Requirements:
 - schema.sql is source of truth
 - no runtime creation
 
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI

@@ -1,5 +1,63 @@
 decisions-alerts.md
 
+## 🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+- ❌ NO direct AI calls from frontend
+- ❌ NO AI generation on GET requests
+- ❌ NO "if missing → generate"
+- ✅ AI only triggered via POST endpoints
+- ✅ ALL AI responses must be cached
+
+CACHE:
+- required for all AI outputs
+- key: org_id + entity_id + type
+
+RATE LIMIT:
+- per user
+- per org
+- prevent duplicate execution within 60s
+
+---
+
+## 🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+- ❌ NO local database
+- ❌ NO prisma migrations
+- ❌ NO mock data in production
+- ✅ ALL tables must exist in Supabase
+- ✅ ALL writes go through Supabase API / RPC
+
+---
+
+## 🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+- OpenRouter keys
+- BYOK users
+- external APIs
+
+RULES:
+- ❌ NEVER expose keys to frontend
+- ❌ NEVER log secrets
+- ✅ fetch at runtime only
+
+---
+
+## ⚡ AI EXECUTION RULE
+
+- AI must NEVER run on page load
+- AI must be triggered ONLY by user action
+- AI must be cached after execution
+
 PAGE: decisions/alerts/page.tsx
 
 ⸻
@@ -317,6 +375,114 @@ feeds:
 * incident response system
 
 ⸻
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: HYBRID
+
+---
+
+1. BROADCAST (PRIMARY)
+
+CHANNEL:
+
+- alerts_stream:{org_id}
+
+EVENTS:
+
+alert_created:
+- id
+- severity
+- entity
+- platform
+- timestamp
+
+alert_updated:
+- id
+- status
+- severity
+
+alert_resolved:
+- id
+- timestamp
+
+---
+
+2. POSTGRES_CHANGES (SECONDARY)
+
+TABLES:
+
+- alerts (INSERT / UPDATE)
+- system_health (UPDATE)
+
+---
+
+RULES:
+
+- alerts MUST appear instantly
+- critical alerts MUST trigger UI highlight
+- resolved alerts MUST update in-place
+
+---
+
+UI BEHAVIOR:
+
+- prepend new alerts
+- allow live filtering
+- maintain scroll position
+
+---
+
+FALLBACK:
+
+- GET /api/v1/alerts every 15s
+
+---
+
+SECURITY:
+
+- org_id isolation
+- private channels only
+
+
+## ⚠️ ALERT DEDUPLICATION
+
+RULE:
+
+- same alert (entity + type) MUST NOT repeat within cooldown window
+
+FIELDS:
+
+- last_triggered_at
+- cooldown_minutes
+
+---
+
+IF alert triggered within cooldown
+→ ignore
+
+---
+
+## 🔁 ALERT GROUPING
+
+- group similar alerts into cluster
+
+EXAMPLE:
+
+- multiple CPA spikes → one grouped alert
+
 
 ✅ DONE
 

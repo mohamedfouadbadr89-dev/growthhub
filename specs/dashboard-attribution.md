@@ -341,4 +341,83 @@ RULES:
 - attribution computed via backend only
 - data-driven model is future only (not implemented)
 
+
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: CONTROLLED
+
+---
+
+1. BROADCAST
+
+CHANNEL:
+
+- attribution_updates:{org_id}
+
+EVENTS:
+
+attribution_updated:
+- model
+- total_revenue
+- attributed_revenue
+- coverage
+
+channel_update:
+- channel
+- attributed_revenue
+- share
+
+top_paths_update:
+- paths[]
+
+---
+
+RULES:
+
+- summary MUST update instantly
+- channel shares MUST reflect changes
+- journeys MAY be partial (lazy loaded)
+
+---
+
+2. NON-REALTIME (CRITICAL)
+
+- customer journeys → NOT realtime
+- top paths → refresh every 60–120s
+
+---
+
+3. POSTGRES_CHANGES
+
+TABLES:
+
+- attribution_results (UPDATE)
+- customer_journeys (INSERT)
+
+---
+
+FALLBACK:
+
+- refetch GET /api/v1/dashboard/attribution every 60s
+
+---
+
+SECURITY:
+
+- org_id isolation
+
 ✅ DONE

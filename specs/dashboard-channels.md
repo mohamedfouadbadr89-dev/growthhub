@@ -224,6 +224,39 @@ efficiency = weighted formula:
 + 0.3 * ctr  
 + 0.2 * conversion_rate
 
+## ⚠️ CALCULATION RULE
+
+- ALL calculations MUST be done in backend
+- frontend MUST NOT compute metrics
+- frontend only renders values
+
+REASON:
+
+- consistency across system
+- avoid drift between pages
+
+## 🔗 EVENT SOURCES
+
+dashboard updates triggered by:
+
+- actions execution
+- automation events
+- decision outcomes
+- metrics ingestion pipeline
+
+---
+
+FLOW:
+
+execution → logs → metrics update → dashboard push
+
+---
+
+RULES:
+
+- dashboard MUST NOT calculate logic
+- dashboard consumes processed data only
+
 ⸻
 
 Trend:
@@ -338,6 +371,81 @@ NONE
 RULES:
 - strictly no AI
 - analytics only
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: SELECTIVE
+
+---
+
+1. BROADCAST
+
+CHANNEL:
+
+- channel_metrics:{org_id}
+
+EVENTS:
+
+channel_update:
+- channel_id
+- spend
+- revenue
+- roas
+- efficiency
+
+status_update:
+- channel_id
+- status (scaling / declining / critical)
+
+---
+
+RULES:
+
+- channel cards MUST update live
+- status MUST reflect instantly
+- efficiency MUST recalculate backend-side only
+
+---
+
+2. POSTGRES_CHANGES
+
+TABLES:
+
+- channel_metrics (INSERT)
+- channel_scores (UPDATE)
+
+---
+
+3. NON-REALTIME
+
+- comparison chart → refresh every 60–120s
+- historical data → cached only
+
+---
+
+FALLBACK:
+
+- refetch GET /api/v1/dashboard/channels every 60s
+
+---
+
+SECURITY:
+
+- org_id isolation
 
 
 ✅ DONE

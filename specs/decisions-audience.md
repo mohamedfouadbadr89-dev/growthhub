@@ -1,5 +1,63 @@
 decisions-audience.md
 
+## 🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+- ❌ NO direct AI calls from frontend
+- ❌ NO AI generation on GET requests
+- ❌ NO "if missing → generate"
+- ✅ AI only triggered via POST endpoints
+- ✅ ALL AI responses must be cached
+
+CACHE:
+- required for all AI outputs
+- key: org_id + entity_id + type
+
+RATE LIMIT:
+- per user
+- per org
+- prevent duplicate execution within 60s
+
+---
+
+## 🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+- ❌ NO local database
+- ❌ NO prisma migrations
+- ❌ NO mock data in production
+- ✅ ALL tables must exist in Supabase
+- ✅ ALL writes go through Supabase API / RPC
+
+---
+
+## 🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+- OpenRouter keys
+- BYOK users
+- external APIs
+
+RULES:
+- ❌ NEVER expose keys to frontend
+- ❌ NEVER log secrets
+- ✅ fetch at runtime only
+
+---
+
+## ⚡ AI EXECUTION RULE
+
+- AI must NEVER run on page load
+- AI must be triggered ONLY by user action
+- AI must be cached after execution
+
 PAGE: decisions/audience/page.tsx
 
 ⸻
@@ -360,6 +418,114 @@ feeds:
 * creative strategy
 
 ⸻
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔗 AUDIENCE VALUE LAYER
+
+EVERY audience MUST include:
+
+- avg_ltv
+- ltv_cac_ratio
+- payback_days
+
+SOURCE:
+
+- LTV engine
+- attribution engine
+
+RULE:
+
+- audience decisions MUST NOT depend on ROAS only
+- MUST include long-term value
+
+## ⚠️ ATTRIBUTION INTEGRATION
+
+audience performance MUST use:
+
+- attributed revenue
+- NOT raw revenue
+
+---
+
+RULE:
+
+ROAS = attributed_revenue / spend
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+CHANNEL:
+
+audience_updates:{org_id}
+
+EVENTS:
+
+- audience_performance_update
+- frequency_update
+- saturation_update
+
+---
+
+RULES:
+
+- frequency MUST update in real-time
+- saturation MUST update incrementally
+- CPA spikes trigger alert instantly
+
+---
+
+FALLBACK:
+
+- refetch every 30–60s
+
+## 🧠 AUDIENCE HEALTH SCORE
+
+score =
+
+0.3 * roas +
+0.2 * trend +
+0.2 * (1 - saturation) +
+0.15 * (1 - overlap) +
+0.15 * ltv_score
+
+---
+
+STATUS:
+
+> 80 → healthy  
+50–80 → warning  
+<50 → critical
+
+## ⚠️ EXECUTION SAFETY
+
+- audience endpoints MUST NOT execute directly
+
+---
+
+FLOW:
+
+1. create action
+2. send to execution engine
+3. validate
+4. execute
+
+---
+
+RULE:
+
+NO direct execution from audience layer
+
 
 ✅ DONE
 

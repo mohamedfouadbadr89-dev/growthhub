@@ -33,3 +33,53 @@ ENV:
 
 FAIL SAFE:
 - if table not found → STOP (do not create)
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+
+## ⚠️ SCHEMA VERSIONING
+
+FIELDS:
+
+- schema_version
+
+RULE:
+
+- backend MUST check schema version before queries
+- mismatch → block execution
+
+## 🔁 BACKWARD COMPATIBILITY
+
+RULE:
+
+- migrations MUST be additive first
+- DO NOT break existing queries
+
+EXAMPLE:
+
+- add column → OK
+- rename column → NOT allowed without migration plan
+
+## 🛑 ROLLBACK STRATEGY
+
+- every migration MUST have rollback
+
+RULE:
+
+- failed migration → revert immediately
+- system MUST remain operational
+
+## 🌍 ENVIRONMENTS
+
+- dev
+- staging
+- production
+
+RULE:
+
+- migrations MUST be tested on staging first
+- NEVER apply directly to production
+
+

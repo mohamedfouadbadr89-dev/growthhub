@@ -1,5 +1,66 @@
 📄 dashboard-overview.md
 
+
+## 🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+- ❌ NO direct AI calls from frontend
+- ❌ NO AI generation on GET requests
+- ❌ NO "if missing → generate"
+- ✅ AI only triggered via POST endpoints
+- ✅ ALL AI responses must be cached
+
+CACHE:
+- required for all AI outputs
+- key: org_id + entity_id + type
+
+RATE LIMIT:
+- per user
+- per org
+- prevent duplicate execution within 60s
+
+---
+
+## 🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+- ❌ NO local database
+- ❌ NO prisma migrations
+- ❌ NO mock data in production
+- ✅ ALL tables must exist in Supabase
+- ✅ ALL writes go through Supabase API / RPC
+
+---
+
+## 🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+- OpenRouter keys
+- BYOK users
+- external APIs
+
+RULES:
+- ❌ NEVER expose keys to frontend
+- ❌ NEVER log secrets
+- ✅ fetch at runtime only
+
+---
+
+## ⚡ AI EXECUTION RULE
+
+- AI must NEVER run on page load
+- AI must be triggered ONLY by user action
+- AI must be cached after execution
+
+
+
 PAGE: dashboard/overview/page.tsx
 
 ⸻
@@ -214,7 +275,18 @@ if profit < 0 → critical issue
 AI Summary:
 
 * fetch latest from ai_summaries
-* if missing → generate via OpenRouter
+* 🧠 AI Layer
+
+SOURCE:
+GET /api/v1/ai/cache?type=dashboard_summary
+
+TRIGGER:
+POST /api/v1/dashboard/summary/regenerate
+
+RULES:
+- return cached only
+- if not exists → return null
+- NEVER generate inside GET
 * DO NOT auto-regenerate on page load
 
 ⸻
@@ -284,5 +356,88 @@ Important:
 * regenerate only on user action
 
 ⸻
+
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: HYBRID (CRITICAL)
+
+---
+
+1. BROADCAST (PRIMARY)
+
+CHANNEL:
+
+- dashboard_overview:{org_id}
+
+EVENTS:
+
+kpi_update:
+- revenue
+- spend
+- profit
+- roas
+- mer
+- timestamp
+
+campaign_update:
+- campaign_id
+- status
+- spend
+- revenue
+- roas
+
+highlight_update:
+- wins[]
+- issues[]
+
+---
+
+2. POSTGRES_CHANGES (LIMITED)
+
+TABLES:
+
+- daily_metrics (INSERT)
+- highlights (INSERT)
+
+---
+
+RULES:
+
+- KPI cards MUST update live
+- campaign table MUST reflect latest status
+- highlights MUST push instantly
+
+---
+
+3. NON-REALTIME (INTENTIONAL)
+
+- trend chart → refresh every 60s
+- AI summary → cache only (NO realtime)
+
+---
+
+FALLBACK:
+
+- refetch GET /api/v1/dashboard/overview every 30s
+
+---
+
+SECURITY:
+
+- org_id scoped channels
 
 ✅ DONE

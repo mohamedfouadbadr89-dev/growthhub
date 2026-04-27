@@ -59,7 +59,7 @@ RULES:
 - AI must be cached after execution
 
 
-PAGE: dashboard/decisions/[id]/page.tsx
+PAGE: decisions/[id]/page.tsx
 
 ⸻
 
@@ -471,5 +471,92 @@ RULES:
 - NO Claude generation allowed
 
 
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: HYBRID
+
+---
+
+1. BROADCAST (PRIMARY)
+
+CHANNEL:
+
+- decision_detail:{org_id}:{decision_id}
+
+EVENTS:
+
+decision_updated:
+- impact_score
+- confidence
+- timestamp
+
+simulation_updated:
+- projected_revenue
+- roas_shift
+- confidence_range
+
+risk_updated:
+- risk_type
+- severity
+- worst_case_loss
+
+status_changed:
+- status (new → applied → ignored)
+
+---
+
+2. POSTGRES_CHANGES (SECONDARY)
+
+TABLES:
+
+- decisions (UPDATE)
+- decision_simulations (UPDATE)
+- decision_risks (UPDATE)
+
+---
+
+RULES:
+
+- UI MUST update if simulation changes
+- UI MUST reflect decision status instantly
+- risk MUST always be latest version
+
+---
+
+FALLBACK:
+
+- refetch GET /api/v1/decisions/:id every 30s
+
+---
+
+SECURITY:
+
+- org_id + decision_id scoped
+
+## 🧠 SIMULATION UPDATE STRATEGY
+
+- simulations generated in background jobs
+- update triggered by:
+  - major metric change (>10%)
+  - execution event
+  - scheduled refresh
+
+- UI NEVER triggers simulation automatically
+- UI ONLY listens to updates
 ✅ DONE
 

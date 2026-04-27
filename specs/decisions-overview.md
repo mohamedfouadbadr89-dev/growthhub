@@ -1,5 +1,65 @@
 decisions-overview.md
 
+## 🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+- ❌ NO direct AI calls from frontend
+- ❌ NO AI generation on GET requests
+- ❌ NO "if missing → generate"
+- ✅ AI only triggered via POST endpoints
+- ✅ ALL AI responses must be cached
+
+CACHE:
+- required for all AI outputs
+- key: org_id + entity_id + type
+
+RATE LIMIT:
+- per user
+- per org
+- prevent duplicate execution within 60s
+
+---
+
+## 🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+- ❌ NO local database
+- ❌ NO prisma migrations
+- ❌ NO mock data in production
+- ✅ ALL tables must exist in Supabase
+- ✅ ALL writes go through Supabase API / RPC
+
+---
+
+## 🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+- OpenRouter keys
+- BYOK users
+- external APIs
+
+RULES:
+- ❌ NEVER expose keys to frontend
+- ❌ NEVER log secrets
+- ✅ fetch at runtime only
+
+---
+
+## ⚡ AI EXECUTION RULE
+
+- AI must NEVER run on page load
+- AI must be triggered ONLY by user action
+- AI must be cached after execution
+
+
+
 PAGE: decisions/page.tsx
 
 ⸻
@@ -14,14 +74,26 @@ Decision Priority Strip:
 
 ⸻
 
-AI Decision Summary:
+## 🧠 AI Layer
 
-* risks_detected
-* opportunities_detected
-* top_issue
-* top_opportunity
+SOURCE: BACKEND ONLY
+
+RULES:
+- NO AI execution in frontend
+- NO generation inside UI
+- ALL decisions precomputed from backend
+- UI only renders decision output
+
+
+## ⚠️ Execution Rules
+
+- decisions are READ-ONLY in UI
+- apply / ignore only triggers API
+- no local computation
 
 ⸻
+
+Recommended Action (backend-generated)
 
 Real-Time Signals:
 
@@ -56,17 +128,10 @@ Decision Metrics:
 
 ⸻
 
-AI Reasoning:
-
-* reasoning_text
-
 ⸻
 
-Recommended Action:
-
-* action_text
-* action_type (scale / pause / reallocate / refresh)
-
+Decision Reasoning (from backend only):
+* reasoning_text (precomputed)
 ⸻
 
 System Pulse (Right Panel):
@@ -411,5 +476,88 @@ feeds:
 * budget allocator
 
 ⸻
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: HYBRID
+
+---
+
+1. BROADCAST (PRIMARY)
+
+CHANNEL:
+
+- decisions_stream:{org_id}
+
+EVENTS:
+
+decision_created:
+- id
+- title
+- platform
+- impact_value
+- confidence
+- risk
+- urgency
+- timestamp
+
+decision_updated:
+- id
+- status
+- impact_value
+- confidence
+
+decision_applied:
+- id
+- status
+
+decision_ignored:
+- id
+- status
+
+---
+
+2. POSTGRES_CHANGES (SECONDARY)
+
+TABLES:
+
+- decision_signals (INSERT)
+- system_pulse (UPDATE)
+
+---
+
+RULES:
+
+- decisions MUST be precomputed (NO realtime AI)
+- UI MUST prepend new decisions
+- updates MUST be in-place (no full reload)
+
+---
+
+FALLBACK:
+
+- GET /api/v1/decisions every 20s
+
+---
+
+SECURITY:
+
+- org_id scoped channels
+- RLS enforced
+
 
 ✅ DONE

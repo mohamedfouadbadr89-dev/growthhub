@@ -388,3 +388,99 @@ feeds:
 
 * automation engine
 * decision feedback loop
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: BROADCAST (CRITICAL)
+
+CHANNEL:
+
+- actions_stream:{org_id}
+
+EVENTS:
+
+action_created:
+- id
+- title
+- platform
+- impact_score
+- urgency
+- timestamp
+
+action_updated:
+- id
+- status
+- validation_passed
+- risk_level
+
+action_executed:
+- id
+- status
+- performance_delta
+- executed_at
+
+action_failed:
+- id
+- error
+- timestamp
+
+---
+
+RULES:
+
+- pending list MUST update in real-time
+- executed actions MUST move to history instantly
+- failed actions MUST surface immediately
+
+---
+
+UI BEHAVIOR:
+
+- remove from pending on execution
+- append to history
+- update in-place (no reload)
+
+---
+
+FALLBACK:
+
+- GET /api/v1/actions every 20s
+
+---
+
+SECURITY:
+
+- org_id scoped channel
+
+
+## ⚠️ ACTION CONFLICT RULE
+
+IF two actions target same entity:
+
+- prioritize higher impact
+- block conflicting actions
+
+---
+
+## 🔗 ACTION DEPENDENCY
+
+- some actions require previous action
+
+EXAMPLE:
+
+- cannot scale before fixing CPA issue

@@ -62,7 +62,7 @@ RULES:
 
 
 
-PAGE: settings/permissions/page.tsx
+PAGE: app/settings/page.tsx
 
 ⸻
 
@@ -291,6 +291,16 @@ Rules:
 
 ⸻
 
+## 🧠 AI LAYER (STRICT)
+
+- suggest roles only
+
+RULES:
+
+- NO auto permission change
+- must require admin approval
+
+
 💳 7. Credits System
 
 * ai_suggestions → LOW
@@ -346,4 +356,50 @@ AUTH: CLERK
 
 - NO auto AI
 - NO fallback AI
+
+## 🔐 PERMISSION MIDDLEWARE
+
+- every API request MUST pass permission check
+
+FLOW:
+
+1. get clerk_user_id
+2. map → role
+3. load permissions
+4. validate action
+
+## ⚠️ DENY PRIORITY
+
+- explicit deny overrides allow
+
+EXAMPLE:
+
+- role allows edit
+- but module denies edit
+→ final = DENY
+
+## ⚡ PERFORMANCE
+
+- cache permissions per user
+- invalidate on role change
+
+## 🔒 PERMISSION SCOPE
+
+permissions apply per:
+
+- org_id
+- module
+- action
+
+## ⚠️ APPROVAL PERMISSION
+
+only roles with:
+
+can_approve = true
+
+→ can approve:
+
+- actions
+- automation
+- decisions
 

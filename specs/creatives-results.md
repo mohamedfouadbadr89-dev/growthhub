@@ -1,5 +1,63 @@
 creatives-results.md
 
+## 🔒 SYSTEM ENFORCEMENT LAYER
+
+AI_GATEWAY: REQUIRED
+AI_SOURCE: API_GATEWAY_ONLY
+
+RULES:
+- ❌ NO direct AI calls from frontend
+- ❌ NO AI generation on GET requests
+- ❌ NO "if missing → generate"
+- ✅ AI only triggered via POST endpoints
+- ✅ ALL AI responses must be cached
+
+CACHE:
+- required for all AI outputs
+- key: org_id + entity_id + type
+
+RATE LIMIT:
+- per user
+- per org
+- prevent duplicate execution within 60s
+
+---
+
+## 🧱 DATABASE SOURCE
+
+DB_PROVIDER: SUPABASE_ONLY
+
+RULES:
+- ❌ NO local database
+- ❌ NO prisma migrations
+- ❌ NO mock data in production
+- ✅ ALL tables must exist in Supabase
+- ✅ ALL writes go through Supabase API / RPC
+
+---
+
+## 🔐 SECRETS MANAGEMENT
+
+VAULT: SUPABASE_VAULT
+
+USE:
+- OpenRouter keys
+- BYOK users
+- external APIs
+
+RULES:
+- ❌ NEVER expose keys to frontend
+- ❌ NEVER log secrets
+- ✅ fetch at runtime only
+
+---
+
+## ⚡ AI EXECUTION RULE
+
+- AI must NEVER run on page load
+- AI must be triggered ONLY by user action
+- AI must be cached after execution
+
 PAGE: creatives/page.tsx
 
 ⸻
@@ -113,6 +171,17 @@ POST /api/v1/creatives/:id/push
 POST /api/v1/creatives/:id/share
 
 ⸻
+POST /api/v1/creatives/generate
+
+Purpose:
+
+* generate new variants
+
+RULES:
+
+- user-triggered only
+- cached per org_id + concept
+- rate-limited
 
 ⸻
 
@@ -128,6 +197,18 @@ creatives
 * score
 * created_at
 
+creative_versions
+
+* id
+* creative_id
+* snapshot (jsonb)
+* created_at
+
+## ⚠️ VERSION CONTROL
+
+- every generated variant is stored as version
+- top performer always linked to latest stable version
+- rollback supported
 ⸻
 
 creative_metrics
@@ -151,8 +232,29 @@ creative_metrics
 4. calculate predicted impact
 5. return variants
 
-⸻
+## ⚡ PERFORMANCE
 
+- cache creative results
+- invalidate on new generation
+- reuse predicted metrics
+⸻
+## ⚡ REAL-TIME CREATIVE PERFORMANCE
+
+SOURCE: SUPABASE REALTIME
+
+CHANNEL:
+
+- creatives:{org_id}
+
+EVENTS:
+
+- creative_updated
+- metrics_updated
+- new_variant_generated
+
+RULE:
+
+- UI must update instantly
 ⸻
 
 🧠 6. AI Layer
@@ -164,6 +266,19 @@ creative_metrics
 * performance prediction
 
 ⸻
+## 🧠 AI GUARDRAILS
+
+AI MUST NOT:
+
+- generate misleading ads
+- violate platform policies
+- exceed character limits
+
+OUTPUT MUST INCLUDE:
+
+- confidence_score
+- predicted_metrics
+- reasoning
 
 ⸻
 
@@ -206,3 +321,43 @@ Requirements:
 * grid rendering
 * sorting (score / CTR / engagement)
 * fast filtering
+
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔗 DECISION INTEGRATION
+
+- creatives may have linked decisions:
+  - fatigue detected
+  - low conversion
+  - scaling opportunity
+
+SOURCE:
+
+- decision engine
+
+## 🔗 POST-LAUNCH FEEDBACK
+
+- track real performance after push
+
+FIELDS:
+
+- actual_ctr
+- actual_roas
+
+---
+
+RULE:
+
+- compare predicted vs actual
+- update scoring model
