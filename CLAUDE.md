@@ -316,5 +316,5 @@ byok_openrouter_key: encrypted via Supabase Vault (nullable)
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/007-frontend-api-integration/plan.md`.
+`specs/008-mcp-byok-execution/plan.md`.
 <!-- SPECKIT END -->

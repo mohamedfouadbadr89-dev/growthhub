@@ -1,12 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useAuth } from "@clerk/nextjs"
 import {
   Search, Bell, History, ShoppingBag, BarChart2, Cloud,
   CloudOff, Loader2, Check, Sparkles,
 } from "lucide-react"
+import { ByokModal } from "@/components/ai/byok-modal"
+import { apiClient } from "@/lib/api-client"
 
-type Category = "All" | "Ads Platforms" | "Analytics" | "Data" | "CRM"
+type Category = "All" | "Ads Platforms" | "Analytics" | "AI" | "Data" | "CRM"
 type StatusFilter = "all" | "connected" | "not-connected"
 
 interface Integration {
@@ -88,9 +91,20 @@ const INTEGRATIONS: Integration[] = [
     iconColor: "text-orange-600",
     icon: <BarChart2 className="w-6 h-6" />,
   },
+  {
+    id: "mcp-ai",
+    name: "AI Assistant (MCP)",
+    desc: "Connect your own AI provider key for BYOK execution with full org context.",
+    category: "AI",
+    connected: false,
+    entities: ["Campaigns", "Creatives", "Actions"],
+    iconBg: "bg-violet-50",
+    iconColor: "text-violet-600",
+    icon: <Sparkles className="w-6 h-6" />,
+  },
 ]
 
-const CATEGORIES: Category[] = ["All", "Ads Platforms", "Analytics", "Data", "CRM"]
+const CATEGORIES: Category[] = ["All", "Ads Platforms", "Analytics", "AI", "Data", "CRM"]
 
 const API_STATUS = [
   { label: "Meta Graph", status: "healthy", uptime: "99.9%", icon: <Cloud className="w-4 h-4 text-blue-600" /> },
@@ -99,6 +113,7 @@ const API_STATUS = [
 ]
 
 export default function IntegrationsConnectPage() {
+  const { getToken } = useAuth()
   const [category, setCategory] = useState<Category>("All")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
   const [search, setSearch] = useState("")
@@ -107,6 +122,22 @@ export default function IntegrationsConnectPage() {
   )
   const [connecting, setConnecting] = useState<Set<string>>(new Set())
   const [disconnecting, setDisconnecting] = useState<Set<string>>(new Set())
+  const [showByokModal, setShowByokModal] = useState(false)
+  const [aiProvider, setAiProvider] = useState<string | null>(null)
+
+  useEffect(() => {
+    getToken().then(token => {
+      if (!token) return
+      apiClient<{ connected: boolean; provider: string | null }>("/api/v1/ai/connect", token)
+        .then(res => {
+          if (res.connected && res.provider) {
+            setAiProvider(res.provider)
+            setConnected(prev => new Set(prev).add("mcp-ai"))
+          }
+        })
+        .catch(() => { /* non-critical — card stays Not Connected */ })
+    })
+  }, [getToken])
 
   const handleConnect = (id: string) => {
     setConnecting(prev => new Set(prev).add(id))
@@ -222,7 +253,23 @@ export default function IntegrationsConnectPage() {
                   </div>
                 </div>
                 <div className="mt-8 flex gap-3">
-                  {isConnected ? (
+                  {integ.id === "mcp-ai" ? (
+                    isConnected ? (
+                      <button
+                        onClick={() => setShowByokModal(true)}
+                        className="flex-1 py-2 rounded-lg bg-surface-container-low text-foreground text-sm font-bold hover:bg-surface-container-high transition-colors"
+                      >
+                        Manage
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowByokModal(true)}
+                        className="w-full py-2.5 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
+                      >
+                        Connect AI Key
+                      </button>
+                    )
+                  ) : isConnected ? (
                     <>
                       <button className="flex-1 py-2 rounded-lg bg-surface-container-low text-foreground text-sm font-bold hover:bg-surface-container-high transition-colors">
                         Manage
@@ -329,6 +376,21 @@ export default function IntegrationsConnectPage() {
           <p className="text-[10px] text-muted-foreground font-body mt-2">{connected.size} of {INTEGRATIONS.length} integrations active</p>
         </div>
       </aside>
+
+      <ByokModal
+        isOpen={showByokModal}
+        onClose={() => setShowByokModal(false)}
+        currentProvider={aiProvider}
+        onSaved={(provider) => {
+          if (provider) {
+            setAiProvider(provider)
+            setConnected(prev => new Set(prev).add("mcp-ai"))
+          } else {
+            setAiProvider(null)
+            setConnected(prev => { const n = new Set(prev); n.delete("mcp-ai"); return n })
+          }
+        }}
+      />
     </div>
   )
 }
