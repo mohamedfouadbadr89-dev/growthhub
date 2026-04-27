@@ -221,3 +221,257 @@ UI:
 * NO AI execution
 * NO backend dependency
 * UI must be fully functional with mock data
+* 
+* ## 🎯 SELECTION STATE
+
+- MUST support multi-select via checkbox
+- selection state MUST persist across filters (optional future)
+- MUST show selection count
+- MUST allow clear selection
+
+UI RULES:
+
+- checkbox visible on hover OR selected
+- selected card MUST have visual highlight
+- bulk bar MUST appear ONLY when selection > 0
+
+## ⚡ ACTION PRIORITY
+
+PRIMARY ACTION:
+
+- IF status = archived → highlight "Reuse"
+
+SECONDARY:
+
+- duplicate
+- edit
+
+TERTIARY:
+
+- relaunch (only if valid)
+
+RULE:
+
+- only ONE primary CTA per card
+- primary must be visually dominant
+
+
+## ⚠️ RELAUNCH VALIDATION (EXTENDED)
+
+CHECK:
+
+- creative must NOT be archived long ago (recency threshold)
+- performance trend must NOT be declining
+- must match campaign objective
+
+OUTPUT:
+
+- valid → allow relaunch
+- risky → show warning
+- invalid → block action
+
+
+## 📊 PERFORMANCE UI RULES
+
+SCORE → VISUAL:
+
+- 75–100 → GREEN (High)
+- 50–74 → YELLOW (Medium)
+- <50 → RED (Low)
+
+RULES:
+
+- MUST show score as progress bar
+- MUST show label (High / Medium / Low)
+- LOW performance MUST trigger warning badge
+
+## 🧩 CREATIVE CARD STRUCTURE
+
+EACH CARD MUST INCLUDE:
+
+- thumbnail (visual)
+- format badge (image/video/ugc)
+- platform tag
+- status tag
+- performance score + bar
+- CTR + ROAS
+- actions (reuse / duplicate / edit / relaunch)
+
+OPTIONAL:
+
+- warning badge (low performance)
+- selection checkbox
+
+## 🔄 STATE MANAGEMENT
+
+UI STATE:
+
+- filters state
+- selection state
+- loading state (actions)
+- empty state
+
+RULES:
+
+- filtering MUST be instant (client-side for now)
+- actions MUST show loading feedback
+- MUST prevent double action click
+
+## ⚡ ACTION FEEDBACK
+
+ON ACTION:
+
+- show loading state (button level)
+- show success feedback (temporary)
+- revert button to normal
+
+RULE:
+
+- feedback MUST be instant (optimistic UI later)
+
+## 🚫 FRONTEND HARD RULES
+
+- NO API calls in current implementation
+- NO backend dependency
+- MUST use mock data
+- MUST be fully interactive
+
+## 🔗 FUTURE INTEGRATION
+
+CREATIVE → CAMPAIGN FLOW:
+
+- reuse → push to campaign builder
+- relaunch → create new campaign variant
+- duplicate → create editable version
+
+NOTE:
+
+- archive is NOT isolated
+- it feeds execution layer
+
+
+## 🧠 INTELLIGENCE LAYER
+
+SYSTEM SHOULD:
+
+- highlight top reusable creatives
+- flag declining creatives
+- detect evergreen creatives
+
+RULE:
+
+- insights MUST be precomputed (no AI on load)
+
+
+## 🔄 CREATIVE LIFECYCLE
+
+active → paused → archived
+
+RULES:
+
+- archived creatives = reusable pool
+- active creatives = in execution
+- paused = testing / optimization
+
+GOAL:
+
+- archive = memory layer for performance
+
+
+## 🔗 FRONTEND ↔ BACKEND BRIDGE
+
+CURRENT MODE:
+
+- mock data (local state)
+- no API calls
+
+FUTURE MODE:
+
+- replace mock with apiClient
+
+RULES:
+
+- UI must NOT change when backend is connected
+- data shape MUST match API response exactly
+- actions MUST map 1:1 with API endpoints
+
+MAPPING:
+
+- reuse → POST /creatives/:id/reuse
+- duplicate → POST /creatives/:id/duplicate
+- relaunch → POST /creatives/:id/relaunch (future)
+
+IMPORTANT:
+
+- DO NOT refactor UI when backend is added
+- ONLY replace data source layer
+
+
+## 🧱 DATA ADAPTER LAYER
+
+PURPOSE:
+
+- isolate UI from backend shape changes
+
+RULE:
+
+- UI consumes normalized shape only
+
+EXAMPLE:
+
+API → adapter → UI
+
+adapter responsibilities:
+
+- map API response → CreativeArchive type
+- derive performance_tier
+- sanitize missing fields
+
+RESULT:
+
+- backend can change
+- UI remains stable
+
+## ⚡ ACTION HANDLER STRUCTURE
+
+CURRENT:
+
+- simulateAction()
+
+FUTURE:
+
+- actionHandler(actionType, payload)
+
+FLOW:
+
+1. trigger UI loading
+2. call API
+3. optimistic update (optional)
+4. handle success / error
+5. update state
+
+RULE:
+
+- all actions MUST go through unified handler
+
+
+## ⚠️ ERROR HANDLING (FUTURE)
+
+- failed action → show toast
+- failed fetch → show retry state
+
+RULE:
+
+- UI MUST NOT break on API failure
+- fallback to last known state
+
+## 📦 SCALING STRATEGY
+
+IF creatives > 50:
+
+- enable pagination OR infinite scroll
+
+RULE:
+
+- do NOT render large lists fully
+- optimize grid performance
