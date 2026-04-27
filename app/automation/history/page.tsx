@@ -27,6 +27,12 @@ const RESULT_STYLE: Record<string, string> = {
   skipped: "bg-surface-container-high text-muted-foreground",
 };
 
+const MOCK_RECOMMENDATIONS: Record<string, string> = {
+  success: "This decision performed well. Consider applying similar logic to adjacent campaigns with matching ROAS profiles.",
+  failed:  "Review the trigger conditions — this decision may have been fired with insufficient data volume. Raise the confidence threshold.",
+  skipped: "Execution was skipped due to a rule conflict. Verify strategy priority ordering in the Decision Center.",
+};
+
 const ResultIcon = ({ result }: { result: string }) => {
   if (result === "success") return <CheckCircle2 size={16} className="text-emerald-600" />;
   if (result === "failed")  return <XCircle size={16} className="text-error" />;
@@ -41,6 +47,8 @@ export default function DecisionHistoryPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detail, setDetail] = useState<HistoryDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  const selectedRecord = history.find((r) => r.id === expanded) ?? null;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +99,20 @@ export default function DecisionHistoryPage() {
         </p>
       </div>
 
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-border">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Efficiency Gain</p>
+          <p className="text-3xl font-extrabold text-foreground font-sans">+34%</p>
+          <p className="text-xs text-muted-foreground font-body mt-1">vs. manual execution baseline</p>
+        </div>
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-border">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Time Saved</p>
+          <p className="text-3xl font-extrabold text-foreground font-sans">18h</p>
+          <p className="text-xs text-muted-foreground font-body mt-1">this month across all decisions</p>
+        </div>
+      </div>
+
       {loading ? (
         <div className="space-y-3 animate-pulse">
           {[1, 2, 3, 4].map((i) => <div key={i} className="h-14 bg-surface-container-low rounded-2xl" />)}
@@ -106,7 +128,10 @@ export default function DecisionHistoryPage() {
           No decision history yet. Execute an action or run the intelligence engine to create records.
         </div>
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="grid grid-cols-12 gap-6 items-start">
+          {/* Left: existing table — unchanged */}
+          <div className="col-span-8">
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -203,6 +228,77 @@ export default function DecisionHistoryPage() {
               </tbody>
             </table>
           </div>
+        </div>
+          </div>{/* end left col */}
+
+          {/* Right: AI Insights panel */}
+          <div className="col-span-4 sticky top-6">
+            {selectedRecord ? (
+              <div className="bg-white rounded-2xl shadow-sm border border-border p-6 space-y-6">
+                <div className="flex items-center gap-2">
+                  <Bot size={16} className="text-primary" />
+                  <h3 className="font-body font-black text-[10px] uppercase tracking-widest text-muted-foreground">AI Insights</h3>
+                </div>
+
+                {/* confidence_score bar */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Confidence Score</p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-2 bg-surface-container-low rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          (selectedRecord.confidence_score ?? 0) >= 80
+                            ? "bg-emerald-500"
+                            : (selectedRecord.confidence_score ?? 0) >= 50
+                            ? "bg-amber-400"
+                            : "bg-red-400"
+                        }`}
+                        style={{ width: `${selectedRecord.confidence_score ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-bold font-sans text-foreground w-10 text-right">
+                      {selectedRecord.confidence_score != null ? `${selectedRecord.confidence_score}%` : "—"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* explanation from existing data */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Explanation</p>
+                  {detailLoading ? (
+                    <div className="flex items-center gap-2 text-muted-foreground text-sm font-body">
+                      <Loader2 size={12} className="animate-spin" /> Loading…
+                    </div>
+                  ) : (
+                    <p className="text-sm text-foreground leading-relaxed font-body">
+                      {detail?.ai_explanation ?? selectedRecord.ai_explanation ?? "No AI explanation recorded for this entry."}
+                    </p>
+                  )}
+                </div>
+
+                {/* recommendation (mock) */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Recommendation</p>
+                  <div className="bg-surface-container-low rounded-xl p-4">
+                    <p className="text-sm text-foreground leading-relaxed font-body">
+                      {MOCK_RECOMMENDATIONS[selectedRecord.result]}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Apply Adjustment — no logic */}
+                <button className="w-full py-2.5 rounded-xl bg-primary text-white text-sm font-bold font-body hover:bg-primary/90 transition-colors active:scale-[0.98]">
+                  Apply Adjustment
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl shadow-sm border border-border p-6 flex flex-col items-center justify-center min-h-[280px] text-center">
+                <Bot size={32} className="text-muted-foreground/25 mb-3" />
+                <p className="text-sm font-bold text-muted-foreground font-body">Select a record</p>
+                <p className="text-xs text-muted-foreground font-body mt-1 max-w-[160px]">Click any row to see AI insights</p>
+              </div>
+            )}
+          </div>{/* end right col */}
         </div>
       )}
     </div>
