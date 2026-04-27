@@ -88,7 +88,7 @@ export default function DecisionHistoryPage() {
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Header */}
+      {/* 1. HEADER */}
       <div>
         <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">
           Automation
@@ -99,7 +99,7 @@ export default function DecisionHistoryPage() {
         </p>
       </div>
 
-      {/* Quick Stats */}
+      {/* 2. STATS — full-width, isolated, not inside grid */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-border">
           <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body mb-2">Efficiency Gain</p>
@@ -113,23 +113,23 @@ export default function DecisionHistoryPage() {
         </div>
       </div>
 
-      {/* Data Section */}
+      {/* 3. DATA SECTION — wraps all conditional states */}
       <div>
-      {loading ? (
-        <div className="space-y-3 animate-pulse">
-          {[1, 2, 3, 4].map((i) => <div key={i} className="h-14 bg-surface-container-low rounded-2xl" />)}
-        </div>
-      ) : error ? (
-        <div className="py-20 text-center space-y-4">
-          <AlertCircle size={40} className="mx-auto text-red-300" />
-          <p className="text-sm text-red-600 font-body">{error}</p>
-          <button onClick={load} className="px-4 py-2 text-sm font-bold border border-border rounded-xl hover:bg-surface-container-low transition-colors font-body">Try Again</button>
-        </div>
-      ) : history.length === 0 ? (
-        <div className="py-20 text-center text-muted-foreground font-body text-sm">
-          No decision history yet. Execute an action or run the intelligence engine to create records.
-        </div>
-      ) : (
+        {loading ? (
+          <div className="space-y-3 animate-pulse">
+            {[1, 2, 3, 4].map((i) => <div key={i} className="h-14 bg-surface-container-low rounded-2xl" />)}
+          </div>
+        ) : error ? (
+          <div className="py-20 text-center space-y-4">
+            <AlertCircle size={40} className="mx-auto text-red-300" />
+            <p className="text-sm text-red-600 font-body">{error}</p>
+            <button onClick={load} className="px-4 py-2 text-sm font-bold border border-border rounded-xl hover:bg-surface-container-low transition-colors font-body">Try Again</button>
+          </div>
+        ) : history.length === 0 ? (
+          <div className="py-20 text-center text-muted-foreground font-body text-sm">
+            No decision history yet. Execute an action or run the intelligence engine to create records.
+          </div>
+        ) : (
         <div className="grid grid-cols-12 gap-6 items-start">
           {/* Left: existing table — unchanged */}
           <div className="col-span-8">
@@ -302,7 +302,7 @@ export default function DecisionHistoryPage() {
             )}
           </div>{/* end right col */}
         </div>
-      )}
+        )}
       </div>{/* end Data Section */}
     </div>
   );
