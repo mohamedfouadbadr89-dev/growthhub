@@ -113,6 +113,8 @@ export default function DecisionHistoryPage() {
         </div>
       </div>
 
+      {/* Data Section */}
+      <div>
       {loading ? (
         <div className="space-y-3 animate-pulse">
           {[1, 2, 3, 4].map((i) => <div key={i} className="h-14 bg-surface-container-low rounded-2xl" />)}
@@ -301,6 +303,7 @@ export default function DecisionHistoryPage() {
           </div>{/* end right col */}
         </div>
       )}
+      </div>{/* end Data Section */}
     </div>
   );
 }
