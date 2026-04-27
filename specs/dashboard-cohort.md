@@ -1,3 +1,4 @@
+
 📄 dashboard-cohort.md
 
 ## 🔒 SYSTEM ENFORCEMENT LAYER
@@ -372,5 +373,97 @@ RULE:
 - cohort view MUST include profitability
 
 NOT just retention
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: LIMITED
+
+---
+
+1. REALTIME EVENTS
+
+CHANNEL:
+
+- cohort_updates:{org_id}
+
+EVENTS:
+
+cohort_update:
+- cohort_id
+- new_revenue
+- updated_ltv
+
+retention_update:
+- cohort_id
+- day
+- retention_rate
+
+---
+
+RULES:
+
+- retention curve updates incrementally
+- revenue updates immediately
+
+---
+
+2. NON-REALTIME
+
+- full cohort recompute → batch job
+
+---
+
+FALLBACK:
+
+- refetch every 60–120s
+
+## ⚠️ COHORT DIMENSIONS
+
+cohorts MUST include:
+
+- acquisition_channel
+- campaign_id (optional)
+- country (optional)
+
+---
+
+REASON:
+
+- compare cohort quality by source
+- feed decision engine
+
+
+## 🧠 COHORT SCORE
+
+score =
+
+0.4 * retention_d7 +
+0.3 * retention_d30 +
+0.3 * ltv
+
+---
+
+USE:
+
+- rank cohorts
+- detect acquisition quality issues
+
+## 🔗 EVENT SOURCES
+
+ltv + cohort updated from:
+
+- orders (revenue)
+- attribution engine (CAC)
+- user tracking (retention)
+- actions (execution impact)
+
+---
+
+FLOW:
+
+user → order → attribution → cohort → LTV → dashboard → decision engine
+
 
 ✅ DONE

@@ -289,7 +289,34 @@ RULES:
 - NEVER generate inside GET
 * DO NOT auto-regenerate on page load
 
+## 🧠 AI SUMMARY UPDATE RULE
+
+- summary updates ONLY when:
+  - user triggers regenerate
+  - OR background job runs
+
+- UI MUST NOT subscribe to realtime summary updates
+- UI MUST show timestamp (generated_at)
+
+- if stale (>24h) → show warning badge
+
 ⸻
+
+## 🤖 AI Dashboard Generator
+
+Input:
+
+* user_prompt
+
+Actions:
+
+* generate_dashboard
+
+RULES:
+
+* user-triggered ONLY
+* calls POST /api/v1/ai/execute
+* result = dynamic dashboard
 
 💳 6. Credits System
 

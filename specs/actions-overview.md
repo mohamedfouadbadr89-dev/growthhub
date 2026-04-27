@@ -66,7 +66,7 @@ RULES:
 
 ⸻
 
-PAGE: actions/page.tsx
+PAGE: app/actions/page.tsx
 
 ⸻
 
@@ -484,3 +484,16 @@ IF two actions target same entity:
 EXAMPLE:
 
 - cannot scale before fixing CPA issue
+
+## ⚠️ FRONTEND RULES
+
+- MUST render 3 sections:
+  - pending
+  - recommended
+  - history
+
+- recommended actions MUST NOT be executable directly
+
+- ALL execution MUST go through confirmation modal
+
+- ALL numeric fields MUST be raw numbers (no formatting)

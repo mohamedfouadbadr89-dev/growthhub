@@ -1,3 +1,5 @@
+
+
 actions-automation-status.md
 
 ## 🔒 SYSTEM ENFORCEMENT LAYER
@@ -59,7 +61,7 @@ RULES:
 - AI must be cached after execution
 
 
-PAGE: app/actions/automation/page.tsx
+PAGE: actions/automation/page.tsx
 
 ⸻
 
@@ -414,6 +416,97 @@ AUTH: CLERK
 - NO auto AI
 - NO fallback AI
 
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: HYBRID
+
+---
+
+1. BROADCAST (PRIMARY)
+
+CHANNEL:
+
+- system_activity:{org_id}
+
+EVENTS:
+
+automation_event:
+- type
+- message
+- platform
+- entity
+- timestamp
+
+system_alert:
+- severity
+- message
+- timestamp
+
+---
+
+2. POSTGRES_CHANGES (SECONDARY)
+
+TABLES:
+
+- system_state (UPDATE)
+- automations (UPDATE)
+- alerts (INSERT)
+
+---
+
+RULES:
+
+- activity feed MUST use broadcast
+- metrics MAY use postgres_changes
+- NO execution triggered from realtime
+- realtime only reflects executed actions
+
+---
+
+UI BEHAVIOR:
+
+- prepend new activity instantly
+- keep latest first
+- no full refresh
+
+---
+
+FALLBACK:
+
+- polling every 15s if websocket disconnects
+
+---
+
+SECURITY:
+
+- org_id scoped channels
+- RLS enforced
+- no public broadcast channels
 
 
-✅ DONE
+## ⚙️ SYSTEM STATE MACHINE
+
+states:
+
+- idle
+- running
+- paused
+- degraded
+- emergency_shutdown
+
+---
+
+RULE:
+
+- emergency_shutdown overrides ALL
+- degraded reduces execution frequency
+
+
+
+## ⚠️ FRONTEND NORMALIZATION RULE
+
+- ALL numeric values MUST be numbers (not formatted strings)
+- NO "$", "%", "k" in raw data
+- formatting happens in UI only

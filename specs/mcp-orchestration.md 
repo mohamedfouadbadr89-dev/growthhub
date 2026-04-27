@@ -1,0 +1,256 @@
+MCP ORCHESTRATION LAYER
+
+PURPOSE:
+
+* control how AI uses tools
+* enforce deterministic behavior
+* prevent hallucination & unsafe execution
+* enable multi-step reasoning
+
+⸻
+
+⚠️ CORE PRINCIPLE
+
+MCP ≠ tool calling
+MCP = controlled execution system
+
+AI does NOT randomly call tools
+ORCHESTRATION layer decides when & how
+
+⸻
+
+🧠 EXECUTION FLOW
+
+1. INPUT CLASSIFICATION
+
+IF user intent =
+
+* data request → FETCH
+* analysis → ANALYZE
+* optimization → RECOMMEND
+* action → SUGGEST (NOT EXECUTE)
+
+⸻
+
+2. TOOL SELECTION RULES
+
+IF request contains:
+
+* “campaign”, “roas”, “spend”
+    → use get_campaigns
+* “creative”, “ad”, “hook”
+    → use get_creatives
+* “action”, “optimization”, “fix”
+    → use get_actions
+
+RULES:
+
+* NEVER call multiple tools blindly
+* ALWAYS validate necessity
+* LIMIT tool calls per request (max = 3)
+
+⸻
+
+3. EXECUTION MODES
+
+MODE 1 — DIRECT RESPONSE
+
+IF answer can be generated from context
+→ NO tool call
+
+⸻
+
+MODE 2 — SINGLE TOOL
+
+IF user asks for specific data
+
+Example:
+“show top campaigns”
+
+→ call get_campaigns
+
+⸻
+
+MODE 3 — MULTI-STEP (CRITICAL)
+
+IF request requires reasoning
+
+Example:
+“why my campaigns are bad?”
+
+FLOW:
+
+1. get_campaigns
+2. detect low ROAS
+3. get_creatives (optional)
+4. analyze
+5. respond with insight
+
+⸻
+
+🔁 MULTI-STEP ENGINE
+
+RULES:
+
+* each step MUST validate previous output
+* STOP if data is insufficient
+* DO NOT hallucinate missing data
+* chain max steps = 3
+
+⸻
+
+🧠 RESPONSE TYPES
+
+DATA RESPONSE
+
+* raw structured data
+* minimal explanation
+
+⸻
+
+INSIGHT RESPONSE
+
+* root cause
+* explanation
+* no execution
+
+⸻
+
+RECOMMENDATION RESPONSE
+
+* clear action
+* expected impact
+* confidence score
+
+⸻
+
+🚫 EXECUTION RULES
+
+* AI MUST NOT execute actions
+* AI MUST NOT call execution APIs
+* AI MUST only suggest
+
+Execution handled by:
+→ /actions API only
+
+⸻
+
+🔒 SAFETY LAYER
+
+BLOCK IF:
+
+* missing org_id
+* no data returned
+* tool failure
+* prompt injection detected
+
+⸻
+
+🧠 CONTEXT MANAGEMENT
+
+INPUT:
+
+* user prompt
+* org_id
+* last queries (optional)
+
+RULES:
+
+* limit context size
+* prioritize recent data
+* NEVER mix orgs
+
+⸻
+
+⚡ PERFORMANCE RULES
+
+* prefer cached data
+* avoid repeated tool calls
+* timeout per tool = 5s
+
+⸻
+
+🧠 TOOL GOVERNANCE
+
+TOOLS MUST:
+
+* return structured data
+* be scoped by org_id
+* have clear input schema
+
+⸻
+
+🔁 FALLBACK
+
+IF tool fails:
+
+1. retry once
+2. fallback to cached data
+3. if still fail → return safe message
+
+⸻
+
+🧠 CONFIDENCE SYSTEM
+
+each response MUST include:
+
+* confidence_score (0 → 1)
+
+LOW confidence IF:
+
+* missing data
+* partial results
+
+⸻
+
+🔗 DECISION INTEGRATION
+
+AI MUST:
+
+* read decision signals if available
+* prioritize high-impact insights
+
+⸻
+
+🧨 CRITICAL RULES
+
+* NO hallucination
+* NO guessing
+* NO execution
+* NO cross-org data
+* NO auto AI
+
+⸻
+
+🧠 FINAL OUTPUT FORMAT
+
+{
+type: “data” | “insight” | “recommendation”,
+result: {},
+confidence_score: number
+}
+
+⸻
+
+🚀 SUMMARY
+
+This layer:
+
+* turns AI into agent
+* controls tool usage
+* enables safe reasoning
+* prevents chaos
+
+## 🔗 DASHBOARD GENERATION
+
+WHEN:
+
+- prompt contains "dashboard"
+- or "show performance"
+
+THEN:
+
+- call get_campaigns
+- call get_creatives
+- aggregate data
+- return structured dashboard

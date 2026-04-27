@@ -154,6 +154,23 @@ users
 * password_hash
 
 ⸻
+sessions
+
+* id
+* user_id
+* ip_address
+* device
+* last_active
+* created_at
+
+security_logs
+
+* id
+* user_id
+* action
+* ip
+* device
+* created_at
 
 organizations
 
@@ -172,13 +189,63 @@ organizations
 * handle preferences
 
 ⸻
+## 🔐 SECURITY LAYER
 
+- track all login sessions
+- allow user to revoke sessions
+
+RULES:
+
+- password change → invalidate all sessions
+- suspicious activity → force logout
+
+## 🔐 2FA RULES
+
+IF 2FA enabled:
+
+- require verification on login
+- require verification on sensitive actions:
+  - password change
+  - API key access
+  - billing updates
+
+  ## 🔑 API KEYS MANAGEMENT
+
+- users can add BYOK keys
+- stored in Supabase Vault
+
+RULES:
+
+- NEVER exposed to frontend
+- masked in UI
+
+
+## 🧾 ACCOUNT AUDIT
+
+log:
+
+- password change
+- email change
+- 2FA enable/disable
+- API key updates
 ⸻
 
 🧠 6. AI Layer
 
 * detect weak security
 * recommend upgrades
+
+
+## 🧠 AI LAYER (SAFE)
+
+- security suggestions only
+
+RULES:
+
+- NO automatic changes
+- MUST require user confirmation
+
+
 
 ## 🧬 SCHEMA CONTROL
 - schema.sql is source of truth
@@ -190,3 +257,23 @@ AUTH: CLERK
 
 - NO auto AI
 - NO fallback AI
+
+
+## ⚡ PERFORMANCE
+
+- cache profile data
+- refresh on update only
+
+## 🔑 AI KEYS (BYOK)
+
+fields:
+
+- anthropic_key
+- openai_key
+- openrouter_key
+
+RULES:
+
+- encrypted storage (Supabase Vault)
+- never exposed to frontend
+- fetched server-side only

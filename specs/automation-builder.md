@@ -572,3 +572,85 @@ decision > alert > metric
 RULE:
 
 system MUST be event-driven
+
+## 🧠 FRONTEND STATE CONTRACT (REQUIRED)
+
+STATE:
+
+const [workflow, setWorkflow] = useState<AutomationWorkflow>()
+const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+
+DERIVED:
+
+const selectedNode = workflow.nodes.find(n => n.id === selectedNodeId)
+
+---
+
+## 🔁 UI RENDER RULES
+
+- Canvas MUST map over workflow.nodes to render nodes
+- Each node MUST use:
+  node.id as key
+  node.position for placement
+  node.data.title / description
+
+- Connections MUST map from workflow.edges
+
+---
+
+## 🎛️ CONFIG PANEL BINDING
+
+- Config panel MUST read from selectedNode.data.config
+
+- On change:
+  update via setWorkflow:
+
+setWorkflow(prev => ({
+  ...prev,
+  nodes: prev.nodes.map(n =>
+    n.id === selectedNodeId
+      ? {
+          ...n,
+          data: {
+            ...n.data,
+            config: {
+              ...n.data.config,
+              [field]: value
+            }
+          }
+        }
+      : n
+  )
+}))
+
+---
+
+## ➕ NODE CREATION RULE
+
+- Add node MUST:
+
+1. generate id
+2. assign type
+3. set default config
+4. push into workflow.nodes
+
+---
+
+## 🔗 EDGE CREATION RULE
+
+- Connecting nodes MUST push:
+
+{
+  from: sourceNodeId,
+  to: targetNodeId
+}
+
+into workflow.edges
+
+---
+
+## 🚫 HARD RULES
+
+- NO static JSX nodes
+- NO hardcoded logic in UI
+- ALL logic MUST come from workflow state
