@@ -1,270 +1,223 @@
-
-creatives-archive.md
-
-## 🔒 SYSTEM ENFORCEMENT LAYER
-
-AI_GATEWAY: REQUIRED
-AI_SOURCE: API_GATEWAY_ONLY
-
-RULES:
-- ❌ NO direct AI calls from frontend
-- ❌ NO AI generation on GET requests
-- ❌ NO "if missing → generate"
-- ✅ AI only triggered via POST endpoints
-- ✅ ALL AI responses must be cached
-
-CACHE:
-- required for all AI outputs
-- key: org_id + entity_id + type
-
-RATE LIMIT:
-- per user
-- per org
-- prevent duplicate execution within 60s
+PAGE: app/creatives/archive/page.tsx
 
 ---
 
-## 🧱 DATABASE SOURCE
+## 🧩 1. UI → Data Mapping
 
-DB_PROVIDER: SUPABASE_ONLY
+### 🎯 Creative Cards (Grid)
 
-RULES:
-- ❌ NO local database
-- ❌ NO prisma migrations
-- ❌ NO mock data in production
-- ✅ ALL tables must exist in Supabase
-- ✅ ALL writes go through Supabase API / RPC
+Each card MUST include:
 
----
-
-## 🔐 SECRETS MANAGEMENT
-
-VAULT: SUPABASE_VAULT
-
-USE:
-- OpenRouter keys
-- BYOK users
-- external APIs
-
-RULES:
-- ❌ NEVER expose keys to frontend
-- ❌ NEVER log secrets
-- ✅ fetch at runtime only
+- id
+- name
+- thumbnail (gradient / image)
+- platform (Meta / Google / TikTok)
+- format (Image / Video / UGC)
+- performance_score (0–100)
+- performance_tier ("high" | "medium" | "low")
+- status ("active" | "paused" | "archived")
 
 ---
 
-## ⚡ AI EXECUTION RULE
+### 📊 Performance Display
 
-- AI must NEVER run on page load
-- AI must be triggered ONLY by user action
-- AI must be cached after execution
+- score bar (visual)
+- tier label:
+  - High → green
+  - Medium → yellow
+  - Low → red
 
-PAGE: 
+---
 
-⸻
+### 📈 Metrics (UI only)
 
-🧩 1. UI → Data Mapping
+- CTR (mock)
+- ROAS (mock)
 
-⸻
+---
 
-Creative List
+## 🔍 2. Filters (MATCH UI)
 
-* creative_id
-* thumbnail
-* platform
-* format
-* performance_score
-* status
+- search (by name)
+- platform
+- format
+- status
+- performance_tier
 
-⸻
+---
 
-Filters
+## ⚡ 3. Bulk Actions (UI STATE)
 
-* platform
-* format
-* performance
-* status
+VISIBLE ONLY IF selection > 0
 
-⸻
+- reuse_selected
+- duplicate_selected
+- relaunch_selected
 
-Actions
+UI RULES:
 
-* reuse
-* duplicate
-* edit
-* relaunch
+- show selected count
+- show loading state (simulated)
+- support partial selection (no blocking UI)
 
-⸻
-## ⚠️ RELAUNCH SAFETY
+---
 
-- MUST validate campaign compatibility
-- MUST check current performance trends
+## 🎬 4. Card Actions
 
-BLOCK IF:
+Each card MUST include:
 
-- creative outdated
-- performance declining
+- reuse
+- duplicate
+- edit
+- relaunch
 
-⸻
+---
 
-🧱 2. Data Shape
+### 🎯 ACTION PRIORITY RULES
 
+- IF status = archived  
+  → highlight "Reuse" as primary CTA
+
+- IF performance = low  
+  → show warning badge (red)
+
+---
+
+## ⚠️ 5. Relaunch Safety (UI Only)
+
+Display warning badge IF:
+
+- performance = low
+- OR status = archived
+
+(NO blocking in frontend)
+
+---
+
+## 🧱 6. Data Shape (UPDATED)
+
+```ts
 type CreativeArchive = {
-id: string
-thumbnail: string
+  id: string
+  name: string
+  thumbnail: string
 
-tags: {
-platform: string
-format: string
+  tags: {
+    platform: string
+    format: string
+  }
+
+  performance_score: number
+  performance_tier: "high" | "medium" | "low"
+
+  status: "active" | "paused" | "archived"
 }
 
-performance_score: number
-
-status: "active" | "paused" | "archived"
-}
-
-⸻
-
-🌐 3. API Contracts
+7. API Contracts (FUTURE READY)
 
 GET /api/v1/creatives/archive
+→ returns CreativeArchive[]
 
 POST /api/v1/creatives/:id/reuse
-
 POST /api/v1/creatives/:id/duplicate
-
-⸻
 
 POST /api/v1/creatives/bulk/reuse
 
 RULES:
 
-- validate each creative
-- support partial execution
+* validate each creative
+* support partial success
+* no UI blocking
 
 ⸻
 
-🗄️ 4. DB Schema
+⚙️ 8. Execution Logic (FRONT SIMULATION)
 
-creative_archive
-
-* id
-* org_id
-* creative_id
-* status
-* performance_score
-* created_at
-
-⸻
-creative_history
-
-* id
-* creative_id
-* version_id
-* performance_score
-* created_at
+* filter locally
+* search locally
+* simulate actions (1–1.5s delay)
+* update UI state only
 
 ⸻
 
-⚙️ 5. Execution Logic
+📊 9. Performance Logic (UI SIDE)
 
-1. fetch archived creatives
-2. filter + search
-3. allow reuse / relaunch
+performance_tier derived:
 
-
-## 📊 PERFORMANCE SCORING
-
-score based on:
-
-- roas
-- ctr
-- engagement
-- recency
-
-RULE:
-
-- prioritize recent high performers
+* score ≥ 80 → high
+* 50–79 → medium
+* < 50 → low
 
 ⸻
 
-## ⚡ REAL-TIME ARCHIVE SYNC
+🎯 10. UX STATES
 
-SOURCE: SUPABASE REALTIME
+Loading (future)
+
+* skeleton cards
+
+Empty State
+
+* “No creatives found”
+* show “Clear Filters” CTA
+
+Selection Mode
+
+* checkbox per card
+* hover reveal checkbox
+
+⸻
+
+⚡ 11. Realtime (FUTURE HOOK)
 
 CHANNEL:
-
-- creatives_archive:{org_id}
+creatives_archive:{org_id}
 
 EVENTS:
 
-- creative_archived
-- creative_reused
-- performance_updated
+* creative_archived
+* creative_reused
+* performance_updated
+
+UI:
+
+* optimistic update ready
+* fallback → refetch
 
 ⸻
 
-🧠 6. AI Layer
+🧠 12. AI Layer (STRICT)
 
-* detect top reusable creatives
-* identify evergreen creatives
-
-⸻
-## 🧠 AI LAYER (BACKEND ONLY)
-
-- reusable creatives detection is precomputed
-- fetched from cache / DB
-
-RULES:
-
-- NO AI execution on GET
-⸻
-
-💳 7. Credits System
-
-* reuse → FREE
+* NO AI in frontend
+* NO AI on GET
+* AI only affects:
+    * performance_score (precomputed)
+    * reuse suggestions (future)
 
 ⸻
 
-⸻
+💳 13. Credits
 
-🧠 8. AI Usage Classification
-
-* reuse_recommendation → LOW
+* reuse → FREE (UI only placeholder)
 
 ⸻
 
-⸻
+🧬 14. Schema Control
 
-📊 9. Marketing Rules
-
-* reuse high performers
-* archive low performers
+* schema.sql is source of truth
+* no runtime schema creation
 
 ⸻
 
+🔐 AUTH
+
+* org_id required on all requests (future)
+
 ⸻
 
-🧾 10. Comments (FOR CLAUDE)
+🚫 HARD RULES
 
-Use:
-
-GET /api/v1/creatives/archive
-
-Requirements:
-
-* fast filtering
-* search
-* bulk actions
-
-
-## 🧬 SCHEMA CONTROL
-- schema.sql is source of truth
-- no runtime creation
-
-AUTH: CLERK
-- all requests must include org_id
-
-
-- NO auto AI
-- NO fallback AI
+* NO API calls in current implementation
+* NO AI execution
+* NO backend dependency
+* UI must be fully functional with mock data

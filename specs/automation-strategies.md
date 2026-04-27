@@ -1,3 +1,4 @@
+
 automation-strategies.md
 
 ## 🔒 SYSTEM ENFORCEMENT LAYER
@@ -58,7 +59,7 @@ RULES:
 - AI must be triggered ONLY by user action
 - AI must be cached after execution
 
-PAGE: automation/strategies/page.tsx
+PAGE: app/automation/strategies/page.tsx
 
 ⸻
 
@@ -229,6 +230,15 @@ Flow:
 
 ⸻
 
+## 🧠 AI LAYER (CONTROLLED)
+
+- AI suggests strategies only
+
+RULES:
+
+- NO execution
+- NO auto-activation
+
 Recommendation Engine
 
 Input:
@@ -318,3 +328,199 @@ AUTH: CLERK
 
 - NO auto AI
 - NO fallback AI
+
+
+## 🔗 DECISION INTEGRATION
+
+strategies MUST NOT run blindly
+
+SOURCE:
+
+- decision engine
+- signals engine
+
+---
+
+RULE:
+
+strategy trigger MUST come from:
+
+- decisions
+- alerts
+- signals
+
+NOT raw metrics only
+
+## 🔁 STRATEGY LIFECYCLE
+
+status:
+
+- draft
+- active
+- paused
+- archived
+
+---
+
+RULES:
+
+- only active strategies can run
+- paused = no triggers
+- archived = read-only
+
+## ⚠️ STRATEGY VERSIONING
+
+- every strategy MUST have version
+
+FIELDS:
+
+- version_number
+- updated_at
+- change_log
+
+---
+
+RULE:
+
+- running workflows MUST use frozen version
+- edits create new version
+
+## 🛑 STRATEGY SAFETY RULES
+
+- strategy MUST pass validation BEFORE activation
+
+VALIDATION:
+
+- no conflicting actions
+- no high-risk loops
+- budget limits respected
+
+---
+
+BLOCK:
+
+- if risk score > threshold
+
+## ⚠️ LOOP PROTECTION
+
+- strategy MUST NOT trigger repeatedly within short window
+
+RULE:
+
+- cooldown period required
+
+EXAMPLE:
+
+- same action cannot run twice within 30 min
+
+## 🔴 REALTIME STRATEGY ENGINE
+
+SOURCE: SUPABASE_REALTIME
+
+CHANNEL:
+
+strategy_triggers:{org_id}
+
+EVENTS:
+
+- decision_created
+- alert_triggered
+- metric_update
+
+---
+
+RULE:
+
+- strategies MUST react to events
+- NOT polling only
+
+## 🧠 STRATEGY PERFORMANCE SCORE
+
+score =
+
+0.4 * impact +
+0.3 * success_rate +
+0.3 * consistency
+
+---
+
+USE:
+
+- rank strategies
+- recommend best ones
+
+## ⚠️ ACTIVATION FLOW
+
+1. validate strategy
+2. convert → workflow
+3. assign safeguards
+4. activate
+
+---
+
+RULE:
+
+NO direct activation without validation
+
+## 🔒 EXECUTION GUARD
+
+before any strategy runs:
+
+- validate permissions
+- validate risk
+- validate constraints
+
+BLOCK IF:
+
+- high risk
+- insufficient permissions
+
+
+## ⚠️ FAILURE HANDLING
+
+on failure:
+
+- log error
+- retry (max 3)
+- fallback to safe state
+
+## 🔁 ROLLBACK
+
+IF action causes negative impact:
+
+- revert last action
+- notify user
+
+## 📊 STRATEGY MONITORING
+
+track:
+
+- execution success rate
+- impact delta
+- error rate
+
+## ⏱ COOLDOWN ENFORCEMENT
+
+- enforce cooldown per strategy + entity
+
+key:
+
+org_id + strategy_id + entity_id
+
+## ⚠️ MANUAL OVERRIDE
+
+admin can:
+
+- override blocked strategy
+- approve high-risk execution
+
+## 🧾 EXECUTION LOGGING
+
+log:
+
+- trigger source
+- decision source
+- action executed
+- result
+
+

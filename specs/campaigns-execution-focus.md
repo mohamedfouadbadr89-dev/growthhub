@@ -1,3 +1,4 @@
+
 campaigns-execution-focus.md
 
 🔒 SYSTEM ENFORCEMENT LAYER
@@ -347,3 +348,85 @@ AUTH: CLERK
 
 - NO auto AI
 - NO fallback AI
+
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: BROADCAST (CRITICAL)
+
+CHANNEL:
+
+- execution_stream:{org_id}:{campaign_id}
+
+EVENTS:
+
+action_started:
+- action_id
+- type
+- entity
+- timestamp
+
+action_validated:
+- action_id
+- risk_level
+- status
+
+action_executed:
+- action_id
+- result
+- performance_delta
+- timestamp
+
+action_failed:
+- action_id
+- error
+- timestamp
+
+---
+
+RULES:
+
+- execution MUST trigger realtime event
+- UI MUST reflect execution instantly
+- NO UI state assumptions (always trust backend)
+
+---
+
+FALLBACK:
+
+- refetch GET /execution after action
+
+---
+
+SECURITY:
+
+- org_id + campaign_id scoped channel
+
+
+Action UI States:
+
+- idle
+- loading (on click)
+- success (executed)
+- error (failed)
+
+RULES:
+- button MUST show loading state during execution
+- MUST disable button while processing
+- MUST reflect final state visually (success / failed)
+
+
+Blocked Actions UI:
+
+- if status = blocked:
+  - button MUST be disabled
+  - MUST show reason tooltip or inline message
+
+- if risk = high:
+  - MUST show warning UI (color / icon)
+  - MUST require confirmation step (modal or override)
+
+
+  
