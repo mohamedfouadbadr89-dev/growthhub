@@ -41,6 +41,7 @@ import {
   FlaskConical,
   Paintbrush,
   GitBranch,
+  Archive as ArchiveIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -81,9 +82,10 @@ const ACTIONS_CHILDREN: NavItem[] = [
 ];
 
 const CREATIVES_CHILDREN: NavItem[] = [
-  { label: 'Generator', href: '/creatives',            icon: Sparkles    },
+  { label: 'Generator', href: '/creatives',             icon: Sparkles    },
   { label: 'Editor',    href: '/creatives/editor',     icon: PenTool     },
   { label: 'Results',   href: '/creatives/results',    icon: FlaskConical },
+  { label: 'Archive',   href: '/creatives/archive',    icon: ArchiveIcon  },
   { label: 'Brand Kit', href: '/creatives/brand-kit',  icon: Paintbrush  },
 ];
 
