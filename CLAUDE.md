@@ -318,3 +318,10 @@ For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
 `specs/007-frontend-api-integration/plan.md`.
 <!-- SPECKIT END -->
+
+
+## 🚫 PAGE DUPLICATION RULE
+
+- If STATUS: IMPLEMENTED → NEVER create new page
+- ALWAYS update existing file path
+- If file exists → modify, do NOT recreate

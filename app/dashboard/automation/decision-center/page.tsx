@@ -1,3 +1,7 @@
+// SPEC: automation-decision-center.md
+// STATUS: IMPLEMENTED
+// DO NOT RECREATE THIS PAGE
+
 "use client"
 
 import { useState, useMemo } from "react"
