@@ -1,71 +1,78 @@
-📄 dashboard-segments.md
-
-
-## 🔒 SYSTEM ENFORCEMENT LAYER
+SYSTEM ENFORCEMENT LAYER
 
 AI_GATEWAY: REQUIRED
 AI_SOURCE: API_GATEWAY_ONLY
 
 RULES:
-- ❌ NO direct AI calls from frontend
-- ❌ NO AI generation on GET requests
-- ❌ NO "if missing → generate"
-- ✅ AI only triggered via POST endpoints
-- ✅ ALL AI responses must be cached
+
+* ❌ NO direct AI calls from frontend
+* ❌ NO AI generation on GET requests
+* ❌ NO “if missing → generate”
+* ✅ AI only triggered via POST endpoints
+* ✅ ALL AI responses must be cached
 
 CACHE:
-- required for all AI outputs
-- key: org_id + entity_id + type
+
+* required for all AI outputs
+* key: org_id + entity_id + type
 
 RATE LIMIT:
-- per user
-- per org
-- prevent duplicate execution within 60s
 
----
+* per user
+* per org
+* prevent duplicate execution within 60s
 
-## 🧱 DATABASE SOURCE
+⸻
+
+🧱 DATABASE SOURCE
 
 DB_PROVIDER: SUPABASE_ONLY
 
 RULES:
-- ❌ NO local database
-- ❌ NO prisma migrations
-- ❌ NO mock data in production
-- ✅ ALL tables must exist in Supabase
-- ✅ ALL writes go through Supabase API / RPC
 
----
+* ❌ NO local database
+* ❌ NO prisma migrations
+* ❌ NO mock data in production
+* ✅ ALL tables must exist in Supabase
+* ✅ ALL writes go through Supabase API / RPC
 
-## 🔐 SECRETS MANAGEMENT
+⸻
+
+🔐 SECRETS MANAGEMENT
 
 VAULT: SUPABASE_VAULT
 
 USE:
-- OpenRouter keys
-- BYOK users
-- external APIs
+
+* OpenRouter keys
+* BYOK users
+* external APIs
 
 RULES:
-- ❌ NEVER expose keys to frontend
-- ❌ NEVER log secrets
-- ✅ fetch at runtime only
 
----
+* ❌ NEVER expose keys to frontend
+* ❌ NEVER log secrets
+* ✅ fetch at runtime only
 
-## ⚡ AI EXECUTION RULE
+⸻
 
-- AI must NEVER run on page load
-- AI must be triggered ONLY by user action
-- AI must be cached after execution
+⚡ AI EXECUTION RULE
 
-PAGE: dashboard/segment/page.tsx
+* AI must NEVER run on page load
+* AI must be triggered ONLY by user action
+* AI must be cached after execution
+
+⸻
+
+📄 PAGE
+
+dashboard/segment/page.tsx
 
 ⸻
 
 🧩 1. UI → Data Mapping
 
-Segments Overview:
+Segment Overview:
 
 * segment_name
 * users_count
@@ -76,7 +83,7 @@ Segments Overview:
 
 ⸻
 
-Top Segments:
+Top Segment:
 
 * segment_name
 * performance_score
@@ -107,7 +114,7 @@ Filters:
 
 ⸻
 
-🧱 2. Data Shape (Normalized)
+🧱 2. Data Shape
 
 type Segment = {
   id: string
@@ -121,9 +128,9 @@ type Segment = {
 }
 
 type SegmentResponse = {
-  segments: Segment[]
+  segment: Segment[]
 
-  top_segments: {
+  top_segment: {
     segment_id: string
     performance_score: number
     growth_rate: number
@@ -136,11 +143,9 @@ type SegmentResponse = {
   }
 }
 
-⸻
+3. API Contracts
 
-🌐 3. API Contracts
-
-GET /api/v1/dashboard/segments
+GET /api/v1/dashboard/segment
 
 Query:
 
@@ -152,16 +157,16 @@ SegmentResponse
 
 ⸻
 
-GET /api/v1/dashboard/segments/:id
+GET /api/v1/dashboard/segment/:id
 
 Response:
 Segment
 
 ⸻
 
-🗄️ 4. DB Schema (Initial)
+🗄️ 4. DB Schema
 
-segments
+segment
 
 * id
 * org_id
@@ -205,19 +210,13 @@ New:
 
 * first purchase within period
 
-⸻
-
 Returning:
 
 * repeat buyers
 
-⸻
-
 VIP:
 
 * high LTV + high AOV
-
-⸻
 
 Churn Risk:
 
@@ -243,33 +242,22 @@ No credits used
 
 ⸻
 
-🧠 7. AI Usage Classification
+🧠 AI Layer
 
-Future:
+NONE
 
-* AI segmentation (cluster users automatically)
+RULES:
 
-⸻
-
-📊 8. Marketing Rules (Not AI)
-
-If:
-
-* VIP segment growing
-
-Then:
-
-* increase retention budget
+* segmentation is rule-based
+* no AI inference
 
 ⸻
 
-If:
+📊 8. Marketing Rules
 
-* churn_risk high
+If VIP growing → increase retention budget
 
-Then:
-
-* trigger retention campaigns
+If churn_risk high → trigger retention campaigns
 
 ⸻
 
@@ -277,7 +265,15 @@ Then:
 
 Replace static UI with:
 
-GET /api/v1/dashboard/segments
+GET /api/v1/dashboard/segment
+
+⸻
+
+Requirements:
+
+* loading state
+* error state
+* empty state
 
 ⸻
 
@@ -288,134 +284,33 @@ Important:
 
 ⸻
 
-Security:
-
-* filter by org_id
-
-⸻
-
-Performance:
-
-* cache segment calculations
-
-⸻
-
-Future:
-
-feeds:
-
-* audience insights
-* decision engine
-
-⸻
-
-## 🧠 AI Layer
-
-NONE
-
-RULES:
-- segmentation is rule-based
-- no AI inference
-
-
-## 🧬 SCHEMA CONTROL
-- schema.sql is source of truth
-- no runtime creation
-
-AUTH: CLERK
-- all requests must include org_id
-
-
-- NO auto AI
-- NO fallback AI
-
-## 🔴 REALTIME STRATEGY
-
-SOURCE: SUPABASE_REALTIME
-
-MODE: EVENT-DRIVEN (USER LEVEL)
-
----
-
-1. BROADCAST
+🔴 REALTIME
 
 CHANNEL:
 
-- segment_updates:{org_id}
+* segment_updates:{org_id}
 
 EVENTS:
 
-segment_user_update:
-- user_id
-- segment_type (new → vip / churn_risk)
+* segment_user_update
+* segment_metrics_update
+* top_segment_update
 
-segment_metrics_update:
-- segment_id
-- users_count
-- revenue
-- ltv
-- conversion_rate
-
-top_segments_update:
-- segment_id
-- performance_score
-- growth_rate
-
----
+⸻
 
 RULES:
 
-- segment counts MUST update instantly
-- top segments MUST reflect latest ranking
-- segment_type MUST always be latest classification
+* segment counts MUST update instantly
+* top segment MUST reflect latest ranking
 
----
+⸻
 
-2. POSTGRES_CHANGES
+⚠️ RULES
 
-TABLES:
+* segmentation backend only
+* no frontend logic
+* LTV must be cohort-based
 
-- segments (UPDATE)
-- segment_metrics (INSERT)
-
----
-
-3. FALLBACK
-
-- refetch GET /api/v1/dashboard/segments every 60s
-
----
-
-SECURITY:
-
-- org_id isolation
-
-## ⚠️ SEGMENTATION RULE
-
-- segmentation MUST be backend-only
-- frontend MUST NOT assign users to segments
-- all segment logic centralized in backend
-
-REASON:
-
-- consistency across system
-- integration with decision engine
-
-## ⚠️ LTV CALCULATION RULE
-
-- LTV MUST be cohort-based (not global average)
-- calculate per segment cohort
-
-RECOMMENDED:
-
-LTV = avg_revenue_per_user over lifetime window
-
----
-
-OPTIONAL:
-
-- 30-day LTV
-- 60-day LTV
-- predicted LTV (future)
+⸻
 
 ✅ DONE

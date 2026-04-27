@@ -58,7 +58,7 @@ RULES:
 - AI must be triggered ONLY by user action
 - AI must be cached after execution
 
-PAGE: creatives/brand-kit/page.tsx
+PAGE: app/creatives/brand-kit/page.tsx
 
 ⸻
 

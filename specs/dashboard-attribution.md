@@ -420,4 +420,53 @@ SECURITY:
 
 - org_id isolation
 
+## ⚠️ ATTRIBUTION RECOMPUTE RULE
+
+- recompute MUST be async job
+- MUST be queued (background worker)
+- MUST be rate-limited per org
+
+FLOW:
+
+user → POST → enqueue job → process → update DB → broadcast update
+
+---
+
+UI:
+
+- show "processing" state
+- update when job completes
+
+## 🔐 ATTRIBUTION MODEL CONTROL
+
+- selected model MUST be stored per org
+- all dashboards MUST use same model
+
+- changing model triggers:
+  - recompute job
+  - system-wide update
+
+---
+
+RULE:
+
+- model MUST be consistent across system
+
+## 🔗 EVENT SOURCES
+
+dashboard updates triggered by:
+
+- action execution
+- automation engine
+- decision outcomes
+- tracking ingestion
+
+---
+
+FLOW:
+
+execution → logs → metrics update → attribution → dashboard update
+
+
+
 ✅ DONE

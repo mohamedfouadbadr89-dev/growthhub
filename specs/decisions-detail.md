@@ -1,210 +1,185 @@
-decisions-detail.md
+decisions-overview.md
 
-## 🔒 SYSTEM ENFORCEMENT LAYER
-
-AI_GATEWAY: REQUIRED
-AI_SOURCE: API_GATEWAY_ONLY
+🔒 SYSTEM ENFORCEMENT LAYER
+AI_GATEWAY: REQUIRED AI_SOURCE: API_GATEWAY_ONLY
 
 RULES:
-- ❌ NO direct AI calls from frontend
-- ❌ NO AI generation on GET requests
-- ❌ NO "if missing → generate"
-- ✅ AI only triggered via POST endpoints
-- ✅ ALL AI responses must be cached
 
+❌ NO direct AI calls from frontend
+❌ NO AI generation on GET requests
+❌ NO "if missing → generate"
+✅ AI only triggered via POST endpoints
+✅ ALL AI responses must be cached
 CACHE:
-- required for all AI outputs
-- key: org_id + entity_id + type
 
+required for all AI outputs
+key: org_id + entity_id + type
 RATE LIMIT:
-- per user
-- per org
-- prevent duplicate execution within 60s
 
----
-
-## 🧱 DATABASE SOURCE
-
+per user
+per org
+prevent duplicate execution within 60s
+🧱 DATABASE SOURCE
 DB_PROVIDER: SUPABASE_ONLY
 
 RULES:
-- ❌ NO local database
-- ❌ NO prisma migrations
-- ❌ NO mock data in production
-- ✅ ALL tables must exist in Supabase
-- ✅ ALL writes go through Supabase API / RPC
 
----
-
-## 🔐 SECRETS MANAGEMENT
-
+❌ NO local database
+❌ NO prisma migrations
+❌ NO mock data in production
+✅ ALL tables must exist in Supabase
+✅ ALL writes go through Supabase API / RPC
+🔐 SECRETS MANAGEMENT
 VAULT: SUPABASE_VAULT
 
 USE:
-- OpenRouter keys
-- BYOK users
-- external APIs
 
+OpenRouter keys
+BYOK users
+external APIs
 RULES:
-- ❌ NEVER expose keys to frontend
-- ❌ NEVER log secrets
-- ✅ fetch at runtime only
 
----
-
-## ⚡ AI EXECUTION RULE
-
-- AI must NEVER run on page load
-- AI must be triggered ONLY by user action
-- AI must be cached after execution
-
-
-PAGE: decisions/[id]/page.tsx
+❌ NEVER expose keys to frontend
+❌ NEVER log secrets
+✅ fetch at runtime only
+⚡ AI EXECUTION RULE
+AI must NEVER run on page load
+AI must be triggered ONLY by user action
+AI must be cached after execution
+PAGE: decisions/page.tsx
 
 ⸻
 
 🧩 1. UI → Data Mapping
 
-Header:
+Decision Priority Strip:
 
-* decision_id
-* title
-* impact_score
-* confidence
+critical_count
+high_impact_count
+quick_wins_count
+⸻
+
+🧠 AI Layer
+SOURCE: BACKEND ONLY
+
+RULES:
+
+NO AI execution in frontend
+NO generation inside UI
+ALL decisions precomputed from backend
+UI only renders decision output
+⚠️ Execution Rules
+decisions are READ-ONLY in UI
+apply / ignore only triggers API
+no local computation
+⸻
+
+Recommended Action (backend-generated)
+
+Real-Time Signals:
+
+signal_type (cpa_spike / ctr_increase / demand_spike)
+platform
+value
+timestamp
+⸻
+
+Decision Feed:
+
+decision_id
+title
+platform
+campaign_id
+risk_level
+impact_value
+confidence_score
+urgency
+status
+⸻
+
+Decision Metrics:
+
+confidence
+risk
+root_cause
+urgency
+status
+⸻
 
 ⸻
 
-AI Reasoning:
+Decision Reasoning (from backend only):
 
-Decision Reasoning (precomputed explanation)
+reasoning_text (precomputed) ⸻
+System Pulse (Right Panel):
+
+active_decisions
+system_confidence
+estimated_impact
+performance_change
 ⸻
 
-Causal Analysis:
+Operational Status:
 
-* cpa_change
-* ctr_change
-* correlation_score
-* time_range
-
+integration_name
+status
+last_sync
+data_health
 ⸻
 
-Performance Metrics:
+Filters:
 
-* metric_name
-* value
-* change_percent
-
-⸻
-
-Recommended Action Plan:
-
-* steps[]
-    * step_id
-    * title
-    * description
-    * estimated_time
-    * platform
-    * automation_support
-
-⸻
-
-Impact Simulation:
-
-* projected_revenue
-* cost_impact
-* roas_shift
-* confidence_range
-
-⸻
-
-Risk Analysis:
-
-* risk_type
-* severity
-* description
-* worst_case_loss
-* volatility_curve
-
-⸻
-
-Related Signals:
-
-* signal_id
-* signal_type
-* title
-* severity
-
-⸻
-
-Actions:
-
-* apply_decision
-* simulate_decision
-
+platform
+impact
+status
+time_range
 ⸻
 
 🧱 2. Data Shape (Normalized)
 
+type Decision = { id: string title: string platform: "meta" | "google" | "tiktok" campaign_id?: string
 
-type DecisionDetail = {
-  id: string
-  title: string
+impact_value: number confidence: number
 
-  impact_score: number
-  confidence: number
+risk: "low" | "medium" | "high" urgency: string
 
-  reasoning: string
+status: "new" | "applied" | "ignored"
 
-  causal_analysis: {
-    cpa_change: number
-    ctr_change: number
-    correlation: number
-    time_range: string
-  }
+root_cause: string
 
-  actions: {
-    steps: {
-      id: string
-      title: string
-      description: string
-      estimated_time: string
-      platform: string
-      automation: boolean
-    }[]
-  }
+reasoning: string
 
-  simulation: {
-    projected_revenue: number
-    cost_impact: number
-    roas_shift: number
-    confidence_min: number
-    confidence_max: number
-  }
+recommendation: { action: string type: "scale" | "pause" | "reallocate" | "refresh" }
 
-  risks: {
-    type: string
-    severity: "low" | "medium" | "high"
-    description: string
-    worst_case_loss: number
-  }[]
+created_at: string }
 
-  signals: {
-    id: string
-    type: string
-    title: string
-    severity: string
-  }[]
+type Signal = { id: string type: "cpa_spike" | "ctr_increase" | "demand_spike" platform: string value: number timestamp: string }
 
-  created_at: string
-}
+type DecisionSummary = { risks_detected: number opportunities_detected: number top_issue: string top_opportunity: string }
 
+type DecisionStats = { critical: number high_impact: number quick_wins: number }
+
+type SystemPulse = { active_decisions: number avg_confidence: number estimated_impact: number performance_change: number }
+
+type DecisionResponse = { stats: DecisionStats summary: DecisionSummary signals: Signal[] decisions: Decision[] system_pulse: SystemPulse }
 
 🌐 3. API Contracts
 
+GET /api/v1/decisions
+
+Query:
+
+date_range
+platform
+status
+impact
+Response: DecisionResponse
+
+⸻
+
 GET /api/v1/decisions/:id
 
-Response:
-DecisionDetail
+Response: Decision
 
 ⸻
 
@@ -212,187 +187,145 @@ POST /api/v1/decisions/:id/apply
 
 Purpose:
 
-* apply decision
-
+apply decision action
 ⸻
 
-POST /api/v1/decisions/:id/simulate (optional, backend only)
-
-RULES:
-- rate-limited
-- NOT auto-triggered
-- requires explicit user action
-
-## ⚠️ Cost Protection
-
-- simulation is NOT auto-run
-- UI must not trigger simulation on load
-- cache simulation results
-- reuse existing results if available
-
+POST /api/v1/decisions/:id/ignore
 
 Purpose:
 
-* run simulation
-
+ignore decision
 ⸻
 
 🗄️ 4. DB Schema
 
 decisions
 
-* id
-* org_id
-* title
-* impact_score
-* confidence
-* reasoning
-* created_at
-
-⸻
-
-decision_analysis
-
-* id
-* org_id
-* decision_id
-* cpa_change
-* ctr_change
-* correlation
-* created_at
-
-⸻
-
-decision_actions
-
-* id
-* org_id
-* decision_id
-* title
-* description
-* estimated_time
-* platform
-* automation
-* created_at
-
-⸻
-
-decision_simulations
-
-* id
-* org_id
-* decision_id
-* projected_revenue
-* cost_impact
-* roas_shift
-* confidence_min
-* confidence_max
-* created_at
-
-⸻
-
-decision_risks
-
-* id
-* org_id
-* decision_id
-* type
-* severity
-* description
-* worst_case_loss
-* created_at
-
+id
+org_id
+title
+platform
+campaign_id
+impact_value
+confidence
+risk
+urgency
+status
+root_cause
+reasoning
+action_type
+action_text
+created_at
 ⸻
 
 decision_signals
 
-* id
-* org_id
-* decision_id
-* type
-* title
-* severity
-* created_at
+id
+org_id
+type
+platform
+value
+timestamp
+⸻
 
+decision_logs
+
+id
+org_id
+decision_id
+action (applied / ignored)
+user_id
+created_at
+⸻
+
+system_pulse
+
+id
+org_id
+active_decisions
+avg_confidence
+estimated_impact
+performance_change
+created_at
 ⸻
 
 ⚙️ 5. Execution Logic
 
-Impact Score:
+Decision Scoring:
 
-impact_score = weighted score based on revenue + efficiency
-
-⸻
-
-Confidence:
-
-confidence = model certainty based on historical patterns
+score = (impact_value * 0.5) + (confidence * 0.5)
 
 ⸻
 
-Causal Analysis:
+Risk Classification:
 
-detect correlation between:
+IF confidence > 85 AND impact high → high confidence decision
 
-* CPA increase
-* CTR drop
-* frequency increase
+IF risk high AND urgency low → deprioritize
 
 ⸻
 
-Simulation (PRECOMPUTED ONLY)
+Impact Estimation:
+
+impact = predicted_revenue_change over 30 days
+
 ⸻
 
-Risk Engine:
+Signals Engine:
 
-estimate:
+detect anomalies:
 
-* downside scenarios
-* volatility window
+CPA spike
+CTR drop
+ROAS decline
+search demand spike
+⸻
 
+Decision Generation:
+
+combine:
+
+signals
+performance metrics
+thresholds
 ⸻
 
 💳 6. Credits System
 
-simulation:
+if decision is AI-generated:
 
-* consumes medium credits
+consumes low credits
+if applying decision:
 
-apply decision:
-
-* no credits
-
+no credits
 ⸻
 
 🧠 7. AI Usage Classification
 
-decision_analysis → MEDIUM
+decision_generation → MEDIUM
 
-simulation_engine → HIGH
+signal_detection → LOW
 
-risk_modeling → MEDIUM
+future:
 
+autonomous decision engine
 ⸻
 
 📊 8. Marketing Rules (CRITICAL)
 
-IF CPA increases
-→ adjust bidding OR creatives
+IF CPA spikes → reduce spend OR refresh creatives
 
 ⸻
 
-IF CTR drops
-→ refresh creatives
+IF ROAS drops below threshold → pause campaign
 
 ⸻
 
-IF correlation high (>0.8)
-→ strong decision confidence
+IF CTR increases significantly → scale campaign
 
 ⸻
 
-IF risk high
-→ require manual approval
+IF new audience signal detected → expand targeting
 
 ⸻
 
@@ -400,163 +333,122 @@ IF risk high
 
 Replace static UI with:
 
-GET /api/v1/decisions/:id
+GET /api/v1/decisions
 
 ⸻
 
 Requirements:
 
-* loading state
-* error state
-* empty state
-
+loading state
+error state
+empty state
 ⸻
 
 Important:
 
-* ALL analysis done in backend
-* frontend only renders
-
+ALL decision logic in backend
+frontend only renders
 ⸻
 
 Security:
 
-* filter by org_id
-
+filter by org_id
 ⸻
 
 Performance:
 
-* cache decision detail
-* precompute simulations
-
+cache decisions
+stream real-time signals (WebSocket recommended)
 ⸻
 
-🔥 CLAUDE IMPLEMENTATION PROMPT
+🔥 CLAUDE IMPLEMENTATION PROMPT (ADD THIS TO EVERY PAGE)
 
+Use this prompt inside Claude:
 
 Implement all API integrations for this page.
 
 Rules:
-- DO NOT modify UI
-- Replace static data with API
-- Use React Query
-- Add loading / error / empty states
-- Keep logic in backend
-- Use types strictly
-- Optimize caching
 
-
-
+DO NOT modify UI structure
+ONLY replace static data with API calls
+Use React Query for fetching
+Add loading, error, empty states
+Keep all business logic in backend
+Ensure org_id is always included
+Use proper typing based on provided interfaces
+Optimize with caching and memoization
 ⸻
 
 Future:
 
 feeds:
 
-* automation engine
-* decision execution layer
-* predictive optimization
-
+decision engine
+automation system
+budget allocator
 ⸻
 
-## 🧠 AI Layer
-
-SOURCE: BACKEND ONLY
-
-RULES:
-- simulation MUST be precomputed
-- NO live AI calls
-- NO on-demand simulation from frontend
-- NO Claude generation allowed
-
-
-
-## 🧬 SCHEMA CONTROL
-- schema.sql is source of truth
-- no runtime creation
-
+🧬 SCHEMA CONTROL
+schema.sql is source of truth
+no runtime creation
 AUTH: CLERK
-- all requests must include org_id
 
+all requests must include org_id
 
-- NO auto AI
-- NO fallback AI
+NO auto AI
 
+NO fallback AI
 
-## 🔴 REALTIME STRATEGY
-
+🔴 REALTIME STRATEGY
 SOURCE: SUPABASE_REALTIME
 
 MODE: HYBRID
 
----
-
-1. BROADCAST (PRIMARY)
-
+BROADCAST (PRIMARY)
 CHANNEL:
 
-- decision_detail:{org_id}:{decision_id}
-
+decisions_stream:{org_id}
 EVENTS:
 
+decision_created:
+
+id
+title
+platform
+impact_value
+confidence
+risk
+urgency
+timestamp
 decision_updated:
-- impact_score
-- confidence
-- timestamp
 
-simulation_updated:
-- projected_revenue
-- roas_shift
-- confidence_range
+id
+status
+impact_value
+confidence
+decision_applied:
 
-risk_updated:
-- risk_type
-- severity
-- worst_case_loss
+id
+status
+decision_ignored:
 
-status_changed:
-- status (new → applied → ignored)
-
----
-
-2. POSTGRES_CHANGES (SECONDARY)
-
+id
+status
+POSTGRES_CHANGES (SECONDARY)
 TABLES:
 
-- decisions (UPDATE)
-- decision_simulations (UPDATE)
-- decision_risks (UPDATE)
-
----
-
+decision_signals (INSERT)
+system_pulse (UPDATE)
 RULES:
 
-- UI MUST update if simulation changes
-- UI MUST reflect decision status instantly
-- risk MUST always be latest version
-
----
-
+decisions MUST be precomputed (NO realtime AI)
+UI MUST prepend new decisions
+updates MUST be in-place (no full reload)
 FALLBACK:
 
-- refetch GET /api/v1/decisions/:id every 30s
-
----
-
+GET /api/v1/decisions every 20s
 SECURITY:
 
-- org_id + decision_id scoped
-
-## 🧠 SIMULATION UPDATE STRATEGY
-
-- simulations generated in background jobs
-- update triggered by:
-  - major metric change (>10%)
-  - execution event
-  - scheduled refresh
-
-- UI NEVER triggers simulation automatically
-- UI ONLY listens to updates
+org_id scoped channels
+RLS enforced
 ✅ DONE
-

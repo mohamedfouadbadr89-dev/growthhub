@@ -60,7 +60,7 @@ RULES:
 
 
 
-PAGE: settings/page.tsx
+PAGE: /settings/team
 
 ⸻
 

@@ -475,3 +475,187 @@ RULE:
 
 - do NOT render large lists fully
 - optimize grid performance
+
+
+
+TABLE: creative_archive
+
+FIELDS:
+
+- id (uuid, pk)
+- org_id (uuid)
+- creative_id (uuid)
+
+- name (text)
+- thumbnail (text)
+
+- platform (enum: meta | google | tiktok)
+- format (enum: image | video | ugc)
+
+- performance_score (int 0–100)
+- status (enum: active | paused | archived)
+
+- ctr (numeric)
+- roas (numeric)
+
+- created_at (timestamp)
+- updated_at (timestamp)
+
+---
+
+TABLE: creative_history
+
+FIELDS:
+
+- id (uuid, pk)
+- creative_id (uuid)
+- version_id (uuid)
+
+- performance_score (int)
+- ctr (numeric)
+- roas (numeric)
+
+- created_at (timestamp)
+
+
+RULES:
+
+- ALL reads MUST be filtered by org_id
+- ALL writes MUST go through Supabase (no local writes)
+- performance_score MUST be precomputed (no runtime AI)
+- NO AI execution inside API routes
+
+VALIDATION:
+
+- performance_score ∈ [0,100]
+- platform must be valid enum
+- format must be valid enum
+- status must be valid enum
+
+
+GET /creatives/archive
+
+- MUST support filters:
+  - search (name ILIKE)
+  - platform
+  - format
+  - status
+  - performance range
+
+- MUST return normalized shape for UI
+
+---
+
+POST /creatives/:id/reuse
+
+- MUST duplicate creative into active pool
+- MUST log event (future: execution_logs)
+- MUST return new creative_id
+
+---
+
+POST /creatives/:id/duplicate
+
+- MUST clone creative داخل archive أو draft
+- MUST preserve metadata
+
+---
+
+POST /creatives/bulk/reuse
+
+- MUST validate each creative
+- MUST support partial success
+- MUST return:
+  - success_ids[]
+  - failed_ids[]
+
+
+  RULE:
+
+- API response MUST be mapped to:
+
+CreativeArchive (UI shape)
+
+MAPPING:
+
+- platform → tags.platform
+- format → tags.format
+- performance_score → performance_tier (derived)
+
+DERIVED:
+
+- score ≥ 80 → high
+- 50–79 → medium
+- < 50 → low
+
+FLOW:
+
+1. user triggers action
+2. frontend calls API (future)
+3. backend validates:
+   - org_id
+   - creative status
+   - performance
+4. execute action
+5. return result
+6. UI updates state
+
+RULE:
+
+- backend is source of truth
+- UI must not assume success
+
+SORTING:
+
+- by performance_score (desc default)
+- by created_at (desc)
+- by roas (optional)
+
+RULE:
+
+- default sort MUST prioritize high performance
+
+NOTE:
+
+- performance_tier is NOT stored in DB
+- MUST be derived in adapter layer
+
+POST /creatives/:id/relaunch
+
+- MUST create new campaign creative
+- MUST validate:
+  - performance
+  - recency
+  - compatibility
+
+  AUTH:
+
+- org_id MUST be extracted from Clerk session
+- MUST NOT be passed manually from frontend
+
+INDEXES:
+
+- org_id (required)
+- performance_score (for sorting)
+- status
+- platform
+
+- creative_created
+- creative_deleted 
+
+
+OPTIMISTIC UI:
+
+- reuse → show instantly in UI
+- fallback → revert on failure
+
+RULE:
+
+- selection SHOULD reset on filter change (v1)
+- persistence = future enhancement
+
+
+RULE:
+
+- API response MUST match CreativeArchive type EXACTLY
+- no optional missing fields allowed
