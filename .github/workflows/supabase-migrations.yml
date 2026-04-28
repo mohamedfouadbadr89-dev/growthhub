@@ -19,7 +19,7 @@ jobs:
           version: latest
 
       - name: Link Supabase project
-        run: supabase link --project-ref lstrkrnkzolcnfkltyjf --yes
+        run: supabase link --project-ref $SUPABASE_PROJECT_REF --yes
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -28,4 +28,3 @@ jobs:
         run: supabase db push
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
