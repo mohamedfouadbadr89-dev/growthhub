@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
@@ -11,7 +12,16 @@ const isProtectedRoute = createRouteMatcher([
   "/settings(.*)",
 ]);
 
+const isAuthRoute = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
+
 export default clerkMiddleware(async (auth, req) => {
+  const { userId } = await auth();
+
+  // Authenticated users must not be able to re-enter auth pages — breaks the loop
+  if (isAuthRoute(req) && userId) {
+    return NextResponse.redirect(new URL("/dashboard/overview", req.url));
+  }
+
   if (isProtectedRoute(req)) {
     await auth.protect();
   }
