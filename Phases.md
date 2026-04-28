@@ -1,3 +1,21 @@
+ PHASE 0 — Architecture Lock (MANDATORY BEFORE EVERYTHING)
+
+Goal: Prevent system corruption before backend starts
+
+🔥🔥 NEW
+
+* REMOVE any Supabase direct writes from Next.js (frontend API routes)
+* Ensure ONLY backend writes to database (single writer rule)
+* Keep Clerk webhook in ONE place only (backend OR frontend → backend preferred)
+* Remove duplicate webhook handlers to avoid race conditions
+* Validate org_id is always present in JWT before backend work
+
+Deliverable
+
+* Clean architecture with single source of truth (backend only)
+
+⸻
+
 PHASE 1 — Foundation
 
 Goal: Auth + Database + Backend skeleton working end-to-end
@@ -38,6 +56,18 @@ Backend (Hostinger VPS)
 * Treat MD files as executable instructions
 * 🔥 Ensure .env files exist (backend + frontend)
 * 🔥 Apply Supabase migrations BEFORE moving to Phase 2
+
+🔥🔥 NEW
+
+* Define backend folder structure BEFORE writing code:
+    * /controllers
+    * /services
+    * /repositories
+    * /middleware
+    * /utils
+* Add request logging middleware (every request logged)
+* Add global error handler (standard error format)
+* Enforce org_id extraction middleware (reject if missing)
 
 📄 SPECS (Phase 1)
 
@@ -84,6 +114,17 @@ Sync Jobs (Inngest)
     POST /api/v1/integrations/:id/sync
 * 🔥 Ensure OAuth flow is REAL (not UI only)
 * 🔥 Validate credentials before sync
+
+🔥🔥 NEW
+
+* Define API response contract BEFORE implementation:
+    * success response format
+    * error response format
+    * pagination format
+* All endpoints MUST:
+    * return org-scoped data only
+    * reject cross-org access
+* Add rate limiting middleware (basic protection from start)
 
 📄 SPECS (Phase 2)
 
@@ -137,10 +178,16 @@ result: any,
 confidence_score: number
 }
 
+🔥🔥 NEW
+
+* AI responses MUST be validated before saving to DB
+* Reject invalid AI output (no silent failures)
+* Log every AI request + response
+
 📄 SPECS (Phase 3)
 
-* ai-prompts.md 🔥
-* ai-dashboard-generator.md 🔥
+* ai-prompts.md
+* ai-dashboard-generator.md
 * decisions-overview.md
 * decisions-detail.md
 * decisions-alerts.md
@@ -161,43 +208,15 @@ System generates real AI decisions
 
 ⸻
 
-🔥 PHASE X — AI ORCHESTRATION (CRITICAL LAYER)
+🔥 PHASE X — AI ORCHESTRATION (CRITICAL)
 
-Goal: Control system brain (not optional)
+Goal: Control system brain
 
-MCP Orchestration
+📄 SPECS
 
-* decide when AI uses tools
-* multi-step reasoning:
-    campaign → insight → creatives → execution
-
-Execution Routing
-
-* detect request type:
-    * dashboard
-    * insight
-    * decision
-* route correctly
-
-Tool Governance
-
-* max tool calls
-* timeout handling
-* fallback logic
-
-AI Contract Enforcement
-
-* enforce response schema globally
-
-📄 SPECS (CRITICAL)
-
-* mcp-orchestration.md 🔥🔥🔥
+* mcp-orchestration.md
 * mcp-integration.md
-* ai-execution.md 🔥
-
-Deliverable
-
-AI behaves like SYSTEM (not chatbot)
+* ai-execution.md
 
 ⸻
 
@@ -212,19 +231,21 @@ Actions
 * automation_runs table
 * decision_history table
 
-🔥 ADDITIONS (CRITICAL)
+🔥 ADDITIONS
 
 * REMOVE simulated execution
 * action-executor MUST call real APIs
 
-Execution Engine
+🔥🔥 NEW
 
-* central execution router
-* maps actions → APIs
+* Execution MUST be idempotent
+* Always log execution result
+* Always include data snapshot
+* Enforce org_id validation
 
-📄 SPECS (Phase 4)
+📄 SPECS
 
-* execution-engine.md 🔥
+* execution-engine.md
 * action-detail.md
 * action-execution-log.md
 * actions-overview.md
@@ -234,131 +255,75 @@ Execution Engine
 * automation-history.md
 * automation-strategies.md
 
-Deliverable
-
-Real execution + logging
-
 ⸻
 
 PHASE 5 — Creatives
 
 Goal: AI creatives generation
 
-Brand Kit
+🔥🔥 NEW
 
-* brand_kits table
-* assets upload
+* Link creatives to campaign_metrics (feedback loop)
+* Store generation metadata (prompt, model, inputs)
 
-Creative Generation
-
-* creative_generations
-* creatives
-* OpenRouter copy
-* SiliconFlow images
-
-🔥 ADDITIONS
-
-* REMOVE mock UI
-* add creative feedback loop
-
-🐍 PYTHON (IMPORTANT)
-
-Python starts HERE
-
-Used for:
-
-* image pipelines
-* video generation
-* heavy AI processing
-
-👉 YOU setup Python env (not Claude)
-👉 install libs before starting Phase 5
-
-📄 SPECS (Phase 5)
+📄 SPECS
 
 * creatives-brand-kit.md
 * creatives-editor.md
 * creatives-results.md
 * creatives-archive.md
 
-Deliverable
-
-AI generates + optimizes creatives
-
 ⸻
 
 PHASE 6 — Campaigns
 
-Goal: Campaign management
+🔥🔥 NEW
 
-Campaigns
+* Validate org ownership
+* Validate ad account ownership
+* Prevent cross-account execution
 
-* backend ready
-
-🔥 ADDITIONS
-
-* connect decisions → campaigns
-* REMOVE mock UI
-
-📄 SPECS (Phase 6)
+📄 SPECS
 
 * campaigns-list.md
 * campaigns-detail.md
 * campaigns-execution-focus.md
 
-Deliverable
-
-Campaign creation + push
-
 ⸻
 
 PHASE 7 — Monetization + Polish
 
-Goal: Production-ready SaaS
+🔥🔥 NEW
 
-Billing
+* Credits check BEFORE every AI call
+* Log every credit transaction
 
-* Stripe integration
-* Plans
-* Credits system
-
-🔥 CREDITS SYSTEM
-
-tables:
-
-* credits_balance
-* credits_transactions
-
-logic:
-check → deduct → execute → log
-
-🔥 ADMIN DASHBOARD
-
-* org management
-* usage tracking
-* AI usage monitoring
-
-🔥 FOOTER PAGES
-
-Create pages based on competitor research:
-
-* Terms
-* Privacy
-* Refund Policy
-* Contact
-* About
-
-👉 create separate MD if needed OR inline here
-
-📄 SPECS (Phase 7)
+📄 SPECS
 
 * account-settings.md
 * team-management.md
 * permissions-roles.md
 
-Deliverable
+⸻
 
-Full SaaS live
+🔥 SPEC MAPPING (MANDATORY)
+
+Each phase MUST load only its relevant specs.
+
+* Phase 1 → database + auth
+* Phase 2 → connectors + jobs
+* Phase 3 → decisions + dashboards
+* Phase 4 → execution + automation
+* Phase 5 → creatives
+* Phase 6 → campaigns
+* Phase 7 → billing + settings
+
+🚨 RULES:
+
+* Specs are executable instructions
+* If conflict → specs win
+* No cross-phase mixing
+* If unclear → STOP (no guessing)
 
 ⸻
 
@@ -368,50 +333,22 @@ FRONTEND
 
 * NO MOCK DATA
 * API ONLY
-* loading + error states required
+
+🔥🔥 NEW
+
+BACKEND
+
+* ALL queries MUST include org_id
+* NEVER trust client org_id
+* Backend = single source of truth
 
 ⸻
 
-GIT + WORKFLOW (CRITICAL)
+🚨 WHAT BREAKS SYSTEM
 
-After EVERY completed step:
-
-* commit to GitHub
-* push to current branch
-
-DATABASE
-
-After ANY schema change:
-
-* create migration
-* apply in Supabase
-
-⸻
-
-API UPDATES
-
-👉 ALWAYS update PLAN (not CLAUDE.md)
-
-⸻
-
-SKILLS (IMPORTANT)
-
-Claude must operate with:
-
-* marketing reasoning
-* ad platform logic
-* growth thinking
-* clerk auth understanding
-
-⸻
-
-🚨 WHAT WILL BREAK EXECUTION
-
-If any missing → system fails:
-
-1. ENV not set
-2. Supabase migrations not applied
-3. UI still mock
-4. action executor still simulated
-5. no real integrations
-6. AI orchestration not implemented
+1. Missing ENV
+2. Missing migrations
+3. Mock UI
+4. No real integrations
+5. No AI orchestration
+6. Missing org_id enforcement
