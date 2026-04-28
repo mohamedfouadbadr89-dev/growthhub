@@ -2,8 +2,9 @@ name: Supabase Migrations
 
 on:
   push:
-    paths:
-      - "db/migrations/**"
+    branches:
+      - "**"
+  workflow_dispatch:  # تشغيل manual من GitHub
 
 jobs:
   migrate:
