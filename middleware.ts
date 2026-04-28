@@ -20,12 +20,12 @@ const isAuthRoute = createRouteMatcher([
 export default clerkMiddleware(async (auth, req) => {
   const { userId } = await auth();
 
-  // 👈 يمنع ال loop
+  // منع المستخدم المسجل من الرجوع لصفحات تسجيل الدخول (حل مشكلة loop)
   if (isAuthRoute(req) && userId) {
     return NextResponse.redirect(new URL("/dashboard/overview", req.url));
   }
 
-  // 👈 يحمي الصفحات
+  // حماية الصفحات
   if (isProtectedRoute(req)) {
     await auth.protect();
   }
