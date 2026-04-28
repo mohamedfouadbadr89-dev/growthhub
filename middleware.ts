@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
@@ -11,7 +12,20 @@ const isProtectedRoute = createRouteMatcher([
   "/settings(.*)",
 ]);
 
+const isAuthRoute = createRouteMatcher([
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+]);
+
 export default clerkMiddleware(async (auth, req) => {
+  const { userId } = await auth();
+
+  // 👈 يمنع ال loop
+  if (isAuthRoute(req) && userId) {
+    return NextResponse.redirect(new URL("/dashboard/overview", req.url));
+  }
+
+  // 👈 يحمي الصفحات
   if (isProtectedRoute(req)) {
     await auth.protect();
   }
@@ -19,8 +33,7 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and static files
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico)).*)",
     "/(api|trpc)(.*)",
   ],
 };
