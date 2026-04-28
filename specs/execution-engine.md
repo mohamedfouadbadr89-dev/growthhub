@@ -1,35 +1,51 @@
-## 🧬 DATABASE MIGRATION ENGINE
+## ⚙️ CENTRAL EXECUTION ENGINE
 
-SOURCE_OF_TRUTH: SQL_FILES_ONLY
-
-FILES:
-- /db/schema.sql
-- /db/migrations/*.sql
+PURPOSE:
+- single entry point for ALL executions
 
 RULES:
-- ALL schema MUST be written in SQL
-- NO runtime table creation
-- NO "create if not exists" inside app code
-
-EXECUTION:
-- migrations executed via Supabase CLI ONLY
-- NEVER via frontend
-- NEVER via API
+- NO execution from pages
+- NO execution from AI
+- ONLY via /api/v1/execution
 
 FLOW:
-1. update schema.sql
-2. create migration file
-3. run:
-   supabase db push
+1. receive action request
+2. validate:
+   - org_id
+   - permissions
+   - risk level
+   - platform constraints
+3. decision:
+   - approved → execute
+   - blocked → log
+   - pending → require approval
+4. execute via provider API
+5. log result
 
-VALIDATION:
-- Claude MUST read schema.sql before writing queries
-- MUST NOT assume tables
-- MUST match exact column names
+RISK CONTROL:
+- HIGH → block or require override
+- MEDIUM → require confirmation
+- LOW → allow
 
-ENV:
-- SUPABASE_URL
-- SUPABASE_SERVICE_ROLE
+LOGGING:
+- ALL executions logged
+- include risk + validation + result
 
-FAIL SAFE:
-- if table not found → STOP (do not create)
+DEPENDENCIES:
+- actions
+- campaigns
+- automations
+
+IMPORTANT:
+- this is the ONLY execution authority
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI

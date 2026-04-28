@@ -334,4 +334,138 @@ feeds:
 
 ⸻
 
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+
+
+## 🔴 REALTIME STRATEGY
+
+SOURCE: SUPABASE_REALTIME
+
+MODE: CRITICAL (FINANCIAL)
+
+---
+
+1. BROADCAST
+
+CHANNEL:
+
+- profit_updates:{org_id}
+
+EVENTS:
+
+profit_update:
+- revenue
+- cost
+- profit
+- margin
+
+channel_profit_update:
+- channel
+- revenue
+- cost
+- profit
+
+unit_economics_update:
+- cac
+- cpa
+- ltv
+- aov
+
+---
+
+RULES:
+
+- profit MUST update instantly
+- margin MUST reflect latest state
+- CAC MUST sync with ad spend updates
+
+---
+
+2. POSTGRES_CHANGES
+
+TABLES:
+
+- profit_daily (INSERT)
+- cost_breakdown (UPDATE)
+- channel_profit (UPDATE)
+
+---
+
+3. NON-REALTIME
+
+- trends → refresh every 60s
+- historical data → cached
+
+---
+
+FALLBACK:
+
+- refetch GET /api/v1/dashboard/profit every 30–60s
+
+---
+
+SECURITY:
+
+- org_id scoped
+
+
+## ⚠️ COST MODEL
+
+cost =
+
+- ad_spend (real-time)
+- product_cost (static / batch)
+- operational_cost (daily update)
+
+---
+
+RULE:
+
+- profit MUST reflect real-time ad spend
+- other costs may lag (acceptable)
+
+
+## ⚠️ CAC vs CPA
+
+CPA:
+- cost per conversion
+
+CAC:
+- cost per customer acquisition
+
+RULE:
+
+- CAC MUST include:
+  - ad spend
+  - attribution logic
+  - deduplication
+
+- CPA = tactical metric
+- CAC = strategic metric
+
+## 🔗 EVENT SOURCES
+
+profit + segments updated from:
+
+- actions execution
+- attribution engine
+- campaign performance
+- user behavior tracking
+
+---
+
+FLOW:
+
+execution → logs → metrics → attribution → segments → profit → dashboard
+
 ✅ DONE

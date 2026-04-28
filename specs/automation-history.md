@@ -1,3 +1,4 @@
+
 automation-history.md
 
 🔒 SYSTEM ENFORCEMENT LAYER
@@ -66,7 +67,7 @@ RULES:
 
 ⸻
 
-PAGE: automation/history/page.tsx
+PAGE: app/automation/history/page.tsx
 
 ⸻
 
@@ -345,3 +346,113 @@ Important
 * logs = source of truth
 * must NOT be editable
 * must include validation + approval state
+
+
+## 🧬 SCHEMA CONTROL
+- schema.sql is source of truth
+- no runtime creation
+
+AUTH: CLERK
+- all requests must include org_id
+
+
+- NO auto AI
+- NO fallback AI
+## 🔗 FEEDBACK LOOP
+
+automation history MUST feed:
+
+- decision engine
+- strategy scoring
+- risk model
+
+---
+
+RULE:
+
+- failed executions reduce strategy score
+- successful executions increase confidence
+
+
+## ⚠️ ANOMALY DETECTION
+
+IF:
+
+- repeated failures
+- abnormal execution frequency
+- negative impact
+
+→ trigger alert
+→ auto pause strategy
+
+
+## 🛑 AUTO PAUSE RULE
+
+IF:
+
+- failure_rate > threshold
+OR
+- risk detected
+
+→ pause workflow automatically
+
+
+## 🔴 REALTIME HISTORY
+
+CHANNEL:
+
+automation_runs:{org_id}
+
+EVENTS:
+
+- run_started
+- run_completed
+- run_failed
+
+---
+
+RULE:
+
+- UI MUST update instantly
+
+
+## 🧠 EXECUTION QUALITY SCORE
+
+score =
+
+0.5 * success_rate +
+0.3 * impact +
+0.2 * stability
+
+---
+
+USE:
+
+- detect bad automations
+
+
+## 🧠 AI LEARNING LAYER
+
+AI explanations MUST feed:
+
+- strategy improvement
+- decision refinement
+
+---
+
+RULE:
+
+AI ≠ just explanation  
+AI = feedback signal
+
+
+## 🔗 FULL AUTOMATION FLOW
+
+Decision → Strategy → Workflow → Execution → Logs → Feedback → Decision
+
+---
+
+RULE:
+
+- system MUST learn continuously
+

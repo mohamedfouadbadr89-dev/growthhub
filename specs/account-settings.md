@@ -37,6 +37,11 @@ RULES:
 
 ---
 
+PAGE :  app/settings/page.tsx
+
+-----
+
+
 ## 🔐 SECRETS MANAGEMENT
 
 VAULT: SUPABASE_VAULT

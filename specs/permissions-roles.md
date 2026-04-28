@@ -223,6 +223,7 @@ POST /api/v1/internal/users/:clerk_user_id/role
 
 ⸻
 
+
 🗄️ 4. DB Schema
 
 roles
@@ -403,3 +404,10 @@ can_approve = true
 - automation
 - decisions
 
+module: ai_connectors
+
+permissions:
+
+- use_ai
+- execute_tools
+- manage_keys

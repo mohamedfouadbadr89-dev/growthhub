@@ -1,365 +1,100 @@
-decisions-audience.md
+## 🧠 AI BACKGROUND JOBS
 
-PAGE: decisions/audience/page.tsx
+PURPOSE:
+- run AI outside user requests
 
-⸻
+JOBS:
+- generate actions
+- generate recommendations
+- refresh insights
+- detect anomalies
 
-🧩 1. UI → Data Mapping
+TRIGGERS:
+- cron (every X hours)
+- manual trigger
 
-Audience Cards:
+RULES:
+- NO AI on GET
+- NO AI per request
+- ALL results cached
 
-* audience_id
-* audience_name
-* platform (meta / google / tiktok)
-* audience_type (lookalike / broad / retargeting)
-* size_range
-* roas
-* cpa
-* trend_percentage
+CACHE:
+- key: org_id + entity_id + type
+- TTL:
+  insights → 24h
+  recommendations → 12h
 
-⸻
+FLOW:
+1. fetch data
+2. run AI via OpenRouter
+3. store result in DB/cache
+4. reuse in UI
 
-AI Recommendation:
+FAILSAFE:
+- if AI fails → keep old data
 
-* recommendation_text
-* recommendation_type (expand / refine / shift / scale)
+## 🔗 SYSTEM INTEGRATION (CRITICAL)
 
-⸻
+AI jobs MUST feed:
 
-Audience Analysis:
+- decision engine
+- alerts engine
+- actions engine
 
-* overlap_percentage
-* unique_users_percentage
-* saturation_level
-* frequency
-* trend
+---
 
-⸻
+RULE:
 
-Actions:
+- AI MUST NOT create final outputs directly for UI
+- AI MUST create structured signals ONLY
 
-* apply_change
-* push_to_campaign
-* dismiss
+FLOW:
 
-⸻
+AI → signals → decisions → actions → execution
 
-Filters:
+## ⚠️ JOB IDEMPOTENCY
 
-* platform
-* audience_type
+RULE:
 
-⸻
+- same job MUST NOT run twice for same org + type within window
 
-Sidebar Metrics:
+KEY:
 
-* audience_health_score
-* health_status
-* industry_percentile
+- org_id + job_type + time_window
 
-⸻
+---
 
-Saturation Alerts:
+IF already executed:
+→ skip
 
-* alert_id
-* message
-* severity
+## ⏱️ JOB PRIORITY
 
-⸻
+types:
 
-Quick Insights:
+- critical (alerts / anomalies) → near real-time
+- standard (recommendations) → scheduled
+- low (insights refresh) → batch
 
-* avg_roas
-* reach_growth
+---
 
-⸻
+RULE:
 
-🧱 2. Data Shape (Normalized)
+- critical jobs MUST preempt others
 
 
-type Audience = {
-  id: string
-  name: string
+## ⚡ EVENT-DRIVEN JOBS
 
-  platform: "meta" | "google" | "tiktok"
-  type: "lookalike" | "broad" | "retargeting"
+TRIGGERS:
 
-  size_min: number
-  size_max: number
+- decision_created
+- alert_triggered
+- campaign_updated
 
-  metrics: {
-    roas?: number
-    cpa?: number
-    trend: number
-  }
+---
 
-  analysis: {
-    overlap: number
-    unique_users: number
-    saturation: number
-    frequency: number
-  }
+RULE:
 
-  recommendation: {
-    type: "expand" | "refine" | "shift" | "scale"
-    message: string
-  }
+- jobs MUST NOT rely on cron only
+- MUST react to system events
 
-  status: "healthy" | "warning" | "critical"
-}
-
-type AudienceResponse = {
-  audiences: Audience[]
-
-  summary: {
-    health_score: number
-    health_status: string
-    industry_percentile: number
-  }
-
-  alerts: {
-    id: string
-    message: string
-    severity: string
-  }[]
-
-  insights: {
-    avg_roas: number
-    reach_growth: number
-  }
-}
-
-
- 3. API Contracts
-
-GET /api/v1/audiences/recommendations
-
-Query:
-
-* platform
-* type
-
-Response:
-AudienceResponse
-
-⸻
-
-POST /api/v1/audiences/:id/apply
-
-Purpose:
-
-* apply audience optimization
-
-⸻
-
-POST /api/v1/audiences/:id/push
-
-Purpose:
-
-* push audience to campaigns
-
-⸻
-
-POST /api/v1/audiences/:id/dismiss
-
-Purpose:
-
-* dismiss recommendation
-
-⸻
-
-🗄️ 4. DB Schema
-
-audiences
-
-* id
-* org_id
-* name
-* platform
-* type
-* size_min
-* size_max
-* created_at
-
-⸻
-
-audience_metrics
-
-* id
-* org_id
-* audience_id
-* roas
-* cpa
-* trend
-* date
-
-⸻
-
-audience_analysis
-
-* id
-* org_id
-* audience_id
-* overlap
-* unique_users
-* saturation
-* frequency
-
-⸻
-
-audience_recommendations
-
-* id
-* org_id
-* audience_id
-* type
-* message
-* created_at
-
-⸻
-
-⚙️ 5. Execution Logic
-
-Audience Engine:
-
-analyze based on:
-
-* ROAS performance
-* CPA trends
-* frequency growth
-* audience saturation
-
-⸻
-
-Saturation Logic:
-
-IF frequency > threshold
-→ saturation high
-
-⸻
-
-IF saturation > 80%
-→ critical
-
-⸻
-
-Overlap:
-
-calculate audience overlap across campaigns
-
-⸻
-
-Recommendation Engine:
-
-IF high performance + rising frequency
-→ expand
-
-IF CPA rising
-→ refine
-
-IF saturation high
-→ shift audience
-
-IF strong performance
-→ scale
-
-⸻
-
-💳 6. Credits System
-
-No credits used
-
-⸻
-
-🧠 7. AI Usage Classification
-
-audience_recommendation → MEDIUM
-
-pattern_detection → LOW
-
-⸻
-
-📊 8. Marketing Rules (CRITICAL)
-
-IF saturation high
-→ expand audience OR refresh
-
-⸻
-
-IF CPA rising
-→ refine targeting
-
-⸻
-
-IF ROAS high
-→ scale budget
-
-⸻
-
-IF overlap high
-→ diversify audiences
-
-⸻
-
-🧾 9. Comments (FOR CLAUDE)
-
-Replace static UI with:
-
-GET /api/v1/audiences/recommendations
-
-⸻
-
-Requirements:
-
-* loading state
-* error state
-* empty state
-
-⸻
-
-Important:
-
-* all recommendations from backend
-* frontend only renders
-
-⸻
-
-Security:
-
-* filter by org_id
-
-⸻
-
-Performance:
-
-* cache audience insights
-* precompute analysis
-
-⸻
-
-🔥 CLAUDE IMPLEMENTATION PROMPT
-
-Implement all API integrations for this page.
-
-Rules:
-- DO NOT modify UI
-- Replace static data with API
-- Use React Query
-- Add loading / error / empty states
-- Keep all calculations in backend
-
-
-⸻
-
-Future:
-
-feeds:
-
-* decision engine
-* budget allocator
-* creative strategy
-
-⸻
-
-✅ DONE
 

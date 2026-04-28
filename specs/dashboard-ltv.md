@@ -272,6 +272,18 @@ Payback Period:
 
 payback_days = days until cumulative revenue >= CAC
 
+
+## ⚠️ PAYBACK RULE
+
+- MUST be cohort-specific
+- MUST NOT use global average
+
+ADVANCED:
+
+- show distribution:
+  - median payback
+  - p75 payback
+  
 ⸻
 
 Retention:
@@ -445,4 +457,20 @@ RULES:
 FALLBACK:
 
 - refetch every 60s
+
+## ⚠️ CAC SOURCE
+
+CAC MUST come from:
+
+- attribution engine
+- NOT raw ad spend
+
+RULE:
+
+- CAC = attributed spend / customers
+
+NOT:
+
+- total spend / users
+
 ✅ DONE

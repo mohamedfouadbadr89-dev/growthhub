@@ -152,6 +152,20 @@ campaign_metrics
 * sort by performance
 * filter by status/platform
 
+## 📊 CAMPAIGN STATUS LOGIC
+
+IF roas > 3
+→ scaling
+
+IF roas stable
+→ active
+
+IF roas declining
+→ warning
+
+IF roas < 1.5
+→ critical
+
 ## ⚡ REAL-TIME UPDATES
 
 SOURCE: SUPABASE REALTIME
@@ -226,3 +240,29 @@ AUTH: CLERK
 - NO auto AI
 - NO fallback AI
 
+
+
+## 🔗 DECISION INTEGRATION
+
+EACH CAMPAIGN MAY HAVE:
+
+- linked_decisions_count
+- risk_level
+- active_alerts
+
+SOURCE:
+
+- decision engine
+- alerts system
+
+## 🎯 UI STATES
+
+- loading state
+- empty state (no campaigns)
+- error state (API failure)
+
+## ⚡ PERFORMANCE
+
+- cache campaigns list
+- invalidate on update events
+- debounce filters
