@@ -325,3 +325,65 @@ shell commands, and other important information, read the current plan at
 - If STATUS: IMPLEMENTED → NEVER create new page
 - ALWAYS update existing file path
 - If file exists → modify, do NOT recreate
+
+
+AI SYSTEM LAYERS (CRITICAL)
+
+Claude must follow:
+
+1. Orchestration Layer (MCP)
+
+* controls tool usage
+* multi-step reasoning
+
+2. Execution Routing
+
+* detect request type
+* route to correct handler
+
+3. AI Output Contract
+    ALL responses must return:
+    {
+    type: “dashboard” | “insight” | “decision”,
+    result: any,
+    confidence_score: number
+    }
+4. Tool Governance
+
+* max tool calls
+* timeout
+* fallback handling
+
+
+## 🧬 DATABASE EXECUTION PROTOCOL (CRITICAL)
+
+Claude MUST follow:
+
+1. ALL database changes MUST be written in:
+   - /db/schema.sql
+   - /db/migrations/*.sql
+
+2. NEVER create tables in runtime code
+
+3. When schema changes:
+
+   Claude MUST:
+   - update schema.sql
+   - create new migration file
+   - commit changes to GitHub
+
+4. Naming:
+
+   migrations MUST be:
+   db/migrations/YYYYMMDDHHMMSS_description.sql
+
+5. Execution:
+
+   GitHub Actions will run:
+   supabase db push
+
+6. Claude MUST NOT assume DB structure
+   → must read schema.sql first
+
+7. If schema mismatch:
+   → STOP execution
