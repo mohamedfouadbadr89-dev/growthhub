@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - "**"
-  workflow_dispatch:  # تشغيل manual من GitHub
+  workflow_dispatch:
 
 jobs:
   migrate:
@@ -19,13 +19,8 @@ jobs:
         with:
           version: latest
 
-      - name: Link Supabase project
-        run: supabase link --project-ref $SUPABASE_PROJECT_REF --yes
+      - name: Run migrations
+        run: supabase db push --project-ref $SUPABASE_PROJECT_REF
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-
-      - name: Run migrations
-        run: supabase db push
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
