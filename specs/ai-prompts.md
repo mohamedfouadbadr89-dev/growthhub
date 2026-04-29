@@ -29,3 +29,21 @@ Available tools:
   "action": "",
   "confidence": 0.0
 }
+
+## Required Context
+
+- last 7–30 days performance
+- trend (up/down)
+- comparison vs previous period
+
+## Output Format (STRICT)
+
+Return ONLY JSON:
+
+{
+  "type": "...",
+  "result": "...",
+  "confidence_score": 0.0
+}
+
+

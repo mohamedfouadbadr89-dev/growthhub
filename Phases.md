@@ -1,4 +1,4 @@
- PHASE 0 — Architecture Lock (MANDATORY BEFORE EVERYTHING)
+PHASE 0 — Architecture Lock (MANDATORY BEFORE EVERYTHING)
 
 Goal: Prevent system corruption before backend starts
 
@@ -9,6 +9,8 @@ Goal: Prevent system corruption before backend starts
 * Keep Clerk webhook in ONE place only (backend OR frontend → backend preferred)
 * Remove duplicate webhook handlers to avoid race conditions
 * Validate org_id is always present in JWT before backend work
+* Add request tracing ID لكل request
+* Log user_id + org_id في كل request
 
 Deliverable
 
@@ -36,6 +38,11 @@ Supabase Schema
 * audit_logs table
 * RLS enabled on all tables
 * All tables have org_id column
+* Add metadata JSONB to:
+    * decisions
+    * creatives
+    * automation_runs
+* Add created_by + updated_by في الجداول الأساسية
 
 Backend (Hostinger VPS)
 
@@ -46,6 +53,8 @@ Backend (Hostinger VPS)
 * Error handling + logging
 * Clerk webhook handler (POST /api/webhooks/clerk)
 * PM2 ecosystem config
+* Standard response format:
+    { success, data, error }
 
 🔥 ADDITIONS
 
@@ -106,6 +115,7 @@ Sync Jobs (Inngest)
 * campaign_metrics table (partitioned by date)
 * Sync status + error handling
 * Manual re-sync trigger
+* Retry strategy (exponential backoff)
 
 🔥 ADDITIONS
 
@@ -125,6 +135,12 @@ Sync Jobs (Inngest)
     * return org-scoped data only
     * reject cross-org access
 * Add rate limiting middleware (basic protection from start)
+* Add fields:
+    * last_synced_at
+    * sync_status
+    * error_message
+* Add raw_data_ref for debugging (not full raw payload)
+* Log sync jobs (duration + status)
 
 📄 SPECS (Phase 2)
 
@@ -148,6 +164,10 @@ Decision Engine
 * Anomaly detection logic
 * Opportunity detection logic
 * Decision prioritization engine
+* Add fields:
+    * reasoning_steps (JSONB)
+    * suggested_action_id
+    * metadata
 
 Pages (Real Data)
 
@@ -162,6 +182,7 @@ AI Integration (OpenRouter)
 * Decision generation prompt
 * Anomaly explanation
 * Confidence score calculation
+* Include historical trends in AI context (7–30 days)
 
 🔥 ADDITIONS (CRITICAL)
 
@@ -183,6 +204,13 @@ confidence_score: number
 * AI responses MUST be validated before saving to DB
 * Reject invalid AI output (no silent failures)
 * Log every AI request + response
+* Store:
+    * prompt
+    * response
+    * model
+    * latency
+* If confidence_score < 0.7:
+    * mark decision as needs_review
 
 📄 SPECS (Phase 3)
 
@@ -218,6 +246,13 @@ Goal: Control system brain
 * mcp-integration.md
 * ai-execution.md
 
+🔥 NEW
+
+* Add strategy_tag field:
+    * scale
+    * cut_loss
+    * test
+
 ⸻
 
 PHASE 4 — Execution Layer
@@ -242,6 +277,10 @@ Actions
 * Always log execution result
 * Always include data snapshot
 * Enforce org_id validation
+* Add:
+    * execution_id (unique)
+    * impact_snapshot (before/after)
+    * execution_mode (auto/manual)
 
 📄 SPECS
 
@@ -265,6 +304,11 @@ Goal: AI creatives generation
 
 * Link creatives to campaign_metrics (feedback loop)
 * Store generation metadata (prompt, model, inputs)
+* Add creatives_metadata:
+    * angle
+    * hook
+    * audience
+* Link creative_id → performance data
 
 📄 SPECS
 
@@ -282,6 +326,7 @@ PHASE 6 — Campaigns
 * Validate org ownership
 * Validate ad account ownership
 * Prevent cross-account execution
+* Validate org_id + ad_account_id mapping
 
 📄 SPECS
 
@@ -297,6 +342,9 @@ PHASE 7 — Monetization + Polish
 
 * Credits check BEFORE every AI call
 * Log every credit transaction
+* Add:
+    * ai_usage_logs
+    * cost_per_call
 
 📄 SPECS
 
@@ -341,6 +389,7 @@ BACKEND
 * ALL queries MUST include org_id
 * NEVER trust client org_id
 * Backend = single source of truth
+* NO execution if confidence_score < 70% without approval
 
 ⸻
 
@@ -352,3 +401,5 @@ BACKEND
 4. No real integrations
 5. No AI orchestration
 6. Missing org_id enforcement
+7. Invalid AI output
+8. Execution without idempotency
