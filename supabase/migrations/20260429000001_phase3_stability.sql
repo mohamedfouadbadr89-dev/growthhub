@@ -17,8 +17,7 @@ DROP POLICY IF EXISTS "org_isolation_ai_logs" ON ai_logs;
 
 CREATE POLICY "org_isolation_ai_logs"
 ON ai_logs
-USING (org_id = auth.jwt() ->> 'org_id');
-
+USING (org_id = (auth.jwt() ->> 'org_id')::uuid)
 CREATE INDEX IF NOT EXISTS idx_ai_logs_org_id ON ai_logs(org_id);
 
 -- Decisions table updates
