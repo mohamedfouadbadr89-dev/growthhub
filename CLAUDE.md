@@ -24,9 +24,9 @@ Data → Insight → Decision → Action → Result → Learning → Better Deci
 | Layer | Tool | Notes |
 |-------|------|-------|
 | Frontend | Next.js (App Router) | |
-| Frontend Host | Hostinger VPS (KVM 1) | Node.js + PM2 + Nginx + SSL — manual setup |
+| Frontend Local | Backend - Hostinger VPS (KVM 1) | Node.js + PM2 + Nginx + SSL — manual setup |
 | Version Control | GitHub | Source of truth |
-| Backend Host | Railway | Persistent server for jobs/APIs |
+| Backend Host | Hostinger | Persistent server for jobs/APIs |
 | Database | Supabase (PostgreSQL) | Isolated project — production only |
 | Auth | Clerk | Multi-tenancy + Organizations |
 | Secrets | Supabase Vault | Encrypted credentials |
@@ -40,14 +40,30 @@ Data → Insight → Decision → Action → Result → Learning → Better Deci
 | Error Tracking | Sentry | |
 | Product Analytics | Posthog | |
 
+Backend framework: Hono ONLY.
+
+Rules:
+- Do NOT write any new code in Express
+- Do NOT use /backend/growthhub/api
+- All new code must be written inside /backend/src
+
+Express code is considered legacy and read-only until migration is complete.
+
+### Org Isolation Middleware — MANDATORY
+
+- Every request MUST pass through middleware that extracts org_id from Clerk JWT
+- If org_id is missing → reject request
+- NEVER trust org_id from client input
+- ALWAYS inject org_id server-side
 ---
 
 ## 3. ARCHITECTURE RULES
 
-### Data Flow — NEVER break this
-```
-Frontend (Hostinger VPS) → Backend API (Railway) → Supabase (Database)
-```
+#Data Flow — NEVER break this
+
+Frontend (Local / Deployment) → Backend API (Hostinger VPS) → Supabase (Database)
+
+Rules:
 - Frontend NEVER calls Supabase directly
 - All DB queries go through Backend API
 - Backend verifies Clerk token on every request
