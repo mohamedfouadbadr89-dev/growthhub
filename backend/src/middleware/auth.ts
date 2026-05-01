@@ -18,8 +18,9 @@ export const authMiddleware = createMiddleware<{
       secretKey: process.env.CLERK_SECRET_KEY!,
     })
     const userId = payload.sub
-    const orgId = (payload as Record<string, unknown>).org_id as string | undefined
-
+const orgId =
+  (payload as any).org_id ||
+  (payload as any).o?.id
     if (!orgId) {
       return c.json(
         { error: 'Forbidden', message: 'User has no organization assigned' },
