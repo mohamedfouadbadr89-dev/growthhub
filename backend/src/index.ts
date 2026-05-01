@@ -6,6 +6,7 @@ import { logger } from 'hono/logger'
 import { serve as inngestServe } from 'inngest/hono'
 import { health } from './routes/health.js'
 import { v1 } from './routes/v1/index.js'
+import { aiRouter } from './routes/v1/ai.js' // ✅ ADDED
 import { errorHandler } from './middleware/error.js'
 import { inngest, functions } from './jobs/inngest.js'
 import { clerkWebhook } from './routes/webhooks/clerk.js'
@@ -131,8 +132,8 @@ app.get('/trigger-ai', async (c) => {
 
 // ─── API ──────────────────────────────────────────────────────
 app.route('/api/v1', v1)
+app.route('/api/v1/ai', aiRouter) // ✅ ADDED (IMPORTANT)
 
-// ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
 app.on(['GET', 'POST', 'PUT'], '/api/inngest',
   inngestServe({
@@ -140,6 +141,7 @@ app.on(['GET', 'POST', 'PUT'], '/api/inngest',
     functions,
   })
 )
+
 // ─── Error Handler ────────────────────────────────────────────
 app.onError(errorHandler)
 
