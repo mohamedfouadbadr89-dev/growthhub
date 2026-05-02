@@ -132,7 +132,7 @@ app.get('/trigger-ai', async (c) => {
 
 // ─── API ──────────────────────────────────────────────────────
 app.route('/api/v1', v1)
-app.route('/api/v1/ai', aiRouter) // ✅ ADDED (IMPORTANT)
+
 
 // ─────────────────────────────────────────────────────────────
 app.on(['GET', 'POST', 'PUT'], '/api/inngest',

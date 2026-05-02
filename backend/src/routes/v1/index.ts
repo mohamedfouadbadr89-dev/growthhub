@@ -12,6 +12,7 @@ import { automationRouter } from './automation.js'
 import { brandKitRouter } from './brand-kit.js'
 import { creativesRouter } from './creatives.js'
 import { campaignsRouter } from './campaigns.js'
+import { aiRouter } from './ai.js'
 
 type Variables = { userId: string; orgId: string }
 
@@ -32,3 +33,8 @@ v1.route('/creatives', creativesRouter)
 v1.route('/campaigns', campaignsRouter)
 
 export { v1 }
+// ✅ AI قبل auth
+v1.route('/ai', aiRouter)
+
+// ❗ auth بعده
+v1.use('/*', authMiddleware)
