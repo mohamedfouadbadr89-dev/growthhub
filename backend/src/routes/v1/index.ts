@@ -18,6 +18,7 @@ type Variables = { userId: string; orgId: string }
 
 const v1 = new Hono<{ Variables: Variables }>()
 
+// 🔒 Auth middleware MUST run before every route — Clerk token + org_id are mandatory
 v1.use('/*', authMiddleware)
 v1.route('/auth', authRouter)
 v1.route('/integrations/connect', connectRouter)
@@ -31,10 +32,6 @@ v1.route('/automation', automationRouter)
 v1.route('/brand-kit', brandKitRouter)
 v1.route('/creatives', creativesRouter)
 v1.route('/campaigns', campaignsRouter)
-
-export { v1 }
-// ✅ AI قبل auth
 v1.route('/ai', aiRouter)
 
-// ❗ auth بعده
-v1.use('/*', authMiddleware)
+export { v1 }

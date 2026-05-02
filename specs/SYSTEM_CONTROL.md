@@ -147,6 +147,15 @@ If:
 - Phase 3 complete → MOVE to Phase 4  
 - Phase 3 blocked → APPLY PATCHES (0 or 1) ONLY  
 
+
+🚨 HARD LOCK
+
+AI MUST NOT:
+- write to DB before validation layer exists
+- execute decisions
+- call external APIs without logging
+
+If violated → STOP execution
 ---
 
 ## LAST UPDATE

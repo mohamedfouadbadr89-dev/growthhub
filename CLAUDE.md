@@ -403,3 +403,52 @@ Claude MUST follow:
 
 7. If schema mismatch:
    → STOP execution
+
+   ## DATABASE MIGRATIONS — SINGLE SOURCE OF TRUTH
+
+🚨 CRITICAL RULE
+
+The ONLY valid migration directory is:
+
+/supabase/migrations
+
+Claude MUST:
+
+- NEVER read from /db/migrations
+- NEVER write to /db/migrations
+- NEVER create migrations outside /supabase/migrations
+
+---
+
+## LEGACY FOLDER
+
+/db/_archive_migrations
+
+- This folder is ARCHIVE ONLY
+- It is NOT used by Supabase
+- It must NEVER be referenced in any execution
+- It exists only for historical reference
+
+---
+
+## MIGRATION EXECUTION FLOW
+
+1. Create migration ONLY in:
+/supabase/migrations
+
+2. NEVER execute migrations directly
+
+3. Migrations are applied via:
+supabase db push
+
+---
+
+## FAILURE CONDITIONS
+
+If Claude:
+
+- Writes to /db/migrations
+- Reads from legacy migrations
+- Creates duplicate migration paths
+
+→ STOP execution immediately
