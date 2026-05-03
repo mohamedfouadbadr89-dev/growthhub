@@ -156,6 +156,79 @@ AI MUST NOT:
 - call external APIs without logging
 
 If violated → STOP execution
+
+## REAL SYSTEM CAPABILITIES (RUNTIME TRUTH)
+
+- AI: MOCK ONLY (no OpenRouter integration yet)
+- Decisions: NOT persisted in DB
+- AI Logging: NOT implemented
+- Data Source: STATIC / NO real ingestion
+- Auth: FULLY WORKING (Clerk JWT)
+- Backend API: WORKING (Hono)
+- org_id enforcement: middleware level ONLY
+
+
+## CURRENT EXECUTION TARGET (STRICT)
+
+Focus ONLY on:
+
+PHASE 3 — Intelligence Layer
+
+DO NOT:
+
+- move to Phase 4
+- start integrations
+- implement execution layer
+- call external APIs
+
+CURRENT GOAL:
+
+Make AI decisions VALID + LOGGED + CONTROLLED
+
+IF goal unclear → STOP (no guessing)
+
+## PHASE 3 — REQUIRED COMPONENTS (CHECKLIST)
+
+AI MUST implement:
+
+- [ ] AI output validation layer
+- [ ] reasoning_steps (JSONB)
+- [ ] AI logging (prompt + response + latency)
+- [ ] confidence_score handling
+- [ ] needs_review logic (< 0.7)
+
+RULE:
+
+If any item missing → Phase NOT complete
+
+## SAFE EXECUTION ORDER
+
+1. Validate AI output (NO DB WRITE)
+2. If valid → allow persistence
+3. Log AI interaction
+4. Apply confidence rules
+
+NEVER:
+
+- save before validation
+- skip logging
+- bypass confidence logic
+
+## DATABASE STATE
+
+- Supabase project: CONNECTED
+- Migrations: PARTIAL / NOT VERIFIED
+- Schema: NOT CONFIRMED AGAINST specs
+
+RULE:
+
+Claude MUST read:
+- schema.sql
+- migrations/
+
+Before ANY DB usage
+
+
 ---
 
 ## LAST UPDATE
