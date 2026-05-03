@@ -325,15 +325,16 @@ export async function pushCampaign(
 
   const actionTemplateId = platform === 'meta' ? META_CREATE_ACTION_ID : GOOGLE_CREATE_ACTION_ID
 
-  const { historyId } = await executeAction(
-    actionTemplateId,
-    {
+  const { historyId } = await executeAction({
+    templateId: actionTemplateId,
+    params: {
       campaign_name: campaign.name,
       daily_budget:  campaign.daily_budget,
       targeting:     campaign.targeting,
     },
-    orgId
-  )
+    orgId,
+    executedBy: 'manual',
+  })
 
   return { history_id: historyId, action_id: actionTemplateId, status: 'executed' }
 }
