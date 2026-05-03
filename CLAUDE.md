@@ -19,157 +19,166 @@ Data → Insight → Decision → Action → Result → Learning → Better Deci
 
 ---
 
-## 2. CURRENT STATUS
+## 2. TECH STACK
 
-### ✅ Completed
-- **Frontend** — All pages built from Stitch, Clerk auth working, fully functional locally
-- **Database Schema** — organizations, users, subscriptions, audit_logs with RLS
-- **Auth** — Clerk integrated, webhooks configured (user.created)
-- **Backend Code** — Express API written, routes defined, PM2 setup
+| Layer | Tool | Notes |
+|-------|------|-------|
+| Frontend | Next.js (App Router) | |
+| Frontend Local | Backend - Hostinger VPS (KVM 1) | Node.js + PM2 + Nginx + SSL — manual setup |
+| Version Control | GitHub | Source of truth |
+| Backend Host | Hostinger | Persistent server for jobs/APIs |
+| Database | Supabase (PostgreSQL) | Isolated project — production only |
+| Auth | Clerk | Multi-tenancy + Organizations |
+| Secrets | Supabase Vault | Encrypted credentials |
+| Cache | Upstash Redis | Serverless |
+| Queue/Jobs | Inngest | Background jobs, automation runs |
+| File Storage | Supabase Storage | Creatives, brand assets |
+| Email | Resend | Alerts, billing, notifications |
+| AI Gateway | OpenRouter | Multi-model LLM access |
+| Image Gen | SiliconFlow + Kolors | Creative generation |
+| Payments | Stripe | Billing |
+| Error Tracking | Sentry | |
+| Product Analytics | Posthog | |
 
-### ❌ BLOCKED
-- **Backend Accessibility** — Server not reachable externally (localhost binding issue)
-- **Webhooks** — Clerk webhooks failing (backend not exposed)
-- **Supabase Inserts** — No data entering DB (webhook failure cascade)
+Backend framework: Hono ONLY.
 
-### 🚨 Critical Blocker
-Backend on VPS (72.62.131.250:3001) is **not accessible from external networks**. This blocks:
-- Clerk webhook delivery
-- Supabase data ingestion
-- All API communication
+Rules:
+- Do NOT write any new code in Express
+- Do NOT use /backend/growthhub/api
+- All new code must be written inside /backend/src
 
+Express code is considered legacy and read-only until migration is complete.
+
+### Org Isolation Middleware — MANDATORY
+
+- Every request MUST pass through middleware that extracts org_id from Clerk JWT
+- If org_id is missing → reject request
+- NEVER trust org_id from client input
+- ALWAYS inject org_id server-side
 ---
 
-## 3. TECH STACK
+## 3. ARCHITECTURE RULES
 
-| Layer | Tool | Status |
-|-------|------|--------|
-| Frontend | Next.js (App Router) | ✅ Done, locally working |
-| Frontend Host | Hostinger VPS (KVM 1) | 🔧 Ready for deploy |
-| Backend Host | Hostinger VPS (same instance) | ❌ Not exposed (0.0.0.0 issue) |
-| Database | Supabase (PostgreSQL) | ✅ Schema ready, RLS enabled |
-| Auth | Clerk | ✅ Configured, webhooks stuck |
-| Secrets | Supabase Vault | ✅ Ready |
-| Cache | Upstash Redis | 📋 Phase 2+ |
-| Queue/Jobs | Inngest | 📋 Phase 2+ |
-| File Storage | Supabase Storage | 📋 Phase 5+ |
-| Email | Resend | 📋 Phase 7 |
-| AI Gateway | OpenRouter | 📋 Phase 3+ |
-| Image Gen | SiliconFlow + Kolors | 📋 Phase 5+ |
-| Payments | Stripe | 📋 Phase 7 |
+#Data Flow — NEVER break this
 
----
+Frontend (Local / Deployment) → Backend API (Hostinger VPS) → Supabase (Database)
 
-## 4. ARCHITECTURE RULES
-
-### Data Flow — NEVER break this
-```
-Frontend (Hostinger VPS) → Backend API (same VPS) → Supabase (Database)
-```
+Rules:
 - Frontend NEVER calls Supabase directly
 - All DB queries go through Backend API
 - Backend verifies Clerk token on every request
 
-### Database Isolation — CRITICAL for audit & investors
-- Supabase project is **fully isolated** — production only
+### Database Isolation — CRITICAL
+This project is subject to technical audits and investor due diligence.
+
+- Supabase project is **fully isolated** — dedicated production project, shared with nothing
 - **Row Level Security (RLS) enabled on every table** — no exceptions
-- Every table has `org_id` — users only see their org's data
+- Every table has `org_id` — users only see their organization's data
 - `service_role_key` lives on Backend only — never exposed to frontend
-- All sensitive operations logged in `audit_logs`
+- All sensitive operations are logged in `audit_logs` table
+- Data is exportable per organization for compliance
 
 ### Auth Rules — Clerk
 - Every user belongs to an Organization (mandatory)
 - `orgId` from Clerk = `org_id` in every DB table
 - NEVER query DB without `org_id` filter
+- Use `auth()` in Server Components / API routes
+- Use `useAuth()` / `useOrganization()` in Client Components only
 - Middleware protects all routes except `/`, `/sign-in`, `/sign-up`
 
-### Backend Binding — CRITICAL FIX NEEDED
-```typescript
-// CORRECT
-app.listen(PORT, '0.0.0.0')
-
-// WRONG (current issue)
-app.listen(PORT, 'localhost')
+### Deployment Flow
 ```
-Currently the backend is binding to localhost only — it needs to bind to 0.0.0.0 to be accessible from external networks (Clerk webhooks, external API calls).
+Local → GitHub → Hostinger VPS (pull + pm2 restart)
+```
+- Never deploy directly without pushing to GitHub first
+- PM2 manages the Next.js process on the VPS
+- Nginx handles SSL termination and reverse proxy
 
 ---
 
-## 5. SYSTEM ARCHITECTURE LAYERS
+## 4. SYSTEM ARCHITECTURE LAYERS
 
 ```
-INPUT LAYER        → Dashboards (✅), Attribution, LTV, Creative Analytics
-INTELLIGENCE LAYER → Decision Engine (📋), Anomaly Detection, Opportunity Detection
+INPUT LAYER        → Dashboards, Attribution, LTV, Creative Analytics
+INTELLIGENCE LAYER → Decision Engine (AI + rules), Anomaly Detection
 DECISION LAYER     → Decisions Overview, Alerts, Opportunities
 EXECUTION LAYER    → Actions Library, Campaigns, Creatives
-AUTOMATION LAYER   → Decision Center (Brain), Strategies, Builder, Decision History
+AUTOMATION LAYER   → Decision Center (Brain), Strategies, Builder, History
 ```
 
 ---
 
-## 6. PAGE ROUTING MAP
+## 5. PAGE ROUTING MAP
 
 ### Dashboard → `app/dashboard/`
-| Page | Path | Status |
-|------|------|--------|
-| Overview | `overview/page.tsx` | ✅ Done |
-| Channels | `channels/page.tsx` | ✅ Done |
-| Creative Analytics | `creative/page.tsx` | ✅ Done |
-| Attribution | `attribution/page.tsx` | ✅ Done |
-| Segment | `segment/page.tsx` | ✅ Done |
-| Profit | `profit/page.tsx` | ✅ Done |
-| LTV Analysis | `ltv/page.tsx` | ✅ Done |
-| Cohort Analysis | `cohort/page.tsx` | ✅ Done |
+| Page | Path | Logic | Output |
+|------|------|-------|--------|
+| Overview | `overview/page.tsx` | KPIs, anomaly detection | → decisions |
+| Channels | `channels/page.tsx` | Channel breakdown, budget signals | → opportunities |
+| Creative Analytics | `creative/page.tsx` | Creative-level performance | → creative_generator |
+| Attribution | `attribution/page.tsx` | Multi-touch attribution | → budget decisions |
+| Segments | `segment/page.tsx` | Segmentation by value/behavior | → audience_recommendations |
+| Profit | `profit/page.tsx` | True net profit calculation | → scaling/stop decisions |
+| LTV Analysis | `ltv/page.tsx` | Predictive LTV | → long-term decisions |
+| Cohort Analysis | `cohort/page.tsx` | Retention curves | → strategy tuning |
 
 ### Decisions → `app/decisions/`
-| Page | Path | Status |
-|------|------|--------|
-| Overview | `page.tsx` | ✅ Done |
-| Detail | `[id]/page.tsx` | ✅ Done |
-| Alerts | `alerts/page.tsx` | ✅ Done |
-| Opportunities | `opportunities/page.tsx` | ✅ Done |
-| Recommendations | `recommendations/page.tsx` | ✅ Done |
-| Audience Insights | `audience/page.tsx` | ✅ Done |
+| Page | Path | Logic | Output |
+|------|------|-------|--------|
+| Overview | `page.tsx` | Aggregates AI decisions, prioritization | → decision_detail |
+| Detail | `[id]/page.tsx` | trigger + data + reasoning + impact | → actions/automation |
+| Alerts | `alerts/page.tsx` | Threshold triggers | → decisions |
+| Opportunities | `opportunities/page.tsx` | Growth signals | → decision center |
+| Recommendations | `recommendations/page.tsx` | AI suggestions | → campaigns |
+| Audience Insights | `audience/page.tsx` | AI segmentation | → campaigns |
 
 ### Actions → `app/actions/`
-| Page | Path | Status |
-|------|------|--------|
-| Library | `page.tsx` | ✅ Done |
-| Detail | `[id]/page.tsx` | ✅ Done |
-| Execution Logs | `logs/page.tsx` | ✅ Done |
-| Automation Status | `automation/page.tsx` | ✅ Done |
+| Page | Path | Logic | Output |
+|------|------|-------|--------|
+| Library | `page.tsx` | Executable templates | → action_detail |
+| Detail | `[id]/page.tsx` | API mapping + execution logic | → run |
+| Execution Logs | `logs/page.tsx` | Execution tracking | → decision history |
+| Automation Status | `automation/page.tsx` | System health | → decision center |
+
+### Automation → `app/automation/`
+| Page | Path | Logic |
+|------|------|-------|
+| Decision Center | `page.tsx` | Brain — real-time insights, one-click execution |
+| Strategies | `strategies/page.tsx` | IF→THEN playbooks, reusable logic |
+| Builder | `builder/page.tsx` | Custom workflow builder |
+| Decision History | `history/page.tsx` | Memory — decision+trigger+data+result+AI explanation+confidence |
 
 ### Creatives → `app/creatives/`
-| Page | Path | Status |
-|------|------|--------|
-| Generator | `page.tsx` | ✅ Done |
-| Results | `results/page.tsx` | ✅ Done |
-| Editor | `editor/page.tsx` | ✅ Done |
-| Brand Kit | `brand-kit/page.tsx` | ✅ Done |
+| Page | Path |
+|------|------|
+| Generator | `page.tsx` |
+| Results | `results/page.tsx` |
+| Editor | `editor/page.tsx` |
+| Brand Kit | `brand-kit/page.tsx` |
 
 ### Campaigns → `app/campaigns/`
-| Page | Path | Status |
-|------|------|--------|
-| List | `page.tsx` | ✅ Done |
-| Create | `create/page.tsx` | ✅ Done |
-| Detail | `[id]/page.tsx` | ✅ Done |
+| Page | Path |
+|------|------|
+| List | `page.tsx` |
+| Create | `create/page.tsx` |
+| Detail | `[id]/page.tsx` |
 
 ### Integrations → `app/integrations/`
-| Page | Path | Status |
-|------|------|--------|
-| List | `page.tsx` | ✅ Done |
-| Connect | `connect/page.tsx` | ✅ Done |
+| Page | Path |
+|------|------|
+| List | `page.tsx` |
+| Connect | `connect/page.tsx` |
 
 ### Settings → `app/settings/`
-| Page | Path | Status |
-|------|------|--------|
-| Account | `page.tsx` | ✅ Done |
-| Team | `team/page.tsx` | ✅ Done |
-| Billing | `billing/page.tsx` | ✅ Done |
+| Page | Path |
+|------|------|
+| Account | `page.tsx` |
+| Team | `team/page.tsx` |
+| Billing | `billing/page.tsx` |
 
 ---
 
-## 7. PAGE FILE RULES — CRITICAL
+## 6. PAGE FILE RULES — CRITICAL
 
 Every `page.tsx` = **content only**.
 
@@ -187,9 +196,32 @@ export default function PageName() {
 ❌ NEVER:
 - No `<aside>` sidebar in pages
 - No `<header>` topbar in pages
-- No `fixed` positioning
-- No `h-screen` wrappers
-- The `app/dashboard/layout.tsx` handles Sidebar + Topbar
+- No `fixed` positioning in pages
+- No `h-screen` wrappers in pages
+
+The `app/dashboard/layout.tsx` handles Sidebar + Topbar automatically.
+
+---
+
+## 7. STITCH HTML EXPORT CONVERSION
+
+When given a Stitch HTML export:
+
+1. Extract main content only — remove sidebar, topbar, nav
+2. Convert colors:
+   - `#005bc4` → `text-primary` / `bg-primary`
+   - `#05345c` → `text-foreground`
+   - `#3d618c` → `text-muted-foreground`
+   - `#f8f9ff` → `bg-background`
+   - `#eff4ff` → `bg-surface-container-low`
+   - `#dce9ff` → `bg-surface-container-high`
+   - `#ffffff` → `bg-white`
+   - `border-[#91b4e4]/10` → `border-border`
+3. Replace `material-symbols-outlined` → Lucide React icons
+4. Static data as constants at top of file
+5. Add `"use client"` only if state/interactions needed
+6. `font-sans` for headings, `font-body` for body text
+7. Save to correct path from routing map above
 
 ---
 
@@ -207,7 +239,64 @@ surface-container-high: #dce9ff
 
 ---
 
-## 9. BILLING & USER PLANS
+## 9. DECISION HISTORY — SPECIAL NOTE
+
+This is NOT a log table. It is the system memory and explainability layer.
+
+Every record contains:
+- `decision` — what was decided
+- `action_taken` — what was executed
+- `trigger_condition` — what caused it
+- `data_used` — data snapshot at decision time
+- `result` — success / failed / skipped
+- `ai_explanation` — why the AI decided this
+- `confidence_score` — 0-100
+
+This feeds the learning loop — treat it as the most critical table in the system.
+
+---
+
+## 10. ENVIRONMENT VARIABLES
+
+```
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard/overview
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard/overview
+
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# OpenRouter
+OPENROUTER_API_KEY=
+
+# Stripe
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+
+# Resend
+RESEND_API_KEY=
+
+# Upstash Redis
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+
+# Inngest
+INNGEST_EVENT_KEY=
+INNGEST_SIGNING_KEY=
+
+# Sentry
+SENTRY_DSN=
+```
+
+---
+
+## 11. BILLING & USER PLANS
 
 ### Two User Types
 | | Regular User | AppSumo LTD User |
@@ -234,137 +323,132 @@ plan_type: enum('subscription', 'ltd')
 byok_openrouter_key: encrypted via Supabase Vault (nullable)
 ```
 
+### Rules
+- LTD users NEVER touch the platform OpenRouter key
+- Credits balance check is SKIPPED for LTD users
+- BYOK key is stored encrypted in Supabase Vault
+- If LTD user has no BYOK key → block AI features with prompt to add key
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan at
+`specs/007-frontend-api-integration/plan.md`.
+<!-- SPECKIT END -->
+
+
+## 🚫 PAGE DUPLICATION RULE
+
+- If STATUS: IMPLEMENTED → NEVER create new page
+- ALWAYS update existing file path
+- If file exists → modify, do NOT recreate
+
+
+AI SYSTEM LAYERS (CRITICAL)
+
+Claude must follow:
+
+1. Orchestration Layer (MCP)
+
+* controls tool usage
+* multi-step reasoning
+
+2. Execution Routing
+
+* detect request type
+* route to correct handler
+
+3. AI Output Contract
+    ALL responses must return:
+    {
+    type: “dashboard” | “insight” | “decision”,
+    result: any,
+    confidence_score: number
+    }
+4. Tool Governance
+
+* max tool calls
+* timeout
+* fallback handling
+
+
+## 🧬 DATABASE EXECUTION PROTOCOL (CRITICAL)
+
+Claude MUST follow:
+
+1. ALL database changes MUST be written in:
+   - /db/schema.sql
+   - /db/migrations/*.sql
+
+2. NEVER create tables in runtime code
+
+3. When schema changes:
+
+   Claude MUST:
+   - update schema.sql
+   - create new migration file
+   - commit changes to GitHub
+
+4. Naming:
+
+   migrations MUST be:
+   db/migrations/YYYYMMDDHHMMSS_description.sql
+
+5. Execution:
+
+   GitHub Actions will run:
+   supabase db push
+
+6. Claude MUST NOT assume DB structure
+   → must read schema.sql first
+
+7. If schema mismatch:
+   → STOP execution
+
+   ## DATABASE MIGRATIONS — SINGLE SOURCE OF TRUTH
+
+🚨 CRITICAL RULE
+
+The ONLY valid migration directory is:
+
+/supabase/migrations
+
+Claude MUST:
+
+- NEVER read from /db/migrations
+- NEVER write to /db/migrations
+- NEVER create migrations outside /supabase/migrations
+
 ---
 
-## 10. BACKEND DEPLOYMENT
+## LEGACY FOLDER
 
-### Current Issue
-Backend Express server is binding to `localhost` instead of `0.0.0.0`. This means:
-- ✅ Locally accessible (curl localhost:3001 works sometimes)
-- ❌ **NOT accessible from external networks** (Clerk webhooks can't reach it)
-- ❌ Server may be crashing silently (PM2 says "online" but unresponsive)
+/db/_archive_migrations
 
-### Fix Required
-1. Change `app.listen(PORT, 'localhost')` → `app.listen(PORT, '0.0.0.0')`
-2. Add comprehensive logging (startup message, all requests, all errors)
-3. Verify PM2 process isn't crashing (add error handlers)
-4. Verify Hostinger firewall isn't blocking port (not just UFW)
-5. Test from external IP that endpoint is reachable
-6. Verify Supabase insert is actually working
-
-### Backend File Location
-`/root/backend/growthhub/api/index.js`
-
-### Current Routes
-- `GET /api/v1/health` — status check
-- `POST /api/v1/webhooks/clerk` — user.created webhook
-- `GET /test-webhook` — debug endpoint
+- This folder is ARCHIVE ONLY
+- It is NOT used by Supabase
+- It must NEVER be referenced in any execution
+- It exists only for historical reference
 
 ---
 
-## 11. ENVIRONMENT VARIABLES
+## MIGRATION EXECUTION FLOW
 
-### Frontend (.env.local)
-```
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
-NEXT_PUBLIC_SUPABASE_URL=https://...supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-```
+1. Create migration ONLY in:
+/supabase/migrations
 
-### Backend (.env)
-```
-PORT=3001
-NODE_ENV=production
-SUPABASE_URL=https://...supabase.co
-SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...
-CLERK_WEBHOOK_SECRET=...
-```
+2. NEVER execute migrations directly
+
+3. Migrations are applied via:
+supabase db push
 
 ---
 
-## 12. DECISION HISTORY — SPECIAL NOTE
+## FAILURE CONDITIONS
 
-This is NOT a log table. It is the system memory and explainability layer.
+If Claude:
 
-Every record contains:
-- `decision` — what was decided
-- `action_taken` — what was executed
-- `trigger_condition` — what caused it
-- `data_used` — data snapshot at decision time
-- `result` — success / failed / skipped
-- `ai_explanation` — why the AI decided this
-- `confidence_score` — 0-100
+- Writes to /db/migrations
+- Reads from legacy migrations
+- Creates duplicate migration paths
 
-This feeds the learning loop — treat it as the most critical table in the system.
-
----
-
-## 13. FRONTEND → BACKEND INTEGRATION (CRITICAL)
-
-### Current Status
-❌ **DISCONNECTED** — Frontend is static/server-rendered, no API calls to backend
-
-### Requirements
-- ✅ Remove all mock/hardcoded data
-- ✅ Create centralized API client
-- ✅ Connect all pages to real backend
-- ✅ Implement loading/error/empty states
-- ✅ Use Clerk JWT for auth
-
-### API Client Setup
-```typescript
-// lib/api-client.ts
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://72.62.131.250:3001/api/v1';
-
-export async function apiCall(
-  endpoint: string,
-  options: RequestInit = {}
-) {
-  const token = await getClerkToken(); // from @clerk/nextjs
-  
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      ...options.headers,
-    },
-  });
-  
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status}`);
-  }
-  
-  return response.json();
-}
-```
-
-### Environment Variables
-```
-NEXT_PUBLIC_API_URL=http://72.62.131.250:3001
-```
-
-### Pages to Connect (Priority Order)
-
-**Priority 1 — Core Data:**
-1. Dashboard Overview → GET /api/v1/metrics
-2. Brand Kit → GET/PUT /api/v1/brand-kit, POST /api/v1/brand-kit/logo
-3. Creatives → POST /api/v1/creatives, GET /api/v1/creatives
-
-**Priority 2 — Secondary:**
-4. Decisions → GET /api/v1/decisions
-5. Actions → GET /api/v1/actions
-6. Integrations → GET /api/v1/integrations
-
-**Priority 3 — Later:**
-7. Campaigns, Settings, etc.
-
-### Rules (MANDATORY)
-- ❌ NO hardcoded/mock data
-- ❌ NO direct Supabase access
-- ❌ NO secrets in frontend
-- ✅ All data from backend APIs
-- ✅ Every page has loading/error states
-- ✅ Clerk JWT in every request header
+→ STOP execution immediately

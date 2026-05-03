@@ -1,290 +1,249 @@
 "use client";
 
-import { ChevronRight, Zap, BarChart2, Timer, Globe, Lightbulb, DollarSign, ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
+import Link from "next/link";
+import { ChevronRight, Zap, Lightbulb, Loader2, Sparkles, AlertTriangle, PlayCircle, CheckCircle2 } from "lucide-react";
+import { apiClient, ApiError } from "@/lib/api-client";
 
-const STAT_CARDS = [
-  { Icon: BarChart2, color: "text-primary", label: "Affected Volume", value: "12.4k req/s" },
-  { Icon: Timer,     color: "text-error",   label: "Avg Latency",    value: "4.8s" },
-  { Icon: Globe,     color: "text-[#006329]", label: "Nodes Affected", value: "7/24" },
-];
+const DECISION_ACTION_MAP: Record<string, Record<string, string>> = {
+  ROAS_DROP:           { meta: "00000000-0000-0000-0000-000000000001", google: "00000000-0000-0000-0000-000000000004" },
+  SPEND_SPIKE:         { meta: "00000000-0000-0000-0000-000000000003", google: "00000000-0000-0000-0000-000000000006" },
+  CONVERSION_DROP:     { meta: "00000000-0000-0000-0000-000000000001", google: "00000000-0000-0000-0000-000000000004" },
+  SCALING_OPPORTUNITY: { meta: "00000000-0000-0000-0000-000000000002", google: "00000000-0000-0000-0000-000000000005" },
+};
 
-const CAMPAIGNS = [
-  {
-    name: "Summer Sale - EMEA Core",
-    spend: "$45,200",
-    roas: "1.2x",
-    roasTarget: "3.5x",
-    roasColor: "text-error",
-    ctrDelta: "-12.4%",
-    ctrColor: "text-error",
-    badge: "Critical",
-    badgeStyle: "bg-[#ffdad6] text-[#93000a]",
-  },
-  {
-    name: "Retention Push - Nordics",
-    spend: "$12,800",
-    roas: "0.8x",
-    roasTarget: "2.2x",
-    roasColor: "text-error",
-    ctrDelta: "-8.2%",
-    ctrColor: "text-error",
-    badge: "Critical",
-    badgeStyle: "bg-[#ffdad6] text-[#93000a]",
-  },
-  {
-    name: "Beta Launch - Stockholm",
-    spend: "$8,400",
-    roas: "1.8x",
-    roasTarget: "2.0x",
-    roasColor: "text-muted-foreground",
-    ctrDelta: "-2.1%",
-    ctrColor: "text-muted-foreground",
-    badge: "Warning",
-    badgeStyle: "bg-[#d0e1fb] text-[#54647a]",
-  },
-];
+interface DecisionDetail {
+  id: string;
+  type: "ROAS_DROP" | "SPEND_SPIKE" | "CONVERSION_DROP" | "SCALING_OPPORTUNITY";
+  status: string;
+  platform: string;
+  campaign_id: string;
+  trigger_condition: string;
+  data_snapshot: Record<string, unknown>;
+  ai_explanation: string | null;
+  ai_status: "pending" | "completed" | "credits_exhausted" | "ai_unavailable";
+  confidence_score: number;
+  confidence_rationale: string | null;
+  recommended_action: string;
+  priority_score: number;
+  created_at: string;
+}
+
+const TYPE_CONFIG = {
+  ROAS_DROP:            { label: "ROAS Drop",           border: "border-red-500",   bg: "bg-red-50",    text: "text-red-700"    },
+  SPEND_SPIKE:          { label: "Spend Spike",         border: "border-orange-500",bg: "bg-orange-50", text: "text-orange-700" },
+  CONVERSION_DROP:      { label: "Conversion Drop",     border: "border-red-500",   bg: "bg-red-50",    text: "text-red-700"    },
+  SCALING_OPPORTUNITY:  { label: "Scaling Opportunity", border: "border-green-500", bg: "bg-green-50",  text: "text-green-700"  },
+} as const;
+
+function DataRow({ label, value }: { label: string; value: unknown }) {
+  const display = typeof value === "number" ? Number(value.toFixed(4)).toString() : String(value ?? "—");
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-surface-container-low last:border-0">
+      <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest font-body">{label}</span>
+      <span className="text-sm font-bold text-foreground font-sans">{display}</span>
+    </div>
+  );
+}
 
 export default function DecisionDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const { getToken } = useAuth();
+  const [decision, setDecision] = useState<DecisionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [execResult, setExecResult] = useState<{ result: string } | null>(null);
+  const [execError, setExecError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetch = async () => {
+      const token = await getToken();
+      if (!token) { setLoading(false); return; }
+      try {
+        const data = await apiClient<DecisionDetail>(`/api/v1/decisions/${id}`, token);
+        setDecision(data);
+      } catch {
+        setNotFound(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (id) fetch();
+  }, [id, getToken]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-3 text-muted-foreground py-20">
+        <Loader2 size={20} className="animate-spin" />
+        <span className="font-body text-sm">Loading decision…</span>
+      </div>
+    );
+  }
+
+  if (notFound || !decision) {
+    return (
+      <div className="py-20 text-center space-y-4">
+        <p className="text-muted-foreground font-body">Decision not found.</p>
+        <Link href="/decisions" className="text-primary font-bold text-sm font-body hover:underline">← Back to Decisions</Link>
+      </div>
+    );
+  }
+
+  const cfg = TYPE_CONFIG[decision.type] ?? TYPE_CONFIG.ROAS_DROP;
+  const snapshot = decision.data_snapshot ?? {};
+
+  const recommendedTemplateId = DECISION_ACTION_MAP[decision.type]?.[decision.platform.toLowerCase()];
+
+  const handleExecute = async () => {
+    if (!recommendedTemplateId) return;
+    setExecuting(true);
+    setExecResult(null);
+    setExecError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+      const campaignId = (snapshot.campaign_id as string | undefined) ?? decision.campaign_id;
+      const result = await apiClient<{ history_id: string; result: string }>(`/api/v1/actions/${recommendedTemplateId}/execute`, token, {
+        method: "POST",
+        body: JSON.stringify({ params: { campaign_id: campaignId }, decision_id: decision.id }),
+      });
+      setExecResult(result);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message ?? "Execution failed";
+      setExecError(msg);
+    } finally {
+      setExecuting(false);
+    }
+  };
+
   return (
     <div className="pb-12 space-y-10">
-      {/* Breadcrumb + Header */}
-      <div className="space-y-4">
-        <nav className="flex items-center gap-2 text-[0.75rem] font-bold uppercase tracking-widest text-muted-foreground font-body">
-          <a href="/decisions" className="hover:text-primary transition-colors">Decisions</a>
-          <ChevronRight size={14} />
-          <span className="text-foreground">Detail</span>
-        </nav>
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-2 text-[0.75rem] font-bold uppercase tracking-widest text-muted-foreground font-body">
+        <Link href="/decisions" className="hover:text-primary transition-colors">Decisions</Link>
+        <ChevronRight size={14} />
+        <span className="text-foreground truncate max-w-xs">{decision.trigger_condition}</span>
+      </nav>
 
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <span className="bg-[#007f36] text-[#c7ffca] px-3 py-1 rounded-full text-[0.7rem] font-black uppercase tracking-tighter font-body">
-                New
-              </span>
-              <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-sans">
-                API Timeout Overload
-              </h1>
-            </div>
-            <p className="text-lg text-muted-foreground flex items-center gap-2 font-body">
-              <span className="text-error font-bold tracking-tighter">-$1.2k/hr</span>
-              <span className="text-border">|</span>
-              <span>Northern European region latency spike</span>
-            </p>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className={`px-3 py-1 rounded-full text-[0.7rem] font-black uppercase tracking-tighter font-body ${cfg.bg} ${cfg.text}`}>
+              {cfg.label}
+            </span>
+            <span className="text-xs font-bold text-muted-foreground font-body bg-surface-container-low px-3 py-1 rounded-full uppercase tracking-wider">
+              {decision.platform}
+            </span>
           </div>
-          <div className="flex gap-3">
-            <button className="px-6 py-3 rounded-xl border border-border font-bold text-sm text-muted-foreground hover:bg-surface-container-high transition-all font-body">
-              Save for later
-            </button>
-            <button className="px-6 py-3 rounded-xl bg-surface-container-high font-bold text-sm text-foreground hover:bg-surface-container transition-all font-body">
-              Ignore
-            </button>
-            <button className="px-8 py-3 rounded-xl bg-gradient-to-br from-primary to-[#2563eb] text-white font-bold text-sm shadow-xl shadow-primary/20 hover:opacity-90 transition-all font-body">
-              Apply Action
-            </button>
-          </div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground font-sans leading-tight">
+            {decision.trigger_condition}
+          </h1>
+          <p className="text-sm text-muted-foreground font-body">Campaign: <span className="font-bold text-foreground">{decision.campaign_id}</span></p>
         </div>
       </div>
 
-      {/* Bento Grid */}
+      {/* Main grid */}
       <div className="grid grid-cols-12 gap-6">
-        {/* Problem Explanation */}
-        <section className="col-span-12 lg:col-span-8 bg-white p-8 rounded-2xl shadow-sm border-t-[6px] border-primary">
-          <h3 className="text-[0.75rem] font-black uppercase tracking-[0.2em] text-muted-foreground mb-6 font-body">
-            Critical Latency Incident
-          </h3>
-          <p className="text-foreground leading-relaxed text-lg mb-4 font-body">
-            Our monitoring systems have flagged a{" "}
-            <strong className="text-primary">recursive latency cycle</strong> impacting the checkout
-            completion funnel within the Northern European region. This bottleneck has led to a 24%
-            drop in successful transactions over the last 90 minutes.
-          </p>
-          <div className="grid grid-cols-3 gap-4 mt-8">
-            {STAT_CARDS.map((s) => (
-              <div key={s.label} className="bg-surface-container-low p-4 rounded-xl">
-                <s.Icon size={20} className={`${s.color} mb-2`} />
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider font-body">
-                  {s.label}
-                </p>
-                <p className="text-xl font-black text-foreground font-sans">{s.value}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* AI Diagnostic */}
-        <section className="col-span-12 lg:col-span-4 bg-foreground text-white p-8 rounded-2xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-6">
-              <Zap size={18} className="text-[#62df7d]" />
-              <h3 className="text-[0.75rem] font-black uppercase tracking-[0.2em] text-white/50 font-body">
-                AI Diagnostic
-              </h3>
-            </div>
-            <p className="text-xl font-light leading-snug text-white font-body">
-              The bottleneck originated at the{" "}
-              <code className="bg-white/10 px-2 py-0.5 rounded text-sm font-mono">
-                v1/transaction-processor
-              </code>{" "}
-              endpoint. A recursive logic loop in the validation middleware is causing a stack
-              overflow on Node #042, triggering cascade failures.
-            </p>
-          </div>
-          <div className="mt-8 pt-8 border-t border-white/10 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full bg-[#2563eb] flex items-center justify-center shrink-0">
-              <Lightbulb size={20} className="text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-white font-body">Confidence Score</p>
-              <p className="text-xs text-white/50 font-body">98.2% Accuracy</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Affected Campaigns Table */}
-        <section className="col-span-12 bg-white p-8 rounded-2xl shadow-sm">
-          <div className="flex items-center justify-between mb-8">
+        {/* AI Explanation */}
+        <section className={`col-span-12 lg:col-span-8 bg-white p-8 rounded-2xl shadow-sm border-t-[6px] ${cfg.border}`}>
+          <div className="flex items-center gap-2 mb-6">
+            <Sparkles size={16} className="text-primary" />
             <h3 className="text-[0.75rem] font-black uppercase tracking-[0.2em] text-muted-foreground font-body">
-              High-Impact Affected Campaigns
+              AI Explanation
             </h3>
-            <button className="text-primary text-sm font-bold flex items-center gap-1 hover:underline font-body">
-              View Full Log <ExternalLink size={14} />
-            </button>
           </div>
-          <div className="overflow-hidden">
-            <table className="w-full text-left border-separate border-spacing-y-3">
-              <thead>
-                <tr className="text-[0.65rem] font-black text-muted-foreground uppercase tracking-widest font-body">
-                  {["Campaign Name", "Spend (24h)", "Current ROAS", "CTR Delta", "Status"].map((h) => (
-                    <th key={h} className="pb-2 px-4">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {CAMPAIGNS.map((c) => (
-                  <tr
-                    key={c.name}
-                    className="bg-surface-container-low rounded-xl hover:scale-[1.005] transition-transform"
-                  >
-                    <td className="py-4 px-4 font-bold text-sm rounded-l-xl text-foreground font-body">
-                      {c.name}
-                    </td>
-                    <td className="py-4 px-4 text-sm font-medium text-foreground font-body">{c.spend}</td>
-                    <td className={`py-4 px-4 text-sm font-bold font-body ${c.roasColor}`}>
-                      {c.roas}{" "}
-                      <span className="text-[0.6rem] font-normal text-muted-foreground">
-                        (Target {c.roasTarget})
-                      </span>
-                    </td>
-                    <td className={`py-4 px-4 text-sm font-medium font-body ${c.ctrColor}`}>
-                      {c.ctrDelta}
-                    </td>
-                    <td className="py-4 px-4 rounded-r-xl">
-                      <span className={`px-3 py-1 rounded-full text-[0.6rem] font-black uppercase font-body ${c.badgeStyle}`}>
-                        {c.badge}
-                      </span>
-                    </td>
-                  </tr>
+          {decision.ai_status === "completed" && decision.ai_explanation ? (
+            <p className="text-foreground leading-relaxed text-lg font-body">{decision.ai_explanation}</p>
+          ) : decision.ai_status === "credits_exhausted" ? (
+            <div className="flex items-start gap-3 bg-orange-50 border border-orange-200 rounded-xl p-5">
+              <AlertTriangle size={18} className="text-orange-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-bold text-orange-700 font-body text-sm">Credits Exhausted</p>
+                <p className="text-orange-600 text-sm font-body mt-1">Add credits to your account to unlock AI analysis for this decision.</p>
+              </div>
+            </div>
+          ) : decision.ai_status === "ai_unavailable" ? (
+            <div className="flex items-start gap-3 bg-surface-container-low border border-border rounded-xl p-5">
+              <AlertTriangle size={18} className="text-muted-foreground mt-0.5 shrink-0" />
+              <p className="text-muted-foreground text-sm font-body">{decision.recommended_action}</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm font-body">
+              <Loader2 size={14} className="animate-spin" /> Generating AI explanation…
+            </div>
+          )}
+
+          {/* Data Snapshot */}
+          <div className="mt-8">
+            <h4 className="text-[0.7rem] font-black uppercase tracking-[0.2em] text-muted-foreground mb-4 font-body">Data Snapshot</h4>
+            <div className="bg-surface-container-low rounded-xl p-5">
+              {Object.entries(snapshot)
+                .filter(([k]) => !["date"].includes(k))
+                .map(([k, v]) => (
+                  <DataRow key={k} label={k.replace(/_/g, " ")} value={v} />
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* Prescriptive Recommendation */}
-        <section className="col-span-12 lg:col-span-7 bg-[#2563eb] text-white p-10 rounded-2xl rounded-tr-[4rem] relative overflow-hidden shadow-2xl shadow-primary/30">
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-8">
-              <Lightbulb size={36} />
-              <h3 className="text-[0.75rem] font-black uppercase tracking-[0.2em] text-white/70 font-body">
-                Prescriptive Recommendation
-              </h3>
+              {snapshot.date != null && <DataRow label="date" value={String(snapshot.date)} />}
             </div>
-            <p className="text-3xl font-black tracking-tight mb-4 font-sans">
-              Scale up Enterprise Cluster &amp; Restart Node #042
-            </p>
-            <p className="text-white/80 text-lg max-w-lg mb-10 font-body">
-              Automatically provisioning 4 additional server instances in the{" "}
-              <span className="font-bold text-white">eu-north-1</span> region and executing a
-              soft-restart on the failing node will clear the current request queue.
-            </p>
-            <button className="bg-white text-primary px-10 py-4 rounded-full font-black text-sm uppercase tracking-widest shadow-xl hover:opacity-90 transition-all font-body">
-              Execute Now
-            </button>
           </div>
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl" />
-          <div className="absolute bottom-0 right-0 w-48 h-48 bg-[#006329]/20 rounded-full -mr-10 -mb-10 blur-2xl" />
         </section>
 
-        {/* Impact Forecast */}
-        <section className="col-span-12 lg:col-span-5 bg-surface-container-high p-8 rounded-2xl flex flex-col justify-center">
-          <h3 className="text-[0.75rem] font-black uppercase tracking-[0.2em] text-muted-foreground mb-10 text-center font-body">
-            Expected Impact Forecast
-          </h3>
-          <div className="flex items-center justify-around gap-4 text-center">
-            <div className="flex flex-col items-center">
-              <div className="w-16 h-16 rounded-full bg-[#007f36]/10 flex items-center justify-center text-[#006329] mb-3">
-                <Timer size={28} />
+        {/* Confidence + Action */}
+        <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+          {/* Confidence */}
+          <section className="bg-foreground text-white p-8 rounded-2xl flex flex-col gap-6">
+            <div className="flex items-center gap-2">
+              <Zap size={16} className="text-[#62df7d]" />
+              <h3 className="text-[0.75rem] font-black uppercase tracking-[0.2em] text-white/50 font-body">Confidence Score</h3>
+            </div>
+            <div className="text-center">
+              <p className="text-6xl font-black font-sans text-white">{decision.confidence_score ?? "—"}<span className="text-3xl text-white/50">%</span></p>
+              <div className="mt-4 w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-full bg-[#62df7d] rounded-full transition-all" style={{ width: `${decision.confidence_score ?? 0}%` }} />
               </div>
-              <p className="text-2xl font-black text-foreground font-sans">14 mins</p>
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-tighter font-body">
-                Est. Recovery
-              </p>
             </div>
-            <div className="w-px h-16 bg-border" />
-            <div className="flex flex-col items-center">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
-                <DollarSign size={28} />
-              </div>
-              <p className="text-2xl font-black text-foreground font-sans">$8.4k</p>
-              <p className="text-xs font-bold text-muted-foreground uppercase tracking-tighter font-body">
-                Daily Savings
-              </p>
-            </div>
-          </div>
-          <div className="mt-10 px-6 py-4 bg-white rounded-xl">
-            <p className="text-[0.7rem] font-bold text-muted-foreground uppercase tracking-widest mb-2 font-body">
-              Network Health Post-Action
-            </p>
-            <div className="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden">
-              <div className="h-full bg-[#006329] rounded-full" style={{ width: "94%" }} />
-            </div>
-            <div className="flex justify-between mt-1">
-              <span className="text-[0.6rem] font-bold text-muted-foreground font-body">Current: 76%</span>
-              <span className="text-[0.6rem] font-bold text-[#006329] font-body">Projected: 94%</span>
-            </div>
-          </div>
-        </section>
-      </div>
+            {decision.confidence_rationale && (
+              <p className="text-sm text-white/70 font-body leading-relaxed">{decision.confidence_rationale}</p>
+            )}
+          </section>
 
-      {/* Spatial Visualization Footer */}
-      <div className="mt-12 rounded-3xl overflow-hidden relative h-[300px] shadow-lg group">
-        <img
-          src="https://lh3.googleusercontent.com/aida-public/AB6AXuBksZjwvSwgYoWoe9tHKinzHhzlCL2hBMqgWkFll2HQDWExHHMxwNiNa0U6-39bd39vpPlGrK-yo_HLQ5FADFSB_pZCNTEZLPSX2Crn52qdV7YRy58n1pF2KL2YMyUWU9Ify3Kdl1xikIhJkdkYdPTxclVZW3ODgQwYA3fQDvB6HCjTpHKbqujIIEtntjnsE3WXZK9QXu05HnK-kBpcN6Y"
-          alt="Infrastructure Visualization"
-          className="w-full h-full object-cover grayscale opacity-50 group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
-        <div className="absolute bottom-8 left-8">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-3 h-3 bg-error rounded-full animate-pulse" />
-            <p className="text-[0.7rem] font-black uppercase tracking-widest text-foreground font-body">
-              Node Failure: Oslo-Central-042
-            </p>
-          </div>
-          <h4 className="text-2xl font-bold text-foreground font-sans">Spatial Latency Visualization</h4>
-        </div>
-        <div className="absolute top-8 right-8">
-          <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-[0.6rem] font-black text-muted-foreground uppercase font-body">Active Users</p>
-              <p className="text-lg font-black text-foreground font-sans">2,482</p>
+          {/* Recommended Action */}
+          <section className="bg-primary text-white p-8 rounded-2xl flex flex-col gap-4 relative overflow-hidden">
+            <div className="flex items-center gap-3">
+              <Lightbulb size={20} className="shrink-0" />
+              <h3 className="text-[0.75rem] font-black uppercase tracking-[0.2em] text-white/70 font-body">Recommended Action</h3>
             </div>
-            <div className="w-px h-10 bg-border" />
-            <div className="text-right">
-              <p className="text-[0.6rem] font-black text-muted-foreground uppercase font-body">Peak Delay</p>
-              <p className="text-lg font-black text-error font-sans">5.2s</p>
-            </div>
-          </div>
+            <p className="text-xl font-bold font-sans leading-snug">{decision.recommended_action}</p>
+            {recommendedTemplateId && (
+              <button
+                onClick={handleExecute}
+                disabled={executing || !!execResult}
+                className="mt-2 flex items-center justify-center gap-2 px-5 py-3 bg-white/15 hover:bg-white/25 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-body border border-white/20"
+              >
+                {executing
+                  ? <><Loader2 size={16} className="animate-spin" /> Executing…</>
+                  : execResult
+                  ? <><CheckCircle2 size={16} /> Executed</>
+                  : <><PlayCircle size={16} /> Execute Recommended Action</>
+                }
+              </button>
+            )}
+            {execError && (
+              <div className="flex items-start gap-2 bg-white/10 rounded-xl p-3 border border-white/20">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <p className="text-xs font-body text-white/80">{execError}</p>
+              </div>
+            )}
+            {execResult && (
+              <Link href="/automation/history" className="text-center text-xs text-white/70 hover:text-white font-body transition-colors">
+                View in Decision History →
+              </Link>
+            )}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-12 -mt-12 blur-2xl" />
+          </section>
         </div>
       </div>
     </div>

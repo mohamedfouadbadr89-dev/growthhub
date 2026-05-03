@@ -69,7 +69,7 @@ export default function ChannelPage() {
                       parseFloat(ch.roas) >= 3 ? "text-emerald-600 decoration-emerald-200" : "text-amber-500 decoration-amber-200"
                    )}>{ch.roas}</Text>
                 </Flex>
-                <ProgressBar value={ch.progress} color={ch.color} className="h-3 rounded-full" />
+                <ProgressBar value={ch.progress} color={ch.color as any} className="h-3 rounded-full" />
                 <Flex className="mt-4">
                    <Text className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/30 italic">Performance Parity</Text>
                    <Text className="text-[11px] font-black text-foreground">{ch.progress}%</Text>

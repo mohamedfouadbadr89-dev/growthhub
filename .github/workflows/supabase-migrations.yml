@@ -3,16 +3,29 @@ name: Supabase Migrations
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   migrate:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Install Supabase CLI
         run: npm install -g supabase
+
+      - name: Debug Info
+        run: |
+          echo "Project Ref: ${{ secrets.SUPABASE_PROJECT_REF }}"
+          echo "Host: db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co"
+          echo "Port: 6543"
 
       - name: Run Migrations
         run: |
@@ -20,3 +33,6 @@ jobs:
             --db-url "postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co:6543/postgres?sslmode=require"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Done
+        run: echo "Migration finished 🚀"

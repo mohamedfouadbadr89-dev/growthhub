@@ -1,298 +1,405 @@
-# Growth OS — Build Phases & Specs
-
-## PROJECT STATUS SUMMARY
-
-**Current Phase:** 1-4 Code Ready, Blocked at Backend Exposure
-**Blocker:** Backend server not accessible externally (0.0.0.0 binding issue)
-**Priority:** Fix backend first, then resume Phase 1-4 integration testing
-
----
-
-## PHASE 1 — Foundation
-**Status:** ⚠️ Code Complete, Integration Blocked
-
-**Goal:** Auth + Database + Backend skeleton working end-to-end
-
-### Clerk ✅
-- [x] ClerkProvider in `app/layout.tsx`
-- [x] Middleware protecting all private routes
-- [x] Sign-in / Sign-up pages (`/sign-in`, `/sign-up`)
-- [x] Auto-create Organization on sign-up
-- [x] Redirect to `/dashboard/overview` after auth
-- [x] Webhooks configured (user.created)
-- [ ] **BLOCKED:** Webhook not being received (backend not exposed)
-
-### Supabase Schema ✅
-- [x] `organizations` table
-- [x] `users` table
-- [x] `subscriptions` table
-- [x] `audit_logs` table
-- [x] RLS enabled on all tables
-- [x] All tables have `org_id` column
-- [ ] **BLOCKED:** No data entering (webhook failure cascade)
-
-### Backend (Express on VPS) ⚠️
-- [x] Express server written
-- [x] Clerk token verification middleware
-- [x] Health check endpoint `GET /health`
-- [x] Base API structure `/api/v1/`
-- [x] Error handling + logging setup
-- [x] PM2 process manager
-- [ ] **CRITICAL:** Server binding to localhost, not 0.0.0.0
-- [ ] **CRITICAL:** Not accessible from external networks
-- [ ] **CRITICAL:** Webhook endpoint unreachable
-
-### Deliverable Status
-❌ **NOT COMPLETE** — User can sign up but webhook fails, no data enters DB
-
-**What's Needed:**
-1. Fix backend binding to 0.0.0.0
-2. Verify Hostinger firewall allows port 3001
-3. Verify PM2 process not crashing
-4. Test webhook delivery from Clerk
-5. Confirm Supabase insert working
-
----
-
-## PHASE 2 — Data Ingestion
-**Status:** ❌ Not Started (Blocked by Phase 1)
-
-**Goal:** Connect ad platforms + pull real data into DB
-
-### Integrations
-- [ ] `integrations` table
-- [ ] `ad_accounts` table
-- [ ] `sync_logs` table
-- [ ] Integrations List page (real data)
-- [ ] Connect Integration flow (OAuth)
-
-### Platforms (Core First)
-- [ ] Meta Ads API — campaigns + metrics
-- [ ] Google Ads API — campaigns + metrics
-- [ ] Shopify API — orders + revenue
-
-### Sync Jobs (Inngest)
-- [ ] Daily sync job per integration
-- [ ] `campaign_metrics` table (partitioned by date)
-- [ ] Sync status + error handling
-- [ ] Manual re-sync trigger
-
-### Deliverable
-User connects Meta/Google/Shopify → data syncs → Dashboard shows real numbers
-
----
-
-## PHASE 3 — Intelligence Layer
-**Status:** ❌ Not Started
-
-**Goal:** AI starts generating decisions from data
-
-### Decision Engine
-- [ ] `decisions` table
-- [ ] `alerts` table
-- [ ] Anomaly detection logic (ROAS drop, spend spike, conversion drop)
-- [ ] Opportunity detection logic (scaling signals)
-- [ ] Decision prioritization engine
-
-### Pages (Real Data)
-- [ ] Dashboard Overview — real KPIs
-- [ ] Decisions Overview — real decisions
-- [ ] Decision Detail — trigger + data + reasoning + impact
-- [ ] Alerts Center — threshold triggers
-- [ ] Opportunities — growth signals
-
-### AI Integration (OpenRouter)
-- [ ] Decision generation prompt
-- [ ] Anomaly explanation
-- [ ] Confidence score calculation
+PHASE 0 — Architecture Lock (MANDATORY BEFORE EVERYTHING)
 
-### Deliverable
-System detects anomalies → generates decisions → user sees prioritized action list
-
----
-
-## PHASE 4 — Execution Layer
-**Status:** ❌ Not Started
-
-**Goal:** User can execute decisions as actions
-
-### Actions
-- [ ] `actions_library` table
-- [ ] `automation_rules` table
-- [ ] `automation_runs` table
-- [ ] `decision_history` table (CRITICAL — memory system)
-
-### Decision History Record (SACRED)
-Every execution logs:
-- decision
-- action_taken
-- trigger_condition
-- data_used (snapshot)
-- result (success/failed/skipped)
-- ai_explanation
-- confidence_score
-
-### Pages (Real Data)
-- [ ] Actions Library
-- [ ] Action Detail
-- [ ] Execution Logs
-- [ ] Automation Status
-- [ ] Decision History
-
-### Automation
-- [ ] Automation rules builder
-- [ ] Strategies (IF→THEN playbooks)
-- [ ] Inngest jobs for automated execution
-
-### Deliverable
-User sees decision → clicks execute → action runs → result logged in Decision History
-
----
-
-## PHASE 5 — Creatives
-**Status:** ❌ Not Started
-
-**Goal:** AI generates creatives from brand data + performance signals
-
-### Brand Kit
-- [ ] `brand_kits` table
-- [ ] Logo + colors + fonts upload (Supabase Storage)
-- [ ] Tone of voice input
-
-### Creative Generation
-- [ ] `creative_generations` table
-- [ ] `creatives` table
-- [ ] OpenRouter for copy generation (headlines, body)
-- [ ] SiliconFlow / Kolors for image generation
-- [ ] Creative scoring by performance data
-
-### Pages (Real Data)
-- [ ] Brand Kit
-- [ ] Creative Generator
-- [ ] Creative Results
-- [ ] Creative Editor
-
-### Deliverable
-User uploads brand kit → generates creatives → ranks by predicted performance → pushes to campaign
-
----
-
-## PHASE 6 — Campaigns
-**Status:** ❌ Not Started
-
-**Goal:** Full campaign management with AI assistance
-
-### Campaigns
-- [ ] `campaigns` table (connected to ad_accounts)
-- [ ] Campaign list with real metrics
-- [ ] Campaign detail with decisions overlay
-- [ ] AI-assisted campaign creation
-
-### Pages (Real Data)
-- [ ] Campaigns List
-- [ ] Campaign Detail
-- [ ] Create Campaign
-
-### Deliverable
-User creates campaign from inside the OS → AI suggests targeting + budget → pushes to Meta/Google
-
----
-
-## PHASE 7 — Monetization + Polish
-**Status:** ❌ Not Started
-
-**Goal:** Billing, settings, production-ready
-
-### Billing (Stripe)
-- [ ] `subscriptions` table connected to Stripe
-- [ ] Plans: Starter / Growth / Scale
-- [ ] Credits system for AI usage
-- [ ] BYOK option (bring your own OpenRouter key) for LTD users
-- [ ] AppSumo LTD flow (coupon redemption)
-- [ ] Webhooks for subscription events
-- [ ] Auto invoice via Resend
-
-### Settings
-- [ ] Account settings
-- [ ] Team management (invite members)
-- [ ] API keys management
-- [ ] Billing page
-
-### Production Readiness
-- [ ] RLS audit on all tables
-- [ ] Audit logs complete
-- [ ] Rate limiting on all API endpoints
-- [ ] Performance testing
-- [ ] Error boundaries on all pages
-- [ ] Sentry configured for production
-
-### Deliverable
-Full production-ready SaaS — paying customers can onboard, use, and be billed
-
----
-
-## BUILD ORDER & STATUS
-
-| Phase | Focus | Status | Notes |
-|-------|-------|--------|-------|
-| 1 | Foundation (Auth + DB + Backend) | ⚠️ Code done, blocked | Backend exposure issue |
-| 2 | Data Ingestion (Integrations + Sync) | ❌ Waiting | Can't start without Phase 1 |
-| 3 | Intelligence (Decisions + AI) | ❌ Waiting | Can't start without Phase 2 |
-| 4 | Execution (Actions + History) | ❌ Waiting | Can't start without Phase 3 |
-| 5 | Creatives (AI Generation) | ❌ Waiting | Can't start without Phase 4 |
-| 6 | Campaigns | ❌ Waiting | Can't start without Phase 5 |
-| 7 | Monetization + Polish | ❌ Waiting | Can't start without Phase 6 |
-
----
-
-## BILLING LOGIC (applies to all phases)
-
-### Plan Types
-- `subscription` — pays monthly, gets credits, uses platform OpenRouter key
-- `ltd` — one-time AppSumo deal, credits disabled, BYOK mandatory
-
-### Credits System Logic (subscription only)
-```
-Check balance → Deduct → Execute → Log
-```
-Credit costs per action:
-- Copy generation = 2 credits
-- Image generation = 10 credits
-- Decision generation = 1 credit
-
-### BYOK Logic (ltd only)
-- User adds their own OpenRouter API key
-- Key stored encrypted in Supabase Vault
-- Platform key never used for LTD users
-- If no BYOK key → block AI features
-
-### AppSumo Flow
-- User redeems coupon code
-- `plan_type` set to `ltd`
-- Credits disabled automatically
-- Prompt to add BYOK key on first login
-
----
-
-## SPECKIT NOTES
-
-- Each phase = one Speckit spec
-- Never start next phase before current phase deliverable is working
-- Decision History (Phase 4) is the most critical table — never skip or simplify
-- RLS must be verified after every new table added
-- Every API endpoint must be tested with wrong `org_id` to verify isolation
-
----
-
-## NEXT IMMEDIATE ACTIONS
-
-1. **Fix Phase 1 Backend** (BLOCKER)
-   - Change binding from localhost to 0.0.0.0
-   - Verify PM2 process stability
-   - Verify Hostinger firewall
-   - Test webhook delivery from Clerk
-   - Confirm Supabase insert working
-
-2. **Once Phase 1 is fixed:**
-   - Test user signup → webhook → DB insert end-to-end
-   - Then proceed to Phase 2 with Speckit
+Goal: Prevent system corruption before backend starts
+
+🔥🔥 NEW
+
+* REMOVE any Supabase direct writes from Next.js (frontend API routes)
+* Ensure ONLY backend writes to database (single writer rule)
+* Keep Clerk webhook in ONE place only (backend OR frontend → backend preferred)
+* Remove duplicate webhook handlers to avoid race conditions
+* Validate org_id is always present in JWT before backend work
+* Add request tracing ID لكل request
+* Log user_id + org_id في كل request
+
+Deliverable
+
+* Clean architecture with single source of truth (backend only)
+
+⸻
+
+PHASE 1 — Foundation
+
+Goal: Auth + Database + Backend skeleton working end-to-end
+
+Clerk
+
+* ClerkProvider in app/layout.tsx
+* Middleware protecting all private routes
+* Sign-in / Sign-up pages (/sign-in, /sign-up)
+* Auto-create Organization on sign-up
+* Redirect to /dashboard/overview after auth
+
+Supabase Schema
+
+* organizations table
+* users table
+* subscriptions table
+* audit_logs table
+* RLS enabled on all tables
+* All tables have org_id column
+* Add metadata JSONB to:
+    * decisions
+    * creatives
+    * automation_runs
+* Add created_by + updated_by في الجداول الأساسية
+
+Backend (Hostinger VPS)
+
+* Hono server setup
+* Clerk token verification middleware
+* Health check endpoint GET /health
+* Base API structure /api/v1/
+* Error handling + logging
+* Clerk webhook handler (POST /api/webhooks/clerk)
+* PM2 ecosystem config
+* Standard response format:
+    { success, data, error }
+
+🔥 ADDITIONS
+
+* Claude MUST load:
+    * CLAUDE.md
+    * CONSTITUTION.md
+    * ALL /specs/*.md
+* Treat MD files as executable instructions
+* 🔥 Ensure .env files exist (backend + frontend)
+* 🔥 Apply Supabase migrations BEFORE moving to Phase 2
+
+🔥🔥 NEW
+
+* Define backend folder structure BEFORE writing code:
+    * /controllers
+    * /services
+    * /repositories
+    * /middleware
+    * /utils
+* Add request logging middleware (every request logged)
+* Add global error handler (standard error format)
+* Enforce org_id extraction middleware (reject if missing)
+
+📄 SPECS (Phase 1)
+
+* database-migrations.md
+* permissions-roles.md
+* team-management.md
+* account-settings.md
+
+Deliverable
+
+Auth + org + backend working with real env
+
+⸻
+
+PHASE 2 — Data Ingestion
+
+Goal: Connect ad platforms + pull real data into DB
+
+Integrations
+
+* integrations table
+* ad_accounts table
+* sync_logs table
+* Integrations List page (real data)
+* Connect Integration flow (OAuth)
+
+Platforms (Core First)
+
+* Meta Ads API — campaigns + metrics
+* Google Ads API — campaigns + metrics
+* Shopify API — orders + revenue
+
+Sync Jobs (Inngest)
+
+* Daily sync job per integration
+* campaign_metrics table (partitioned by date)
+* Sync status + error handling
+* Manual re-sync trigger
+* Retry strategy (exponential backoff)
+
+🔥 ADDITIONS
+
+* REMOVE mock integrations UI completely
+* 🔥 Add endpoint:
+    POST /api/v1/integrations/:id/sync
+* 🔥 Ensure OAuth flow is REAL (not UI only)
+* 🔥 Validate credentials before sync
+
+🔥🔥 NEW
+
+* Define API response contract BEFORE implementation:
+    * success response format
+    * error response format
+    * pagination format
+* All endpoints MUST:
+    * return org-scoped data only
+    * reject cross-org access
+* Add rate limiting middleware (basic protection from start)
+* Add fields:
+    * last_synced_at
+    * sync_status
+    * error_message
+* Add raw_data_ref for debugging (not full raw payload)
+* Log sync jobs (duration + status)
+
+📄 SPECS (Phase 2)
+
+* ai-connectors.md
+* ai-jobs.md
+
+Deliverable
+
+Real data flowing into DB
+
+⸻
+
+PHASE 3 — Intelligence Layer
+
+Goal: AI starts generating decisions from data
+
+Decision Engine
+
+* decisions table
+* alerts table
+* Anomaly detection logic
+* Opportunity detection logic
+* Decision prioritization engine
+* Add fields:
+    * reasoning_steps (JSONB)
+    * suggested_action_id
+    * metadata
+
+Pages (Real Data)
+
+* Dashboard Overview
+* Decisions Overview
+* Decision Detail
+* Alerts Center
+* Opportunities
+
+AI Integration (OpenRouter)
+
+* Decision generation prompt
+* Anomaly explanation
+* Confidence score calculation
+* Include historical trends in AI context (7–30 days)
+
+🔥 ADDITIONS (CRITICAL)
+
+* REMOVE ALL MOCK DATA
+* decisions/page.tsx → API ONLY
+* Ensure anomaly detection returns real results
+
+🧠 AI OUTPUT CONTRACT (MANDATORY)
+
+ALL AI responses MUST follow:
+{
+type: “dashboard” | “insight” | “decision”,
+result: any,
+confidence_score: number
+}
+
+🔥🔥 NEW
+
+* AI responses MUST be validated before saving to DB
+* Reject invalid AI output (no silent failures)
+* Log every AI request + response
+* Store:
+    * prompt
+    * response
+    * model
+    * latency
+* If confidence_score < 0.7:
+    * mark decision as needs_review
+
+📄 SPECS (Phase 3)
+
+* ai-prompts.md
+* ai-dashboard-generator.md
+* decisions-overview.md
+* decisions-detail.md
+* decisions-alerts.md
+* decisions-audience.md
+* growth-opportunities.md
+* dashboard-overview.md
+* dashboard-channels.md
+* dashboard-attribution.md
+* dashboard-cohort.md
+* dashboard-creative.md
+* dashboard-ltv.md
+* dashboard-profit.md
+* dashboard-segments.md
+
+Deliverable
+
+System generates real AI decisions
+
+⸻
+
+🔥 PHASE X — AI ORCHESTRATION (CRITICAL)
+
+Goal: Control system brain
+
+📄 SPECS
+
+* mcp-orchestration.md
+* mcp-integration.md
+* ai-execution.md
+
+🔥 NEW
+
+* Add strategy_tag field:
+    * scale
+    * cut_loss
+    * test
+
+⸻
+
+PHASE 4 — Execution Layer
+
+Goal: Execute decisions as real actions
+
+Actions
+
+* actions_library table
+* automation_rules table
+* automation_runs table
+* decision_history table
+
+🔥 ADDITIONS
+
+* REMOVE simulated execution
+* action-executor MUST call real APIs
+
+🔥🔥 NEW
+
+* Execution MUST be idempotent
+* Always log execution result
+* Always include data snapshot
+* Enforce org_id validation
+* Add:
+    * execution_id (unique)
+    * impact_snapshot (before/after)
+    * execution_mode (auto/manual)
+
+📄 SPECS
+
+* execution-engine.md
+* action-detail.md
+* action-execution-log.md
+* actions-overview.md
+* actions-automation-status.md
+* automation-builder.md
+* automation-decision-center.md
+* automation-history.md
+* automation-strategies.md
+
+⸻
+
+PHASE 5 — Creatives
+
+Goal: AI creatives generation
+
+🔥🔥 NEW
+
+* Link creatives to campaign_metrics (feedback loop)
+* Store generation metadata (prompt, model, inputs)
+* Add creatives_metadata:
+    * angle
+    * hook
+    * audience
+* Link creative_id → performance data
+
+📄 SPECS
+
+* creatives-brand-kit.md
+* creatives-editor.md
+* creatives-results.md
+* creatives-archive.md
+
+⸻
+
+PHASE 6 — Campaigns
+
+🔥🔥 NEW
+
+* Validate org ownership
+* Validate ad account ownership
+* Prevent cross-account execution
+* Validate org_id + ad_account_id mapping
+
+📄 SPECS
+
+* campaigns-list.md
+* campaigns-detail.md
+* campaigns-execution-focus.md
+
+⸻
+
+PHASE 7 — Monetization + Polish
+
+🔥🔥 NEW
+
+* Credits check BEFORE every AI call
+* Log every credit transaction
+* Add:
+    * ai_usage_logs
+    * cost_per_call
+
+📄 SPECS
+
+* account-settings.md
+* team-management.md
+* permissions-roles.md
+
+⸻
+
+🔥 SPEC MAPPING (MANDATORY)
+
+Each phase MUST load only its relevant specs.
+
+* Phase 1 → database + auth
+* Phase 2 → connectors + jobs
+* Phase 3 → decisions + dashboards
+* Phase 4 → execution + automation
+* Phase 5 → creatives
+* Phase 6 → campaigns
+* Phase 7 → billing + settings
+
+🚨 RULES:
+
+* Specs are executable instructions
+* If conflict → specs win
+* No cross-phase mixing
+* If unclear → STOP (no guessing)
+
+⸻
+
+🔥 GLOBAL RULES
+
+FRONTEND
+
+* NO MOCK DATA
+* API ONLY
+
+🔥🔥 NEW
+
+BACKEND
+
+* ALL queries MUST include org_id
+* NEVER trust client org_id
+* Backend = single source of truth
+* NO execution if confidence_score < 70% without approval
+
+⸻
+
+🚨 WHAT BREAKS SYSTEM
+
+1. Missing ENV
+2. Missing migrations
+3. Mock UI
+4. No real integrations
+5. No AI orchestration
+6. Missing org_id enforcement
+7. Invalid AI output
+8. Execution without idempotency

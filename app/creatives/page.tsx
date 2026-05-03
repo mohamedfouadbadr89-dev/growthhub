@@ -1,216 +1,396 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import {
-  Sparkles, Wand2, Globe, ImageIcon, Monitor, Film,
-  ArrowRight, Sliders, RefreshCw, Download,
+  Sparkles, RefreshCw, Maximize2, Copy, Check,
+  ChevronDown, Zap, Image, Video, Layers, Users,
 } from "lucide-react";
 
-const FORMATS = [
-  { key: "story",   label: "Story",   sub: "9:16",   Icon: ImageIcon },
-  { key: "feed",    label: "Feed",    sub: "1:1",    Icon: Globe },
-  { key: "banner",  label: "Banner",  sub: "16:9",   Icon: Monitor },
-  { key: "video",   label: "Video",   sub: "MP4",    Icon: Film },
+type Objective = "Sales & Conversion" | "Lead Generation" | "Website Traffic" | "App Installs";
+type Platform = "Meta" | "Google" | "TikTok" | "Snapchat";
+type Format = "Image" | "Video" | "Carousel" | "UGC Style";
+type StrategyType = "Direct Response" | "Branding" | "UGC";
+type Angle = "Emotional" | "Urgency" | "Social Proof" | "Problem/Solution";
+
+const OBJECTIVES: Objective[] = ["Sales & Conversion", "Lead Generation", "Website Traffic", "App Installs"];
+const PLATFORMS: Platform[] = ["Meta", "Google", "TikTok", "Snapchat"];
+const FORMATS: { label: Format; Icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
+  { label: "Image",    Icon: Image  },
+  { label: "Video",    Icon: Video  },
+  { label: "Carousel", Icon: Layers },
+  { label: "UGC Style", Icon: Users },
+];
+const STRATEGY_TYPES: StrategyType[] = ["Direct Response", "Branding", "UGC"];
+const ANGLES: Angle[] = ["Emotional", "Urgency", "Social Proof", "Problem/Solution"];
+
+const BRAND_COLORS = ["#005bc4", "#05345c", "#3d618c", "#dce9ff"];
+
+const HOOKS = [
+  "\"Stop overpaying for ads that don't convert. Here's what the top 1% of DTC brands do differently.\"",
+  "\"Your competitors are scaling at 4x ROAS while you're stuck at 1.8x. This changes everything.\"",
 ];
 
-const STYLES = ["Minimalist", "Bold & Vibrant", "Luxury", "Playful", "Corporate"];
-
-const PLATFORMS = [
-  { label: "Meta",    dot: "bg-blue-600" },
-  { label: "Google",  dot: "bg-red-500" },
-  { label: "TikTok",  dot: "bg-slate-900" },
+const HEADLINES = [
+  "Scale Your DTC Brand to 7-Figures with AI-Powered Ad Intelligence",
+  "The Growth OS That Thinks, Decides, and Executes — So You Don't Have To",
 ];
 
-const PREVIEWS = [
-  { label: "V1 — Summer Glow",  score: "9.2", badge: "Top Pick",  badgeStyle: "bg-primary text-white" },
-  { label: "V2 — Bold Contrast", score: "8.7", badge: "High CTR",  badgeStyle: "bg-emerald-100 text-emerald-700" },
-  { label: "V3 — Minimal Clean", score: "8.1", badge: null,        badgeStyle: "" },
-  { label: "V4 — Warm Tones",   score: "7.9", badge: null,        badgeStyle: "" },
-];
+export default function CreativesPage() {
+  const [objective, setObjective] = useState<Objective>("Sales & Conversion");
+  const [platforms, setPlatforms] = useState<Set<Platform>>(new Set(["Meta"]));
+  const [format, setFormat] = useState<Format>("Image");
+  const [strategyType, setStrategyType] = useState<StrategyType>("Direct Response");
+  const [angles, setAngles] = useState<Set<Angle>>(new Set(["Emotional"]));
+  const [audience, setAudience] = useState("");
+  const [productDetails, setProductDetails] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
-const COLORS = [
-  ["bg-blue-500","bg-indigo-400","bg-sky-300"],
-  ["bg-emerald-500","bg-teal-400","bg-green-300"],
-  ["bg-orange-500","bg-amber-400","bg-yellow-300"],
-  ["bg-rose-500","bg-pink-400","bg-fuchsia-300"],
-];
+  function togglePlatform(p: Platform) {
+    setPlatforms((prev) => {
+      const next = new Set(prev);
+      next.has(p) ? next.delete(p) : next.add(p);
+      return next.size === 0 ? prev : next;
+    });
+  }
 
-export default function CreativeGeneratorPage() {
-  const [format, setFormat] = useState("story");
-  const [style, setStyle] = useState("Minimalist");
-  const [platform, setPlatform] = useState("Meta");
-  const [prompt, setPrompt] = useState("");
+  function toggleAngle(a: Angle) {
+    setAngles((prev) => {
+      const next = new Set(prev);
+      next.has(a) ? next.delete(a) : next.add(a);
+      return next.size === 0 ? prev : next;
+    });
+  }
+
+  function handleGenerate() {
+    setGenerating(true);
+    setTimeout(() => {
+      setGenerating(false);
+      setGenerated(true);
+    }, 1400);
+  }
+
+  function handleCopy(idx: number) {
+    setCopiedIdx(idx);
+    setTimeout(() => setCopiedIdx(null), 1800);
+  }
 
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">AI Engine</p>
-          <h2 className="text-4xl font-extrabold tracking-tight text-foreground font-sans">Creative Generator</h2>
-          <p className="text-muted-foreground mt-2 font-body">Describe your campaign and let AI produce platform-ready creatives.</p>
-        </div>
-        <Link href="/creatives/results">
-          <button className="flex items-center gap-2 px-5 py-2.5 bg-surface-container-high text-foreground rounded-xl font-semibold text-sm hover:bg-surface-container-high/80 transition-colors font-body">
-            View Results <ArrowRight size={16} />
-          </button>
-        </Link>
+      <div>
+        <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-sans leading-none mb-1">
+          Creative Generator
+        </h1>
+        <p className="text-muted-foreground font-body">
+          AI-powered creative strategy — hooks, headlines, and ad concepts built for performance
+        </p>
       </div>
 
-      <div className="grid grid-cols-12 gap-8 items-start">
-        {/* Left: Controls */}
-        <div className="col-span-12 lg:col-span-5 space-y-6">
-          {/* Prompt */}
-          <div className="bg-white rounded-2xl p-6 border border-border shadow-sm space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Wand2 size={16} className="text-primary" />
-              <h3 className="text-sm font-bold text-foreground uppercase tracking-wider font-body">AI Prompt</h3>
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+
+        {/* Left: Campaign Strategy */}
+        <div className="xl:col-span-7 bg-surface-container-low rounded-2xl overflow-hidden">
+          <div className="p-7 space-y-7">
+            <div>
+              <h2 className="text-lg font-bold text-foreground font-sans mb-1">Campaign Strategy</h2>
+              <p className="text-xs text-muted-foreground font-body">Configure your creative brief and let AI build the strategy.</p>
             </div>
-            <textarea
-              rows={4}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="E.g. Summer fashion campaign for women 25–40, bold colours, product-forward, with a lifestyle feel..."
-              className="w-full bg-surface-container-low border-none rounded-xl px-4 py-3 text-sm resize-none focus:ring-2 ring-primary/20 font-body placeholder:text-muted-foreground/60"
-            />
-            <div className="flex flex-wrap gap-2">
-              {["Summer sale", "Luxury feel", "Product focus", "Lifestyle"].map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setPrompt((p) => (p ? p + ", " + t : t))}
-                  className="px-3 py-1 bg-primary/5 text-primary text-xs font-semibold rounded-full hover:bg-primary/10 transition-colors font-body"
+
+            {/* Primary Objective */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Primary Objective</label>
+              <div className="relative">
+                <select
+                  value={objective}
+                  onChange={(e) => setObjective(e.target.value as Objective)}
+                  className="w-full bg-white border border-border/40 rounded-xl px-4 py-3 text-sm font-semibold text-foreground font-body appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer pr-9"
                 >
-                  + {t}
-                </button>
-              ))}
+                  {OBJECTIVES.map((o) => <option key={o}>{o}</option>)}
+                </select>
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              </div>
+            </div>
+
+            {/* Platform */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Platform</label>
+              <div className="flex flex-wrap gap-2">
+                {PLATFORMS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => togglePlatform(p)}
+                    className={`px-5 py-2 rounded-full text-sm font-bold transition-all font-body ${
+                      platforms.has(p)
+                        ? "bg-primary text-white shadow-md shadow-primary/20"
+                        : "bg-white border border-border/40 text-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Creative Format */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Creative Format</label>
+              <div className="grid grid-cols-4 gap-3">
+                {FORMATS.map(({ label, Icon }) => (
+                  <button
+                    key={label}
+                    onClick={() => setFormat(label)}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
+                      format === label
+                        ? "border-primary bg-primary/5"
+                        : "border-border/30 bg-white hover:border-primary/30"
+                    }`}
+                  >
+                    <Icon size={20} className={format === label ? "text-primary" : "text-muted-foreground"} />
+                    <span className={`text-[11px] font-bold font-body ${format === label ? "text-primary" : "text-muted-foreground"}`}>
+                      {label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Creative Strategy Type */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Creative Strategy Type</label>
+              <div className="flex flex-wrap gap-2">
+                {STRATEGY_TYPES.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStrategyType(s)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all font-body ${
+                      strategyType === s
+                        ? "bg-primary/10 text-primary"
+                        : "bg-white border border-border/30 text-foreground hover:border-primary/30"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Audience Context */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Audience Context</label>
+              <textarea
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+                placeholder="Describe your target audience — demographics, psychographics, pain points, aspirations…"
+                rows={3}
+                className="w-full bg-white border border-border/40 rounded-xl px-4 py-3 text-sm text-foreground font-body focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none placeholder:text-muted-foreground"
+              />
+            </div>
+
+            {/* Product / Offer Details */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Product / Offer Details</label>
+              <textarea
+                value={productDetails}
+                onChange={(e) => setProductDetails(e.target.value)}
+                placeholder="What are you promoting? Key features, pricing, USPs, offer mechanics…"
+                rows={3}
+                className="w-full bg-white border border-border/40 rounded-xl px-4 py-3 text-sm text-foreground font-body focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none placeholder:text-muted-foreground"
+              />
+            </div>
+
+            {/* Strategic Angle */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Strategic Angle</label>
+              <div className="flex flex-wrap gap-2">
+                {ANGLES.map((a) => (
+                  <button
+                    key={a}
+                    onClick={() => toggleAngle(a)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all font-body ${
+                      angles.has(a)
+                        ? "bg-primary text-white"
+                        : "bg-white border border-border/30 text-foreground hover:border-primary/30"
+                    }`}
+                  >
+                    {a}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Brand Assets */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Brand Assets</label>
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-surface-container-high rounded-xl flex items-center justify-center border border-border/30">
+                  <Sparkles size={20} className="text-primary" />
+                </div>
+                <div className="flex items-center gap-2">
+                  {BRAND_COLORS.map((c) => (
+                    <div key={c} className="w-8 h-8 rounded-lg border border-border/20 shadow-sm" style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+                <span className="text-sm font-semibold text-foreground font-body">Inter</span>
+              </div>
             </div>
           </div>
 
-          {/* Format */}
-          <div className="bg-white rounded-2xl p-6 border border-border shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-foreground uppercase tracking-wider font-body">Format</h3>
-            <div className="grid grid-cols-4 gap-3">
-              {FORMATS.map((f) => (
-                <button
-                  key={f.key}
-                  onClick={() => setFormat(f.key)}
-                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
-                    format === f.key
-                      ? "border-primary bg-primary/5"
-                      : "border-transparent bg-surface-container-low hover:border-border"
-                  }`}
-                >
-                  <f.Icon size={18} className={format === f.key ? "text-primary" : "text-muted-foreground"} />
-                  <span className={`text-[11px] font-bold font-body ${format === f.key ? "text-primary" : "text-foreground"}`}>{f.label}</span>
-                  <span className="text-[9px] text-muted-foreground font-body">{f.sub}</span>
-                </button>
-              ))}
+          {/* Generate CTA */}
+          <div className="bg-gradient-to-r from-primary to-[#2563eb] p-6 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-white font-bold font-sans text-base">Ready to generate</p>
+              <p className="text-white/70 text-sm font-body mt-0.5">12 creative variations across your selected platforms</p>
             </div>
-          </div>
-
-          {/* Platform */}
-          <div className="bg-white rounded-2xl p-6 border border-border shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-foreground uppercase tracking-wider font-body">Platform</h3>
-            <div className="flex gap-3 flex-wrap">
-              {PLATFORMS.map((p) => (
-                <button
-                  key={p.label}
-                  onClick={() => setPlatform(p.label)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all font-body ${
-                    platform === p.label
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-transparent bg-surface-container-low text-foreground hover:border-border"
-                  }`}
-                >
-                  <span className={`w-2.5 h-2.5 rounded-full ${p.dot}`} />
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Style */}
-          <div className="bg-white rounded-2xl p-6 border border-border shadow-sm space-y-4">
-            <div className="flex items-center gap-2">
-              <Sliders size={14} className="text-muted-foreground" />
-              <h3 className="text-sm font-bold text-foreground uppercase tracking-wider font-body">Style</h3>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {STYLES.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setStyle(s)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold transition-all font-body ${
-                    style === s
-                      ? "bg-primary text-white shadow-md shadow-primary/20"
-                      : "bg-surface-container-high text-foreground hover:bg-surface-container-high/80"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Generate */}
-          <Link href="/creatives/results">
-            <button className="w-full py-4 bg-gradient-to-br from-primary to-[#2563eb] text-white rounded-2xl font-bold text-sm shadow-xl shadow-primary/25 hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-3 font-body">
-              <Sparkles size={18} /> Generate Creatives
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="flex items-center gap-2 bg-white text-primary px-7 py-3 rounded-xl font-bold hover:bg-blue-50 active:scale-95 transition-all font-body shrink-0 disabled:opacity-80"
+            >
+              {generating ? (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <Zap size={15} />
+              )}
+              {generating ? "Generating…" : "Generate Creatives"}
             </button>
-          </Link>
+          </div>
         </div>
 
-        {/* Right: Preview Grid */}
-        <div className="col-span-12 lg:col-span-7 space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground font-body">Preview</h3>
-            <button className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-primary transition-colors font-body">
-              <RefreshCw size={13} /> Regenerate
-            </button>
+        {/* Right: AI Concept Preview */}
+        <aside className="xl:col-span-5 flex flex-col gap-6">
+          {/* Preview Card */}
+          <div className="bg-surface-container-low rounded-2xl overflow-hidden">
+            <div className="p-5 border-b border-border/20 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-foreground font-sans">AI Concept Preview</h3>
+                <p className="text-xs text-muted-foreground font-body mt-0.5">
+                  {generated ? "Your creative concept is ready" : "Configure and generate to see your concept"}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button className="w-8 h-8 bg-white border border-border/30 rounded-lg flex items-center justify-center hover:bg-surface-container-high transition-colors">
+                  <RefreshCw size={13} className="text-muted-foreground" />
+                </button>
+                <button className="w-8 h-8 bg-white border border-border/30 rounded-lg flex items-center justify-center hover:bg-surface-container-high transition-colors">
+                  <Maximize2 size={13} className="text-muted-foreground" />
+                </button>
+              </div>
+            </div>
+
+            {/* Ad Mockup */}
+            <div
+              className="relative h-64 flex items-end p-5"
+              style={{
+                background: "linear-gradient(135deg, #05345c 0%, #005bc4 60%, #3d618c 100%)",
+              }}
+            >
+              {/* Decorative blobs */}
+              <div className="absolute top-4 right-4 w-28 h-28 rounded-full bg-white/5 blur-2xl pointer-events-none" />
+              <div className="absolute bottom-8 left-8 w-20 h-20 rounded-full bg-primary/20 blur-xl pointer-events-none" />
+
+              {generated ? (
+                <div className="relative z-10 w-full bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-5">
+                  <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2 font-body">Sponsored</p>
+                  <h4 className="text-white font-bold font-sans text-base leading-snug mb-1">
+                    Scale to 7-Figures with AI Ad Intelligence
+                  </h4>
+                  <p className="text-white/70 text-xs font-body mb-4">
+                    The growth OS that thinks, decides, and executes — so you don't have to.
+                  </p>
+                  <button className="bg-white text-primary px-4 py-1.5 rounded-lg text-xs font-bold font-body">
+                    Get Started Free →
+                  </button>
+                </div>
+              ) : (
+                <div className="relative z-10 w-full flex items-center justify-center py-8">
+                  <div className="text-center">
+                    <Sparkles size={32} className="text-white/30 mx-auto mb-3" />
+                    <p className="text-white/40 text-sm font-body">Generate to preview your concept</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {PREVIEWS.map((p, i) => (
-              <div key={p.label} className="group cursor-pointer">
-                <div className={`rounded-2xl overflow-hidden aspect-[9/16] relative ${COLORS[i][0]} bg-gradient-to-br ${COLORS[i][0]} to-${COLORS[i][2]}`}>
-                  {/* Mock creative canvas */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6">
-                    <div className={`w-16 h-16 rounded-2xl bg-white/20 backdrop-blur`} />
-                    <div className="w-3/4 h-3 bg-white/40 rounded-full" />
-                    <div className="w-1/2 h-2 bg-white/30 rounded-full" />
-                    <div className="mt-4 w-2/3 h-8 bg-white/20 rounded-xl" />
+          {/* Generated Hooks */}
+          {generated && (
+            <div className="bg-surface-container-low rounded-2xl p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Zap size={14} className="text-primary" />
+                <h4 className="font-bold text-sm text-foreground font-sans uppercase tracking-wider">Generated Hooks</h4>
+              </div>
+              <div className="space-y-3">
+                {HOOKS.map((hook, i) => (
+                  <div key={i} className="bg-white rounded-xl p-4 border-l-4 border-primary">
+                    <p className="text-sm text-foreground font-body italic leading-relaxed">{hook}</p>
                   </div>
-                  {/* Hover overlay */}
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-end p-4">
-                    <div className="opacity-0 group-hover:opacity-100 transition-all flex gap-2 w-full">
-                      <Link href="/creatives/editor" className="flex-1">
-                        <button className="w-full py-2 bg-white text-foreground text-xs font-bold rounded-xl hover:bg-primary hover:text-white transition-colors font-body">
-                          Edit
-                        </button>
-                      </Link>
-                      <button className="p-2 bg-white rounded-xl text-foreground hover:text-primary transition-colors">
-                        <Download size={14} />
-                      </button>
-                    </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Viral Headlines */}
+          {generated && (
+            <div className="bg-surface-container-low rounded-2xl p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="text-primary" />
+                <h4 className="font-bold text-sm text-foreground font-sans uppercase tracking-wider">Viral Headlines</h4>
+              </div>
+              <div className="space-y-3">
+                {HEADLINES.map((headline, i) => (
+                  <div key={i} className="bg-white rounded-xl p-4 flex items-start justify-between gap-3">
+                    <p className="text-sm text-foreground font-body font-semibold leading-snug">{headline}</p>
+                    <button
+                      onClick={() => handleCopy(i)}
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-surface-container-high transition-colors"
+                    >
+                      {copiedIdx === i ? (
+                        <Check size={13} className="text-emerald-500" />
+                      ) : (
+                        <Copy size={13} className="text-muted-foreground" />
+                      )}
+                    </button>
                   </div>
-                  {p.badge && (
-                    <div className={`absolute top-3 left-3 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${p.badgeStyle} font-body`}>
-                      {p.badge}
-                    </div>
-                  )}
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Strategy Intelligence */}
+          <div className="bg-foreground rounded-2xl p-6 relative overflow-hidden">
+            <div className="absolute -right-8 -top-8 w-32 h-32 bg-primary/20 blur-3xl rounded-full pointer-events-none" />
+            <div className="absolute -left-8 -bottom-8 w-32 h-32 bg-blue-500/10 blur-3xl rounded-full pointer-events-none" />
+            <div className="relative z-10 space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-primary/20 border border-white/10 rounded-full flex items-center justify-center">
+                  <Sparkles size={14} className="text-blue-200" />
                 </div>
-                <div className="mt-3 flex items-center justify-between px-1">
-                  <span className="text-xs font-bold text-foreground font-body">{p.label}</span>
-                  <div className="flex items-center gap-1">
-                    <Sparkles size={10} className="text-primary" />
-                    <span className="text-xs font-black text-primary font-body">{p.score}</span>
-                  </div>
+                <h4 className="text-white font-bold font-sans">Strategy Intelligence</h4>
+              </div>
+
+              <div className="space-y-3">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-blue-200 uppercase tracking-wider mb-1.5 font-body">Why This Works</p>
+                  <p className="text-sm text-slate-300 leading-relaxed font-body">
+                    Direct Response creatives with an Emotional angle consistently outperform on Meta for conversion-focused campaigns — especially in saturated verticals.
+                  </p>
+                </div>
+
+                <div className="bg-primary/20 border border-primary/30 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-white uppercase tracking-wider mb-1.5 font-body">Predicted CTR Lift</p>
+                  <p className="text-2xl font-black text-white font-sans">+34%</p>
+                  <p className="text-xs text-slate-300 font-body mt-1">vs. your current creative baseline</p>
                 </div>
               </div>
-            ))}
+            </div>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );

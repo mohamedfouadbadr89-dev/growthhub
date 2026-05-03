@@ -1,0 +1,120 @@
+
+===== ROUTE: /settings/team
+export default function TeamManagementPage() {
+
+===== ROUTE: /settings
+export default function SettingsPage() {
+
+===== ROUTE: /settings/billing
+export default function BillingPage() {
+
+===== ROUTE: /sign-up/[[...sign-up]]
+export default function SignUpPage() {
+
+===== ROUTE: /decisions/opportunities
+export default function OpportunitiesPage() {
+
+===== ROUTE: /decisions/recommendations
+export default function RecommendationsPage() {
+
+===== ROUTE: /decisions/alerts
+export default function AlertsPage() {
+
+===== ROUTE: /decisions/history
+export default function HistoryPage() {
+
+===== ROUTE: /decisions/audience
+export default function AudiencePage() {
+
+===== ROUTE: /decisions/[id]
+export default function DecisionDetailPage() {
+
+===== ROUTE: /decisions
+export default function DecisionsPage() {
+
+===== ROUTE: /dashboard/ltv
+export default function LTVPage() {
+
+===== ROUTE: /dashboard/segment
+export default function SegmentPage() {
+
+===== ROUTE: /dashboard/channel
+export default function ChannelPage() {
+
+===== ROUTE: /dashboard/cohort
+export default function CohortPage() {
+
+===== ROUTE: /dashboard/profit
+export default function ProfitPage() {
+
+===== ROUTE: /dashboard/attribution
+export default function AttributionPage() {
+
+===== ROUTE: /dashboard/creative
+export default function CreativePage() {
+
+===== ROUTE: /dashboard/overview
+export default function DashboardOverview() {
+
+===== ROUTE: /dashboard/saas
+export default function SaaSPage() {
+
+===== ROUTE: /dashboard/channels
+export default function ChannelsPage() {
+
+===== ROUTE: /integrations/connect
+export default function IntegrationsConnectPage() {
+
+===== ROUTE: /integrations
+export default function IntegrationsPage() {
+
+===== ROUTE: /actions/logs
+export default function LogsPage() {
+
+===== ROUTE: /actions/automation
+export default function AutomationPage() {
+
+===== ROUTE: /actions/[id]
+export default function ActionDetailPage() {
+
+===== ROUTE: /actions
+export default function ActionsPage() {
+
+===== ROUTE: /sign-in/[[...sign-in]]
+export default function SignInPage() {
+
+===== ROUTE: /automation/strategies
+export default function StrategiesPage() {
+
+===== ROUTE: /automation/history
+export default function DecisionHistoryPage() {
+
+===== ROUTE: /automation/builder
+export default function BuilderPage() {
+
+===== ROUTE: /automation
+export default function AutomationPage() {
+
+===== ROUTE: /campaigns/[id]
+export default function CampaignDetailPage() {
+
+===== ROUTE: /campaigns
+export default function CampaignsPage() {
+
+===== ROUTE: /campaigns/create
+      <h2 className="font-sans font-semibold text-foreground text-base">{label}</h2>
+
+===== ROUTE: /creatives/brand-kit
+export default function BrandKitPage() {
+
+===== ROUTE: /creatives/results
+export default function CreativeResultsPage() {
+
+===== ROUTE: /creatives
+export default function CreativesPage() {
+
+===== ROUTE: /creatives/editor
+export default function CreativeEditorPage() {
+
+===== ROUTE: 
+export default function Home() {
