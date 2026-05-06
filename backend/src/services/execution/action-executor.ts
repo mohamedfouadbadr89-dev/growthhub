@@ -99,6 +99,14 @@ export interface ExecuteActionInput {
   aiDecisionId?: string
   /** Optional: trace id for cross-table audit correlation with ai_logs. */
   traceId?: string
+  /**
+   * Optional: outer per-HTTP-request correlator from tracingMiddleware
+   * (c.get('requestId')). When supplied, every [exec] log line emitted
+   * during this execution carries it, joining the same request_id
+   * namespace as [req] envelope and [err] lines. Optional so non-HTTP
+   * callers (e.g. future Inngest-dispatched runs) can omit it.
+   */
+  requestId?: string
   /** Optional: who executed it. Defaults to 'manual'. */
   executedBy?: ExecutedBy
   /**
@@ -135,6 +143,50 @@ interface AiDecisionLink {
   trace_id: string | null
   result: unknown
   confidence_score: number | null
+  /**
+   * Validator-enforced shape: Array<{step: string; insight: string}> with at
+   * least one entry. Typed `unknown` here for defensive read — `deriveAIExplanation`
+   * narrows safely and falls back to null on any structural surprise.
+   */
+  reasoning_steps: unknown
+}
+
+/**
+ * Derive `decision_history.ai_explanation` (TEXT) from a linked
+ * `ai_decisions.reasoning_steps` JSONB array.
+ *
+ * Per CLAUDE.md §9 ("Decision History"), every record carries
+ * `ai_explanation` — "why the AI decided this". Phase 3's AI Output
+ * Contract stores that "why" structurally as `reasoning_steps:
+ * [{step, insight}, ...]` (validated at write time by utils/aiValidator).
+ * This helper joins those step/insight pairs into a single readable
+ * TEXT line per pair, suitable for the audit field.
+ *
+ * Safety:
+ *   - Validator already rejects malformed reasoning_steps at write time,
+ *     so by the time we read it here, it should be array-shaped. We still
+ *     defensively narrow on read because (a) ai_decisions could be written
+ *     by a future code path that bypasses the validator, and (b) Postgres
+ *     JSONB has no in-row schema. On any structural surprise we fall back
+ *     to null — `decision_history.ai_explanation` is nullable, so a null
+ *     here matches the pre-fix behavior and never breaks the INSERT.
+ *   - Pure function. No I/O. No throws.
+ */
+function deriveAIExplanation(reasoning_steps: unknown): string | null {
+  if (!Array.isArray(reasoning_steps) || reasoning_steps.length === 0) {
+    return null
+  }
+  const lines: string[] = []
+  for (const entry of reasoning_steps) {
+    if (entry && typeof entry === 'object') {
+      const step = (entry as { step?: unknown }).step
+      const insight = (entry as { insight?: unknown }).insight
+      if (typeof step === 'string' && typeof insight === 'string') {
+        lines.push(`${step}: ${insight}`)
+      }
+    }
+  }
+  return lines.length > 0 ? lines.join('\n') : null
 }
 
 interface HandlerCtx {
@@ -144,6 +196,12 @@ interface HandlerCtx {
   templateId: string
   traceId: string | null
   aiDecisionId: string | null
+  /**
+   * Outer per-HTTP-request correlator from tracingMiddleware. Threaded
+   * through every logExec emission so `[exec]` lines join the same
+   * request_id namespace as `[req]` and `[err]` lines.
+   */
+  requestId: string | null
 }
 
 type ActionHandler = (
@@ -166,6 +224,16 @@ interface ExecLogEntry {
     | 'exec.api_response'
     | 'exec.error'
   org_id: string
+  /**
+   * Outer per-HTTP-request correlator from tracingMiddleware
+   * (c.get('requestId')). Distinct from `trace_id` (per-execution): one
+   * HTTP request can drive a single executeAction call but the request
+   * envelope wraps it. Stamping `request_id` on every [exec] line lets
+   * an operator pivot from the [req] envelope to the full execution
+   * lifecycle deterministically. Optional for non-HTTP callers (e.g.
+   * future Inngest-dispatched runs without a Hono request).
+   */
+  request_id: string | null
   trace_id: string | null
   ai_decision_id: string | null
   template_id: string
@@ -316,6 +384,7 @@ async function realMetaPauseCampaign(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -337,6 +406,7 @@ async function realMetaPauseCampaign(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -363,6 +433,7 @@ async function realMetaPauseCampaign(
     ts: new Date().toISOString(),
     phase: 'exec.api_call',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -393,6 +464,7 @@ async function realMetaPauseCampaign(
       ts: new Date().toISOString(),
       phase: 'exec.api_response',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -420,6 +492,7 @@ async function realMetaPauseCampaign(
     ts: new Date().toISOString(),
     phase: 'exec.api_response',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -488,6 +561,7 @@ async function realMetaDecreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -512,6 +586,7 @@ async function realMetaDecreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -532,6 +607,7 @@ async function realMetaDecreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -559,6 +635,7 @@ async function realMetaDecreaseBudget(
     ts: new Date().toISOString(),
     phase: 'exec.api_call',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -586,6 +663,7 @@ async function realMetaDecreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.api_response',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -614,6 +692,7 @@ async function realMetaDecreaseBudget(
     ts: new Date().toISOString(),
     phase: 'exec.api_response',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -684,6 +763,7 @@ async function realMetaDecreaseBudget(
     ts: new Date().toISOString(),
     phase: 'exec.api_call',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -713,6 +793,7 @@ async function realMetaDecreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.api_response',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -747,6 +828,7 @@ async function realMetaDecreaseBudget(
     ts: new Date().toISOString(),
     phase: 'exec.api_response',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -822,6 +904,7 @@ async function realMetaIncreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -845,6 +928,7 @@ async function realMetaIncreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -865,6 +949,7 @@ async function realMetaIncreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -890,6 +975,7 @@ async function realMetaIncreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -917,6 +1003,7 @@ async function realMetaIncreaseBudget(
     ts: new Date().toISOString(),
     phase: 'exec.api_call',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -944,6 +1031,7 @@ async function realMetaIncreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.api_response',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -972,6 +1060,7 @@ async function realMetaIncreaseBudget(
     ts: new Date().toISOString(),
     phase: 'exec.api_response',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -1044,6 +1133,7 @@ async function realMetaIncreaseBudget(
     ts: new Date().toISOString(),
     phase: 'exec.api_call',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -1073,6 +1163,7 @@ async function realMetaIncreaseBudget(
       ts: new Date().toISOString(),
       phase: 'exec.api_response',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -1107,6 +1198,7 @@ async function realMetaIncreaseBudget(
     ts: new Date().toISOString(),
     phase: 'exec.api_response',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -1201,6 +1293,7 @@ async function realSendAlertEmail(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -1233,6 +1326,7 @@ async function realSendAlertEmail(
       ts: new Date().toISOString(),
       phase: 'exec.error',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -1278,6 +1372,7 @@ async function realSendAlertEmail(
     ts: new Date().toISOString(),
     phase: 'exec.api_call',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -1311,6 +1406,7 @@ async function realSendAlertEmail(
       ts: new Date().toISOString(),
       phase: 'exec.api_response',
       org_id: ctx.orgId,
+      request_id: ctx.requestId,
       trace_id: ctx.traceId,
       ai_decision_id: ctx.aiDecisionId,
       template_id: ctx.templateId,
@@ -1339,6 +1435,7 @@ async function realSendAlertEmail(
     ts: new Date().toISOString(),
     phase: 'exec.api_response',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -1476,7 +1573,7 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
   if (input.aiDecisionId) {
     const { data: dec, error: dErr } = await supabaseAdmin
       .from('ai_decisions')
-      .select('trace_id, result, confidence_score')
+      .select('trace_id, result, confidence_score, reasoning_steps')
       .eq('id', input.aiDecisionId)
       .eq('org_id', input.orgId)
       .maybeSingle()
@@ -1511,6 +1608,10 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
     templateId: t.id,
     traceId,
     aiDecisionId,
+    // request_id from tracingMiddleware (mounted at app level in index.ts).
+    // Threaded through every logExec emission so [exec] lines join the
+    // same request_id namespace as [req] envelope and [err] lines.
+    requestId: input.requestId ?? null,
   }
 
   // 6. exec.start lifecycle log (Phase 4 strict requirement: log BEFORE).
@@ -1519,6 +1620,7 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
     ts: new Date().toISOString(),
     phase: 'exec.start',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -1555,6 +1657,7 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
     ts: new Date().toISOString(),
     phase: 'exec.end',
     org_id: ctx.orgId,
+    request_id: ctx.requestId,
     trace_id: ctx.traceId,
     ai_decision_id: ctx.aiDecisionId,
     template_id: ctx.templateId,
@@ -1612,7 +1715,10 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
       trigger_condition: triggerCondition,
       data_used: dataUsed,
       result,
-      ai_explanation: null,
+      // CLAUDE.md §9 mandates ai_explanation describes "why the AI decided this".
+      // Derived from the linked ai_decisions.reasoning_steps when present;
+      // null when execution is purely manual (no AI involvement to explain).
+      ai_explanation: aiLink ? deriveAIExplanation(aiLink.reasoning_steps) : null,
       confidence_score: aiLink?.confidence_score ?? null,
       ai_decision_id: input.aiDecisionId ?? null,
       trace_id: traceId,

@@ -24,20 +24,174 @@ import {
   AIPipelineError,
 } from '../../services/ai/execute-ai-decision.js'
 
-type Variables = { userId: string; orgId: string }
+// requestId is set by tracingMiddleware mounted at app level (index.ts:53);
+// guaranteed present before any v1 handler runs. Declaring it here makes
+// c.get('requestId') type-safe without having to cast at each call site.
+type Variables = { userId: string; orgId: string; requestId: string }
 
 export const aiRouter = new Hono<{ Variables: Variables }>()
 
-// ─── Existing mock for backwards compatibility ────────────────────────
+// ─── POST /api/v1/ai/decisions/generate ───────────────────────────────
+// Real Phase 3 entry — replaces the prior mock that returned a hardcoded
+// {success:true,data:{type,result,confidence_score}} regardless of input.
+//
+// Backward-compatibility note:
+//   - URL preserved (no callers broken by routing).
+//   - Success-data field names {type, result, confidence_score} preserved
+//     at the same depth, so any caller that reads only those three keys
+//     continues to work.
+//   - Additive fields {reasoning_steps, decision_id, trace_id} are appended
+//     for transparency and Phase 3 contract surfacing.
+//   - The legacy mock accepted any body (including no body). The real
+//     pipeline requires a `prompt`. Callers that send no body now receive
+//     a structured 400 ({success:false, error:{phase:'request', message}})
+//     instead of a silent fake success — per CONSTITUTION §3 "Fail Loudly".
+//
+// Identical setup to POST /api/v1/ai/execute below (same OpenRouter client,
+// same AI Output Contract system prompt, same providerCall pattern).
+// Difference: legacy-shaped success payload + default `kind: 'decision'`.
 aiRouter.post('/decisions/generate', async (c) => {
-  return c.json({
-    success: true,
-    data: {
-      type: 'decision',
-      result: 'Mock decision output',
-      confidence_score: 0.85,
-    },
-  })
+  const org_id = c.get('orgId')
+  const user_id = c.get('userId')
+
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json(
+      { success: false, error: { phase: 'request', message: 'invalid JSON body' } },
+      400,
+    )
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return c.json(
+      { success: false, error: { phase: 'request', message: 'body must be a JSON object' } },
+      400,
+    )
+  }
+
+  const { prompt, model, kind } = body as {
+    prompt?: unknown
+    model?: unknown
+    kind?: unknown
+  }
+  if (prompt === undefined || prompt === null) {
+    return c.json(
+      { success: false, error: { phase: 'request', message: 'prompt is required' } },
+      400,
+    )
+  }
+
+  const finalModel =
+    typeof model === 'string' && model.length > 0
+      ? model
+      : process.env.OPENROUTER_DEFAULT_MODEL || 'google/gemini-2.0-flash-001'
+  const finalKind = typeof kind === 'string' ? kind : 'decision'
+
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) {
+    return c.json(
+      {
+        success: false,
+        error: { phase: 'transport', message: 'OPENROUTER_API_KEY is not configured' },
+      },
+      500,
+    )
+  }
+  const client = getOpenRouterClient(apiKey)
+
+  // Same AI Output Contract system prompt as /execute. The validator
+  // (utils/aiValidator) rejects anything that doesn't match exactly.
+  const systemPrompt =
+    'You are an AI decision engine for a growth-operations platform. ' +
+    'Respond ONLY with a single JSON object that matches this exact contract: ' +
+    '{"type":"dashboard"|"insight"|"decision",' +
+    '"result": <any JSON value>,' +
+    '"confidence_score": <number between 0 and 1 inclusive>,' +
+    '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...]}. ' +
+    '"reasoning_steps" must contain at least one entry. ' +
+    'Do not include markdown, code fences, prose, or any keys other than the four above.'
+
+  const userContent =
+    typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
+
+  const providerCall = async (): Promise<unknown> => {
+    const completion = await client.chat.completions.create({
+      model: finalModel,
+      temperature: 0.3,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ],
+      response_format: { type: 'json_object' },
+    })
+    const content = completion.choices[0]?.message?.content ?? ''
+    try {
+      return JSON.parse(content)
+    } catch {
+      return content
+    }
+  }
+
+  try {
+    const result = await executeAIDecision({
+      org_id,
+      user_id,
+      // request_id from tracingMiddleware (mounted at app level in index.ts)
+      // — stamped on every [AI] log line for outer per-HTTP-request correlation
+      // alongside the per-AI-flow trace_id minted inside executeAIDecision.
+      request_id: c.get('requestId'),
+      model: finalModel,
+      kind: finalKind,
+      prompt,
+      providerCall,
+    })
+    // Legacy-compatible response: {type, result, confidence_score} are at
+    // the original depth. Additive Phase 3 fields appended.
+    return c.json(
+      {
+        success: true,
+        data: {
+          type: result.response.type,
+          result: result.response.result,
+          confidence_score: result.response.confidence_score,
+          reasoning_steps: result.response.reasoning_steps,
+          decision_id: result.decision_id,
+          trace_id: result.trace_id,
+        },
+      },
+      200,
+    )
+  } catch (err) {
+    if (err instanceof AIPipelineError) {
+      const status =
+        err.phase === 'transport' ? 502 :
+        err.phase === 'validation' ? 422 :
+        500
+      return c.json(
+        {
+          success: false,
+          error: {
+            phase: err.phase,
+            message: err.message,
+            trace_id: err.trace_id,
+          },
+        },
+        status,
+      )
+    }
+    const e = err as Error
+    return c.json(
+      {
+        success: false,
+        error: {
+          phase: 'unknown',
+          message: e?.message ?? 'unknown error',
+        },
+      },
+      500,
+    )
+  }
 })
 
 // ─── POST /api/v1/ai/execute ──────────────────────────────────────────
@@ -155,6 +309,10 @@ aiRouter.post('/execute', async (c) => {
     const result = await executeAIDecision({
       org_id,
       user_id,
+      // request_id from tracingMiddleware (mounted at app level in index.ts)
+      // — stamped on every [AI] log line for outer per-HTTP-request correlation
+      // alongside the per-AI-flow trace_id minted inside executeAIDecision.
+      request_id: c.get('requestId'),
       model: finalModel,
       kind: finalKind,
       prompt,

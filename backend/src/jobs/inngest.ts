@@ -252,10 +252,29 @@ const aiHello = inngest.createFunction(
 )
 
 // ─────────────────────────────────────────────────────────────
+// Registered Inngest functions.
+//
+// Per SYSTEM_CONTROL.md, the following functions depend on tables that
+// are NOT in supabase/migrations/ and are intentionally deferred:
+//
+//   dailySyncAll       → reads `integrations` (Phase 2, deferred)
+//                        FIRES NIGHTLY at 02:00 UTC — left in the array
+//                        previously, this caused a silent retry storm
+//                        (Inngest auto-retries 4× on each crash).
+//   syncIntegration    → reads/writes `integrations`, `sync_logs` (Phase 2)
+//   generateDecisions  → calls dispatchIntelligence → `decision_runs` (Phase 3 anomaly engine)
+//   generateCreative   → calls runGeneration → `creative_generations` (Phase 5)
+//
+// Their definitions are KEPT above as documentation/code so re-enabling
+// is a one-line edit (just append the symbol to this array). Until then,
+// they are NOT registered with Inngest, never receive events, and never fire.
+//
+// `aiHello` (event 'test/ai') has no DB dependency and is kept for the
+// `/trigger-ai` smoke-test endpoint.
 export const functions = [
-  dailySyncAll,
-  syncIntegration,
-  generateDecisions,
-  generateCreative,
+  // dailySyncAll,       // disabled — Phase 2 ingestion deferred
+  // syncIntegration,    // disabled — Phase 2 ingestion deferred
+  // generateDecisions,  // disabled — Phase 3 anomaly engine deferred
+  // generateCreative,   // disabled — Phase 5 creatives deferred
   aiHello,
 ]

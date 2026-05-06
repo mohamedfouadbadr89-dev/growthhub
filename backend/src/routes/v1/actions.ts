@@ -2,7 +2,10 @@ import { Hono } from 'hono'
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { executeAction } from '../../services/execution/action-executor.js'
 
-type Variables = { userId: string; orgId: string }
+// requestId is set by tracingMiddleware mounted at app level (index.ts).
+// Declaring it here makes c.get('requestId') type-safe so the action
+// route can pass it through to executeAction for [exec] log correlation.
+type Variables = { userId: string; orgId: string; requestId: string }
 
 export const actionsRouter = new Hono<{ Variables: Variables }>()
 
@@ -20,7 +23,23 @@ actionsRouter.get('/', async (c) => {
   if (action_type) query = query.eq('action_type', action_type)
 
   const { data, error, count } = await query
-  if (error) return c.json({ error: error.message }, 500)
+  // Pre-fix: `if (error) return c.json({ error: error.message }, 500)` —
+  // leaked raw Postgrest error strings (table/column names, SQLSTATE codes,
+  // RLS policy boundaries, connection topology hints) to any authenticated
+  // caller. actions_library is a SYSTEM-GLOBAL catalogue (RLS authenticated-
+  // read, no org_id filter), so the disclosure surface is broader than
+  // org-isolated tables — every authed user could probe the endpoint to
+  // elicit error states.
+  //
+  // Pattern aligned with history.ts:GET / hardening (prior turn). Throw →
+  // caught by app.onError(errorHandler) → sanitized 500 body
+  // {error: 'Internal Server Error', request_id} for the client; full
+  // error captured in Sentry (with request_id tag) and stdout [err]
+  // (with request_id prefix) for the operator. CONSTITUTION §1.1 + §3
+  // satisfied (operator-loud, client-sanitized).
+  if (error) {
+    throw new Error(`actions list lookup failed: ${error.message}`)
+  }
 
   return c.json({ actions: data ?? [], total: count ?? 0 })
 })
@@ -35,7 +54,24 @@ actionsRouter.get('/:id', async (c) => {
     .eq('id', id)
     .single()
 
-  if (error || !data) return c.json({ error: 'Action not found' }, 404)
+  // Discriminate "template genuinely not in catalogue" from "DB layer failed".
+  //
+  // Pre-fix this branch was `if (error || !data) → 404`. Pattern-identical
+  // to the auth.ts/verify anti-pattern closed in the prior hardening turn:
+  // every non-PGRST116 PostgrestError (network failure, RLS denial, schema
+  // drift, connection pool exhaustion, 42P01, etc.) was rebranded as
+  // "Action not found", bypassing errorHandler and Sentry. CONSTITUTION §3
+  // "Fail Loudly" — DB failures must surface as 5xx, not 4xx.
+  //
+  // PGRST116 ("result has 0 rows") is the canonical no-rows code from
+  // .single(); it is the ONLY error code that legitimately means
+  // "template not in catalogue". Everything else throws → caught by Hono's
+  // onError → errorHandler emits 500 with request_id in body, Sentry tag,
+  // and stdout [err] line (per the prior errorHandler hardening).
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`actions/:id lookup failed: ${error.message}`)
+  }
+  if (!data) return c.json({ error: 'Action not found' }, 404)
   return c.json(data)
 })
 
@@ -90,6 +126,9 @@ actionsRouter.post('/:id/execute', async (c) => {
       templateId: id,
       params,
       orgId,
+      // request_id from tracingMiddleware — stamped on every [exec] line
+      // so the execution lifecycle joins the [req] envelope's namespace.
+      requestId: c.get('requestId'),
       aiDecisionId,
       traceId,
       executionId,
@@ -103,6 +142,8 @@ actionsRouter.post('/:id/execute', async (c) => {
     })
   } catch (err) {
     const e = err as Error & { code?: string; field?: string }
+
+    // 4xx typed errors — caller-facing messages, intentionally surfaced.
     if (e.code === 'NOT_FOUND') {
       return c.json({ error: 'Action not found' }, 404)
     }
@@ -112,17 +153,20 @@ actionsRouter.post('/:id/execute', async (c) => {
         400,
       )
     }
-    if (e.code === 'INVALID_ORG_ID') {
-      return c.json({ error: 'Internal', message: e.message }, 500)
-    }
-    if (
-      e.code === 'TEMPLATE_LOOKUP_FAILED' ||
-      e.code === 'AI_DECISION_LOOKUP_FAILED' ||
-      e.code === 'HISTORY_INSERT_FAILED' ||
-      e.code === 'IDEMPOTENCY_LOOKUP_FAILED'
-    ) {
-      return c.json({ error: 'Internal', message: e.message }, 500)
-    }
-    return c.json({ error: e.message ?? 'Execution failed' }, 500)
+
+    // Every other error is internal/infrastructure-class. Pre-fix, three
+    // distinct paths (INVALID_ORG_ID, *_LOOKUP_FAILED / *_INSERT_FAILED,
+    // and the catch-all) returned `e.message` to the client — leaking the
+    // executor's wrapped Postgres error.message strings (relation/column
+    // names, RLS denial detail, SQLSTATE codes, connection topology hints).
+    // CONSTITUTION §1.1 generalized to error-message hygiene + §3 "Fail
+    // Loudly" mandate operator-side loudness, NOT client-side disclosure.
+    //
+    // Throw → caught by app.onError(errorHandler) → sanitized 500 body
+    // {error: 'Internal Server Error', request_id} for the client; full
+    // error captured in Sentry (with request_id tag) and stdout [err]
+    // (with request_id prefix) for the operator. Pattern-aligned with
+    // history.ts/actions.ts LIST hardening (prior turns).
+    throw err
   }
 })

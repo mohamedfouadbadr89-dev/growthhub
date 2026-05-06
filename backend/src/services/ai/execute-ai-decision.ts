@@ -62,6 +62,13 @@ export interface ExecuteAIDecisionInput {
   org_id: string
   /** Server-side user id (Clerk sub) when present. Optional metadata. */
   user_id?: string
+  /**
+   * Outer per-HTTP-request correlator from tracingMiddleware
+   * (c.get('requestId')). Stamped on every [AI] log line so an operator
+   * can pivot from a single HTTP request's [req] envelope to all the
+   * AI activity it triggered. Optional for non-HTTP orchestration paths.
+   */
+  request_id?: string
   /** Model identifier — stamped on every log entry and persisted. */
   model: string
   /** Free-form label for what kind of AI call this is. e.g. "decision-explanation". */
@@ -137,8 +144,12 @@ export async function executeAIDecision(
   const trace_id = newTraceId()
 
   // Common fields stamped on every log entry for this trace.
+  // request_id (when present) provides outer per-HTTP-request correlation
+  // alongside the per-AI-flow trace_id; both flow through the same `tag`
+  // spread so all 5 emission sites below pick them up automatically.
   const tag = {
     trace_id,
+    request_id: input.request_id,
     model: input.model,
     kind: input.kind,
     org_id: input.org_id,
@@ -252,6 +263,7 @@ export async function executeAIDecision(
       response: validated,
       org_id: input.org_id,
       trace_id,
+      request_id: input.request_id,
       model: input.model,
       user_id: input.user_id,
     })
