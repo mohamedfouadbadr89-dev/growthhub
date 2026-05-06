@@ -5,14 +5,27 @@ type Variables = { userId: string; orgId: string }
 
 export const historyRouter = new Hono<{ Variables: Variables }>()
 
-// GET /history — list (no data_used for performance)
+// GET /history — list (no data_used for performance).
+//
+// Column list aligned with the deployed decision_history schema as defined
+// by:
+//   - 20260503130000_phase4_minimal_execution_layer.sql (canonical columns)
+//   - 20260503140000_phase4_decision_history_idempotency.sql (execution_id)
+//   - 20260503150000_phase4_decision_history_impact_snapshot.sql (impact_snapshot)
+//
+// The Phase 4 minimal migration deliberately renamed `decision_id` →
+// `ai_decision_id` (linking to the canonical Phase 3 ai_decisions table,
+// not the legacy/malformed `decisions` table) and excluded
+// `automation_rule_id` / `automation_run_id` (Phase 4 automation engine
+// deferred). Pre-fix this SELECT requested all three deprecated columns
+// and Postgres rejected with 42703, returning 500 on every list call.
 historyRouter.get('/', async (c) => {
   const orgId = c.get('orgId')
   const { limit = '50', offset = '0', executed_by } = c.req.query()
 
   let query = supabaseAdmin
     .from('decision_history')
-    .select('id, org_id, decision, action_taken, trigger_condition, result, ai_explanation, confidence_score, decision_id, automation_rule_id, automation_run_id, executed_by, created_at', { count: 'exact' })
+    .select('id, org_id, decision, action_taken, trigger_condition, result, ai_explanation, confidence_score, ai_decision_id, executed_by, created_at', { count: 'exact' })
     .eq('org_id', orgId)
     .order('created_at', { ascending: false })
     .range(Number(offset), Number(offset) + Number(limit) - 1)
@@ -20,7 +33,23 @@ historyRouter.get('/', async (c) => {
   if (executed_by) query = query.eq('executed_by', executed_by)
 
   const { data, error, count } = await query
-  if (error) return c.json({ error: error.message }, 500)
+  // Pre-fix: `if (error) return c.json({ error: error.message }, 500)` —
+  // leaked raw Postgrest error strings (table/column names, SQLSTATE
+  // codes, RLS policy boundaries, connection topology hints) directly to
+  // any authenticated caller. CONSTITUTION §1.1 ("Never expose secrets")
+  // generalized to error-message hygiene + CLAUDE.md §9 (decision_history
+  // is the most critical table) make this a real information-disclosure
+  // surface. CONSTITUTION §3 "Fail Loudly" demands operator-side loudness,
+  // not client-side leakage — those are different concerns.
+  //
+  // Throw → caught by app.onError(errorHandler) → sanitized 500 body
+  // {error: 'Internal Server Error', request_id} for the client; full
+  // error captured in Sentry (with request_id tag) and stdout [err]
+  // (with request_id prefix) for the operator. Single grep on request_id
+  // pivots between any sink.
+  if (error) {
+    throw new Error(`history list lookup failed: ${error.message}`)
+  }
 
   return c.json({ history: data ?? [], total: count ?? 0 })
 })
@@ -37,6 +66,30 @@ historyRouter.get('/:id', async (c) => {
     .eq('org_id', orgId)
     .single()
 
-  if (error || !data) return c.json({ error: 'History record not found' }, 404)
+  // Discriminate "audit record genuinely absent" from "DB layer failed".
+  //
+  // Pre-fix this branch was `if (error || !data) → 404 'History record not
+  // found'`. Pattern-identical to the auth.ts/verify and actions.ts/:id
+  // anti-patterns closed in prior hardening turns: every non-PGRST116
+  // PostgrestError (network failure, RLS denial, schema drift, connection
+  // pool exhaustion, 42P01, etc.) was rebranded as resource absence,
+  // bypassing errorHandler and Sentry.
+  //
+  // CLAUDE.md §9 elevates the urgency here: decision_history is "the
+  // system memory and explainability layer ... the most critical table
+  // in the system." A misclassified 404 on infrastructure failure leads
+  // operators to conclude an audit record was never created when in fact
+  // the DB read failed transiently — and may cause action re-execution
+  // under false-absence assumption.
+  //
+  // PGRST116 ("result has 0 rows") is the canonical no-rows code from
+  // .single(); it is the ONLY error code that legitimately means
+  // "record not present". Everything else throws → caught by Hono's
+  // onError → errorHandler emits 500 with request_id in body, Sentry tag,
+  // and stdout [err] line (per the prior errorHandler hardening).
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`history/:id lookup failed: ${error.message}`)
+  }
+  if (!data) return c.json({ error: 'History record not found' }, 404)
   return c.json(data)
 })

@@ -1,6 +1,31 @@
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { resolveApiKey } from '../creatives/creative-generator.js'
 
+// ─── Schema-drift-tolerant DB error guard ─────────────────────────────
+// Mirrors the helper in services/campaigns/campaigns.ts. See the doc
+// block there for the full rationale (Phase 2 deferred → 42P01;
+// legacy decisions org_id type drift → 22P02). Helper is duplicated
+// (not extracted to a shared module) to avoid introducing a new
+// cross-service dependency for a 14-line utility.
+const EXPECTED_SCHEMA_DRIFT = new Set(['42P01', '22P02'])
+
+function checkDbReadError(
+  err: { code?: string; message?: string } | null,
+  table: string,
+  ctx: string,
+): void {
+  if (!err) return
+  const code = err.code ?? '?'
+  if (EXPECTED_SCHEMA_DRIFT.has(code)) {
+    console.warn(
+      `[ai-suggestions] ${table} read silently degraded (${code}): ${err.message ?? '<no message>'} — context: ${ctx}`,
+    )
+    return
+  }
+  console.error(`[ai-suggestions] ${table} read failed (${code}):`, err)
+  throw new Error(`${table} read failed: ${err.message ?? code}`)
+}
+
 export interface AiSuggestions {
   interests: string[]
   age_min: number
@@ -50,7 +75,29 @@ export async function generateAiSuggestions(
     .eq('id', campaignId)
     .single()
 
-  if (campErr || !campaign) {
+  // Discriminate "campaign genuinely absent" from "DB layer failed".
+  //
+  // Pre-fix this branch was `if (campErr || !campaign) throw NOT_FOUND` →
+  // route then mapped NOT_FOUND code to 404 'Campaign not found'.
+  // Pattern-identical to the anti-patterns closed across prior 6 turns
+  // (auth.ts/verify, actions.ts/:id, history.ts/:id,
+  // creative-generator.ts:resolveApiKey, campaigns.ts:getCampaignById,
+  // campaigns.ts:updateCampaign). Every non-PGRST116 PostgrestError
+  // (network failure, RLS denial, schema drift, connection pool
+  // exhaustion) was silently rebranded as "Campaign not found" —
+  // pointing operators chasing production failures at the wrong root
+  // cause (resource absence vs infrastructure / RLS / schema).
+  //
+  // PGRST116 → throws typed NOT_FOUND (preserves the route's 404
+  // mapping bit-for-bit for genuine not-found case); FE compatibility
+  // unchanged. Every other error throws untyped → caught by route
+  // catch (post turn -7 hardening) → propagates to errorHandler →
+  // sanitized 500 with request_id correlator chain (Sentry tag,
+  // stdout [err] line, body request_id).
+  if (campErr && campErr.code !== 'PGRST116') {
+    throw new Error(`campaigns lookup failed: ${campErr.message}`)
+  }
+  if (!campaign) {
     throw Object.assign(new Error('Campaign not found'), { code: 'NOT_FOUND' })
   }
 
@@ -58,11 +105,12 @@ export async function generateAiSuggestions(
   since30.setDate(since30.getDate() - 30)
   const from30 = since30.toISOString().slice(0, 10)
 
-  const { data: topMetrics } = await supabaseAdmin
+  const { data: topMetrics, error: topMetricsErr } = await supabaseAdmin
     .from('campaign_metrics')
     .select('campaign_name, spend, revenue')
     .eq('org_id', orgId)
     .gte('date', from30)
+  checkDbReadError(topMetricsErr, 'campaign_metrics', 'generateAiSuggestions:topMetrics')
 
   const aggregated = new Map<string, { spend: number; revenue: number }>()
   for (const row of topMetrics ?? []) {

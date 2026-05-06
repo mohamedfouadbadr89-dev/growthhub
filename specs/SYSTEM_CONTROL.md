@@ -364,3 +364,36 @@ Claude MUST read:
 ## LAST UPDATE
 
 2026-05-03 — Phase 4 (minimal slice) CLOSED. CLOSING_AUDIT_PHASE4.md generated. Phase 4 Part 2 explicitly scoped as DEFERRED with documented unlock conditions. PATCH QUEUE updated; Phase 0 + Phase 1 are now the active focus (parallel-safe). HARD LOCK refreshed to incorporate Phase 4 invariants (max-percent cap, idempotency unique index, recipient placeholder filter). REAL SYSTEM CAPABILITIES enumerates the live action surface and the deferred surface explicitly.
+
+
+
+
+TOOLING / EXECUTION CONSTRAINT
+
+AI MUST NOT:
+
+* invent auxiliary infrastructure outside the repository architecture
+* create parallel execution systems
+* introduce standalone debug frameworks
+* create speculative tooling layers
+* bypass the canonical migration/runtime/logging flow
+* introduce ad-hoc orchestration utilities outside the approved system structure
+
+Python/runtime tooling is ALLOWED only when:
+
+* it operates inside the existing repository architecture
+* it supports the current system control flow
+* it does not create architectural drift
+* it does not bypass canonical migrations, runtime flow, logging, or validation layers
+* it remains fully aligned with CURRENT PHASE constraints
+
+FORBIDDEN:
+
+* shadow infrastructure
+* parallel audit systems
+* speculative execution frameworks
+* temporary orchestration layers
+* non-canonical runtime paths
+
+If tooling requires introducing a new operational layer:
+STOP and report the architectural requirement instead of inventi

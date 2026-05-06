@@ -47,6 +47,14 @@ export type AILogPhase =
 
 export interface AILogEntry {
   trace_id: string
+  /**
+   * Per-HTTP-request correlator from tracingMiddleware (c.get('requestId')).
+   * Distinct from `trace_id` (per-AI-flow): one HTTP request can contain
+   * multiple AI flows, so request_id wraps an outer scope and trace_id
+   * a finer one. Optional for backward compatibility with non-HTTP
+   * orchestration paths (e.g. background jobs without a Hono request).
+   */
+  request_id?: string
   ts: string
   phase: AILogPhase
   level: AILogLevel

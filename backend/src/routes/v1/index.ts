@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import { authMiddleware } from '../../middleware/auth.js'
 import { authRouter } from './auth.js'
 import { connectRouter } from './connect.js'
@@ -20,6 +21,57 @@ const v1 = new Hono<{ Variables: Variables }>()
 
 // 🔒 Auth middleware MUST run before every route — Clerk token + org_id are mandatory
 v1.use('/*', authMiddleware)
+
+// ─── Deferred-phase 503 gates ────────────────────────────────────────────
+//
+// Per SYSTEM_CONTROL.md, several phases are deferred and their backing
+// tables are NOT in supabase/migrations/. The corresponding routers below
+// are kept mounted (so the URL surface stays self-documenting and trivially
+// re-enabled) but every request is short-circuited at the prefix level
+// with a structured 503 envelope BEFORE any handler runs.
+//
+// This replaces the previous failure mode (Postgres "relation does not
+// exist" → cryptic 500) with a clear, fail-loud "phase deferred" response.
+// Re-enabling a phase later is a one-line edit: delete the corresponding
+// `v1.use('/x/*', deferredPhase(...))` line.
+//
+// Auth still runs first (above), so unauthenticated callers continue to
+// receive 401, not 503 — no information leak.
+const deferredPhase = (routerPath: string, phaseLabel: string) =>
+  async (c: Context): Promise<Response> => {
+    let request_id: string | null = null
+    try {
+      // requestId set by tracingMiddleware at the app level (index.ts).
+      // Defensive read in case this router is ever mounted without tracing.
+      request_id = (c.get('requestId' as never) as string) ?? null
+    } catch {
+      /* tracing not in chain — leave null */
+    }
+    return c.json(
+      {
+        success: false,
+        error: {
+          phase: 'deferred',
+          message: `${routerPath} is intentionally disabled (${phaseLabel} per SYSTEM_CONTROL.md). Backing infrastructure is not deployed.`,
+          router: routerPath,
+        },
+        request_id,
+      },
+      503,
+    )
+  }
+
+// /integrations/* covers /integrations/connect/* too (Phase 2 ingestion).
+v1.use('/integrations/*', deferredPhase('/api/v1/integrations', 'Phase 2 data ingestion'))
+v1.use('/metrics/*',      deferredPhase('/api/v1/metrics',      'Phase 2 data ingestion'))
+v1.use('/decisions/*',    deferredPhase('/api/v1/decisions',    'Phase 3 anomaly engine (legacy decisions table malformed; decision_runs not deployed)'))
+v1.use('/alerts/*',       deferredPhase('/api/v1/alerts',       'Phase 3 anomaly engine'))
+v1.use('/automation/*',   deferredPhase('/api/v1/automation',   'Phase 4 automation engine'))
+v1.use('/creatives/*',    deferredPhase('/api/v1/creatives',    'Phase 5 creatives'))
+v1.use('/brand-kit/*',    deferredPhase('/api/v1/brand-kit',    'Phase 5 creatives'))
+
+// ─── Route mounts (handler files unchanged; the gates above short-circuit
+// deferred-phase requests before any handler is invoked) ─────────────────
 v1.route('/auth', authRouter)
 v1.route('/integrations/connect', connectRouter)
 v1.route('/integrations', integrationsRouter)

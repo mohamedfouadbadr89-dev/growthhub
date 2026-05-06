@@ -1,4 +1,3 @@
-console.log('🔥🔥🔥 AUTH FILE IS RUNNING 🔥🔥🔥');
 import { createMiddleware } from 'hono/factory'
 import { verifyToken } from '@clerk/backend'
 import { supabaseAdmin } from '../lib/supabase.js'

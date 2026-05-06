@@ -21,7 +21,30 @@ export async function resolveApiKey(orgId: string): Promise<{ apiKey: string; is
     .eq('org_id', orgId)
     .single()
 
-  if (error || !org) throw new Error(`Org ${orgId} not found`)
+  // Discriminate "org genuinely absent" from "DB layer failed".
+  //
+  // Pre-fix this branch was `if (error || !org) throw 'Org X not found'`.
+  // Pattern-identical to the auth.ts/verify, actions.ts/:id, history.ts/:id
+  // anti-patterns closed in prior route-level hardening turns. This
+  // instance survived because it lives in a SERVICE file rather than a
+  // route file. Every non-PGRST116 PostgrestError (network failure, RLS
+  // denial, schema drift like the currently-active 42703 on
+  // `vault_byok_openrouter_secret_id`, connection pool exhaustion, etc.)
+  // was rebranded as "Org X not found" — pointing operators chasing
+  // production failures at the wrong root cause (organization absence
+  // vs schema drift / infrastructure / RLS).
+  //
+  // CONSTITUTION §3 "Fail Loudly" mandates accurate operator-facing
+  // signals; throwing through errorHandler with the real cause string
+  // satisfies it. The genuine no-rows case (PGRST116) preserves the
+  // original message verbatim. Both paths still flow through Hono's
+  // app.onError(errorHandler) → sanitized 500 + request_id correlator
+  // chain (Sentry tag, stdout [err] line, body request_id) — only the
+  // log/Sentry message content changes from misleading to accurate.
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`organizations lookup failed: ${error.message}`)
+  }
+  if (!org) throw new Error(`Org ${orgId} not found`)
 
   if (org.plan_type === 'ltd') {
     if (!org.vault_byok_openrouter_secret_id) {

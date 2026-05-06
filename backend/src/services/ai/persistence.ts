@@ -52,6 +52,13 @@ export interface PersistAIDecisionInput {
   org_id: string
   /** Correlation id from aiLogger.newTraceId(); links to ai_logs rows. */
   trace_id: string
+  /**
+   * Outer per-HTTP-request correlator from tracingMiddleware. Stamped on
+   * the 'persisted' / 'persistence_error' log lines so post-mortem
+   * reconstruction can pivot from the originating [req] envelope to
+   * the persistence outcome. Optional — non-HTTP callers may omit it.
+   */
+  request_id?: string
   /** Optional — for downstream observability when orchestration has it. */
   model?: string
   user_id?: string
@@ -96,6 +103,7 @@ export async function persistAIDecision(
     logAIInteraction(buildPersistenceErrorLog({
       org_id: input.org_id ?? '<missing>',
       trace_id: input.trace_id,
+      request_id: input.request_id,
       model: input.model ?? '<unknown>',
       user_id: input.user_id,
       error: err,
@@ -127,6 +135,7 @@ export async function persistAIDecision(
     logAIInteraction(buildPersistenceErrorLog({
       org_id: input.org_id,
       trace_id: input.trace_id,
+      request_id: input.request_id,
       model: input.model ?? '<unknown>',
       user_id: input.user_id,
       error: wrapped,
@@ -136,6 +145,7 @@ export async function persistAIDecision(
 
   logAIInteraction({
     trace_id: input.trace_id,
+    request_id: input.request_id,
     ts: new Date().toISOString(),
     phase: 'persisted',
     level: 'info',
@@ -218,12 +228,14 @@ export async function persistAILog(
 function buildPersistenceErrorLog(args: {
   org_id: string
   trace_id: string
+  request_id?: string
   model: string
   user_id?: string
   error: Error
 }): AILogEntry {
   return {
     trace_id: args.trace_id,
+    request_id: args.request_id,
     ts: new Date().toISOString(),
     phase: 'persistence_error',
     level: 'error',

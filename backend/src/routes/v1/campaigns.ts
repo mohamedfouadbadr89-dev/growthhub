@@ -8,7 +8,10 @@ import {
 } from '../../services/campaigns/campaigns.js'
 import { generateAiSuggestions } from '../../services/campaigns/ai-suggestions.js'
 
-type Variables = { userId: string; orgId: string; orgRole?: string }
+// requestId is set by tracingMiddleware mounted at app level (index.ts).
+// Declaring it here makes c.get('requestId') type-safe so the campaigns
+// push route can pass it through pushCampaign → executeAction.
+type Variables = { userId: string; orgId: string; orgRole?: string; requestId: string }
 
 export const campaignsRouter = new Hono<{ Variables: Variables }>()
 
@@ -38,8 +41,12 @@ campaignsRouter.get('/', async (c) => {
     const result = await listCampaigns(orgId, { status, platform, limit, offset })
     return c.json(result)
   } catch (err) {
-    console.error('[campaigns] list error:', err)
-    return c.json({ error: 'Internal server error' }, 500)
+    // Pre-fix: catch + console.error + return generic 500 — bypassed
+    // app.onError(errorHandler), breaking the established correlator chain
+    // (no request_id in body, no Sentry event, no stdout [err] line with
+    // request_id). Throw → errorHandler sanitizes + correlates per
+    // CONSTITUTION §3 "Log errors to Sentry in production".
+    throw err
   }
 })
 
@@ -77,8 +84,9 @@ campaignsRouter.post('/', async (c) => {
   } catch (err) {
     const e = err as Error & { code?: string }
     if (e.code === 'CONFLICT') return c.json({ error: e.message }, 409)
-    console.error('[campaigns] create error:', err)
-    return c.json({ error: 'Internal server error' }, 500)
+    // Internal/infrastructure error — let errorHandler sanitize + correlate
+    // (Sentry tag, stdout [err] with request_id, sanitized 500 body).
+    throw err
   }
 })
 
@@ -92,8 +100,8 @@ campaignsRouter.get('/:id', async (c) => {
     if (!campaign) return c.json({ error: 'Campaign not found' }, 404)
     return c.json(campaign)
   } catch (err) {
-    console.error('[campaigns] detail error:', err)
-    return c.json({ error: 'Internal server error' }, 500)
+    // Internal/infrastructure error — let errorHandler sanitize + correlate.
+    throw err
   }
 })
 
@@ -133,8 +141,8 @@ campaignsRouter.patch('/:id', async (c) => {
       return c.json({ error: e.message }, 400)
     }
     if (e.code === 'FORBIDDEN') return c.json({ error: e.message }, 403)
-    console.error('[campaigns] patch error:', err)
-    return c.json({ error: 'Internal server error' }, 500)
+    // Internal/infrastructure error — let errorHandler sanitize + correlate.
+    throw err
   }
 })
 
@@ -157,8 +165,8 @@ campaignsRouter.post('/:id/ai-suggestions', async (c) => {
     if (e.code === 'NOT_FOUND') {
       return c.json({ error: 'Campaign not found' }, 404)
     }
-    console.error('[campaigns] ai-suggestions error:', err)
-    return c.json({ error: 'Internal server error' }, 500)
+    // Internal/infrastructure error — let errorHandler sanitize + correlate.
+    throw err
   }
 })
 
@@ -180,7 +188,7 @@ campaignsRouter.post('/:id/push', async (c) => {
   }
 
   try {
-    const result = await pushCampaign(orgId, id, platform)
+    const result = await pushCampaign(orgId, id, platform, c.get('requestId'))
     return c.json(result, 202)
   } catch (err) {
     const e = err as Error & { code?: string; platform?: string }
@@ -192,7 +200,7 @@ campaignsRouter.post('/:id/push', async (c) => {
         422
       )
     }
-    console.error('[campaigns] push error:', err)
-    return c.json({ error: 'Internal server error' }, 500)
+    // Internal/infrastructure error — let errorHandler sanitize + correlate.
+    throw err
   }
 })

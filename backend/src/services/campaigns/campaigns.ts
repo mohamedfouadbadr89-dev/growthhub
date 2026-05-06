@@ -56,6 +56,55 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 const META_CREATE_ACTION_ID  = '00000000-0000-0000-0000-000000000009'
 const GOOGLE_CREATE_ACTION_ID = '00000000-0000-0000-0000-000000000010'
 
+// ─── Schema-drift-tolerant DB error guard ─────────────────────────────
+//
+// Per CONSTITUTION §3 "Fail Loudly". Several reads in this service
+// touch tables in known-deferred or known-malformed states:
+//
+//   - `campaign_metrics` is Phase 2 (data ingestion), intentionally
+//     deferred per SYSTEM_CONTROL.md → expect Postgres 42P01
+//     ("relation does not exist") until Phase 2 unlocks.
+//
+//   - The legacy `decisions` table is deployed (per remote_schema dump
+//     20260503170252) but its `org_id` is UUID; this code passes Clerk's
+//     TEXT `org_xxx` ids → expect 22P02 ("invalid input syntax for type
+//     uuid"). Phase 4 minimal migration preamble explicitly tags this
+//     table as "deprecated and malformed in the live DB". The /decisions
+//     route is already gated behind 503; the campaigns overlay is the
+//     last remaining caller of the malformed table.
+//
+// This guard treats ONLY those two specific codes as documented
+// silent-degrade conditions (campaigns continue to render with zero
+// metrics / no decisions overlay — preserves operational behavior).
+// Any OTHER Postgres error (RLS denial, network, unknown column,
+// connection pool, etc.) throws — surfacing real production issues
+// rather than masking them as "empty data".
+//
+// Pre-fix behavior was `const { data } = await ...` which dropped the
+// error object entirely; that was a Constitution §3 violation
+// regardless of root cause.
+const EXPECTED_SCHEMA_DRIFT = new Set([
+  '42P01', // relation does not exist  → Phase 2 deferred tables
+  '22P02', // invalid input syntax for type → legacy decisions.org_id type drift
+])
+
+function checkDbReadError(
+  err: { code?: string; message?: string } | null,
+  table: string,
+  ctx: string,
+): void {
+  if (!err) return
+  const code = err.code ?? '?'
+  if (EXPECTED_SCHEMA_DRIFT.has(code)) {
+    console.warn(
+      `[campaigns] ${table} read silently degraded (${code}): ${err.message ?? '<no message>'} — context: ${ctx}`,
+    )
+    return
+  }
+  console.error(`[campaigns] ${table} read failed (${code}):`, err)
+  throw new Error(`${table} read failed: ${err.message ?? code}`)
+}
+
 async function fetchMetricsByOrg(
   orgId: string,
   days: number
@@ -64,11 +113,12 @@ async function fetchMetricsByOrg(
   since.setDate(since.getDate() - days)
   const fromDate = since.toISOString().slice(0, 10)
 
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('campaign_metrics')
     .select('campaign_name, platform, spend, revenue, conversions, impressions')
     .eq('org_id', orgId)
     .gte('date', fromDate)
+  checkDbReadError(error, 'campaign_metrics', 'fetchMetricsByOrg')
 
   const map = new Map<string, CampaignMetrics>()
   for (const row of data ?? []) {
@@ -136,7 +186,25 @@ export async function getCampaignById(orgId: string, id: string): Promise<Campai
     .eq('id', id)
     .single()
 
-  if (error || !row) return null
+  // Discriminate "campaign genuinely absent" from "DB layer failed".
+  //
+  // Pre-fix this branch was `if (error || !row) return null` → route then
+  // mapped null to 404 'Campaign not found'. Pattern-identical to the
+  // anti-patterns closed in auth.ts/verify, actions.ts/:id, history.ts/:id,
+  // and creative-generator.ts:resolveApiKey in prior turns. Every
+  // non-PGRST116 PostgrestError (network failure, RLS denial, schema drift,
+  // connection pool exhaustion) was silently rebranded as "Campaign not
+  // found" — pointing operators chasing production failures at the wrong
+  // root cause (resource absence vs infrastructure / RLS / schema).
+  //
+  // PGRST116 → null preserves the route's 404 mapping for the genuine
+  // not-found case. Every other error throws → caught by route catch
+  // (post turn -1 hardening) → propagates to errorHandler → sanitized
+  // 500 with request_id correlator chain.
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`campaigns lookup failed: ${error.message}`)
+  }
+  if (!row) return null
 
   const since30 = new Date()
   since30.setDate(since30.getDate() - 30)
@@ -147,12 +215,13 @@ export async function getCampaignById(orgId: string, id: string): Promise<Campai
   const from14 = since14.toISOString().slice(0, 10)
 
   // 30-day aggregated metrics
-  const { data: metricRows } = await supabaseAdmin
+  const { data: metricRows, error: metricErr } = await supabaseAdmin
     .from('campaign_metrics')
     .select('spend, revenue, conversions, impressions')
     .eq('org_id', orgId)
     .ilike('campaign_name', row.name as string)
     .gte('date', from30)
+  checkDbReadError(metricErr, 'campaign_metrics', 'getCampaignById:30day_metrics')
 
   let spend = 0, revenue = 0, conversions = 0, impressions = 0
   for (const m of metricRows ?? []) {
@@ -164,13 +233,14 @@ export async function getCampaignById(orgId: string, id: string): Promise<Campai
   const roas = spend > 0 ? revenue / spend : 0
 
   // 14-day daily trend
-  const { data: trendRows } = await supabaseAdmin
+  const { data: trendRows, error: trendErr } = await supabaseAdmin
     .from('campaign_metrics')
     .select('date, spend, revenue')
     .eq('org_id', orgId)
     .ilike('campaign_name', row.name as string)
     .gte('date', from14)
     .order('date', { ascending: true })
+  checkDbReadError(trendErr, 'campaign_metrics', 'getCampaignById:14day_trend')
 
   const trendMap = new Map<string, { spend: number; revenue: number }>()
   for (const t of trendRows ?? []) {
@@ -187,13 +257,17 @@ export async function getCampaignById(orgId: string, id: string): Promise<Campai
     roas:  vals.spend > 0 ? vals.revenue / vals.spend : 0,
   }))
 
-  // Decisions overlay: active decisions referencing campaign by name
-  const { data: decisionRows } = await supabaseAdmin
+  // Decisions overlay: active decisions referencing campaign by name.
+  // Reads the legacy `decisions` table (deployed but malformed: org_id is
+  // UUID, not TEXT) — checkDbReadError tolerates the expected 22P02
+  // type-cast error and degrades to empty overlay; any other error throws.
+  const { data: decisionRows, error: decisionErr } = await supabaseAdmin
     .from('decisions')
     .select('id, title, confidence_score, status, action_id')
     .eq('org_id', orgId)
     .ilike('campaign_name', row.name as string)
     .eq('status', 'active')
+  checkDbReadError(decisionErr, 'decisions', 'getCampaignById:overlay')
 
   const decisions = (decisionRows ?? []).map((d) => ({
     id:               d.id as string,
@@ -264,7 +338,15 @@ export async function updateCampaign(
     .eq('id', id)
     .single()
 
-  if (fetchErr || !existing) return null
+  // Discriminate "campaign genuinely absent" from "DB layer failed".
+  // Pattern-identical to getCampaignById's discriminator above (and to
+  // the prior turns' route-level hardenings). PGRST116 → null preserves
+  // the route's 404 mapping for genuine not-found. Other Postgrest codes
+  // throw → route catch → errorHandler → sanitized 500 + correlator.
+  if (fetchErr && fetchErr.code !== 'PGRST116') {
+    throw new Error(`campaigns lookup failed: ${fetchErr.message}`)
+  }
+  if (!existing) return null
 
   if (patch.status) {
     if (!VALID_STATUSES.has(patch.status)) {
@@ -303,7 +385,12 @@ export async function updateCampaign(
 export async function pushCampaign(
   orgId: string,
   campaignId: string,
-  platform: string
+  platform: string,
+  // Optional outer per-HTTP-request correlator from tracingMiddleware.
+  // When supplied, threaded into executeAction so the resulting [exec]
+  // log lines carry the same request_id as the [req] envelope. Optional
+  // for backward compat with callers that don't have HTTP context.
+  requestId?: string,
 ): Promise<{ history_id: string; action_id: string; status: string }> {
   const { data: campaign, error } = await supabaseAdmin
     .from('campaigns')
@@ -333,6 +420,7 @@ export async function pushCampaign(
       targeting:     campaign.targeting,
     },
     orgId,
+    requestId,
     executedBy: 'manual',
   })
 
