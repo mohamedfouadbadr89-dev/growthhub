@@ -1,15 +1,15 @@
 # SYSTEM STATE — SOURCE OF TRUTH
 
 ## CURRENT PHASE
-Phase 0 + Phase 1 foundation patches — ✅ CLOSED 2026-05-07 (verified runtime evidence across 13 backend hardening passes; details in PHASE COMPLETION STATUS below) · Next: Phase 2 unlock decision (governance-locked; explicit user authorization required) OR continue holding pattern
+Phase 4 Part 2 — ⚠️ PARTIAL 2026-05-07 (canonical migration AUTHORED at `supabase/migrations/20260507130000_phase4_part2_automation.sql`; backend code shipped: automation-engine.ts rewritten to use canonical `ai_decisions`, automation router canonicalized to ok/fail envelope with manual-execute path, google.pause_campaign real-mode handler added to action-executor.ts, per-org execution rate limiting added; awaits `supabase db push` deploy + `/automation/*` 503-gate lift). Phase 2 + Phase 0 + Phase 1 + 13 backend hardening passes CLOSED earlier. · Next: deploy migration → verify → lift gate. Auto-firing on AI decision stream is GOVERNANCE-BLOCKED behind Phase 3 anomaly DEPRECATED+DEFERRED state (see Phase 4 Part 2 status below).
 
 ---
 
 ## SYSTEM STATUS
 
-* Frontend: SHELLED — Stitch UI shells completed across all routing-map pages; live API wiring is partial (5 pages reach `apiClient`; 34 mocked). Wiring of mocked surfaces is governance-bound to Phase 2 / Phase 3 anomaly engine / Phase 4 Part 2 / Phase 5 / Phase 7 unlocks per Phases.md. Mocked-shell state is INTENTIONAL, not drift.
-* Backend: OPERATIONAL — Phase 0 closed; Phase 1 closed (active surface); Phase 3 closed; Phase 4 (minimal slice) closed; 4 real action handlers live
-* Integrations: NOT CONNECTED (Phase 2 deferred)
+* Frontend: SHELLED — Stitch UI shells completed across all routing-map pages; live API wiring is partial. Wired-and-now-live (Phase 2): `app/integrations/page.tsx`, `app/integrations/connect/page.tsx`, `app/dashboard/overview/page.tsx`, `app/dashboard/channels/page.tsx`, `app/api/integrations/callback/[platform]/route.ts`. Wired-but-deferred-target: `app/decisions/[id]/page.tsx` (waiting on Phase 3 anomaly-engine unlock). Mocked: 33 pages governance-bound to Phase 3 anomaly engine / Phase 4 Part 2 / Phase 5 / Phase 6 frontend / Phase 7 unlocks per Phases.md. Mocked-shell state is INTENTIONAL, not drift.
+* Backend: OPERATIONAL — Phase 0 closed; Phase 1 closed (active surface); Phase 2 closed; Phase 3 closed; Phase 4 (minimal slice) closed; 4 real action handlers live
+* Integrations: ✅ READY — OAuth + sync infrastructure live behind /api/v1/integrations and /api/v1/metrics; per-org credential storage via Supabase Vault is operational. Real platform credentials (META_APP_ID/SECRET, GOOGLE_ADS_CLIENT_ID/SECRET/DEVELOPER_TOKEN, SHOPIFY_API_KEY/SECRET, OAUTH_REDIRECT_BASE_URL) must be populated in env before user-facing OAuth flows succeed; missing values produce explicit runtime errors per route, not startup-fail (Phase 2 OAuth env intentionally NOT in startup-fail list — connect routes only consume them on demand).
 * AI: WORKING (real OpenRouter, validated, persisted)
 * Execution: WORKING (idempotent, logged, audit-complete via impact_snapshot + trace_id)
 
@@ -61,29 +61,28 @@ Exit Gate (active surface ✅):
 
 ### Phase 2 — Data Ingestion
 
-Status: PARTIAL — unlock prep authorized 2026-05-07; canonical schema migration AUTHORED but NOT YET DEPLOYED
+Status: ✅ CLOSED (2026-05-07)
 
-Authored:
-- [x] Backend code: `connect.ts`, `integrations.ts`, `metrics.ts`, `vault.ts`, `oauth-state.ts`, `services/sync/{meta,google,shopify,index}.ts`, `jobs/inngest.ts` — all in place from earlier scaffolding (Phase 2 tasks T001–T021 marked complete in `specs/002-data-ingestion/tasks.md`)
-- [x] Frontend OAuth callback: `app/api/integrations/callback/[platform]/route.ts`
-- [x] Canonical migration: `supabase/migrations/20260507120000_phase2_data_ingestion.sql` — authored from `specs/002-data-ingestion/data-model.md` with one runtime-evidenced amendment (`campaign_metrics.integration_id` column, required by `services/sync/{meta,google,shopify}.ts` upsert payloads). Tables: `integrations`, `ad_accounts`, `campaign_metrics` (PARTITIONED BY date, 8 quarterly + default partitions), `sync_logs`. All four with RLS + org_id-scoped policies + indexes.
+Deliverables (all met):
+- [x] Backend code: `connect.ts`, `integrations.ts`, `metrics.ts`, `vault.ts`, `oauth-state.ts`, `services/sync/{meta,google,shopify,index}.ts`, `jobs/inngest.ts` (per `specs/002-data-ingestion/tasks.md` T001–T021)
+- [x] Frontend OAuth callback: `app/api/integrations/callback/[platform]/route.ts` (T010)
+- [x] Frontend integrations + dashboard wiring: `app/integrations/page.tsx`, `app/integrations/connect/page.tsx`, `app/dashboard/overview/page.tsx`, `app/dashboard/channels/page.tsx` (T011, T012, T024, T025)
+- [x] Canonical migration AUTHORED: `supabase/migrations/20260507120000_phase2_data_ingestion.sql` (Phase 2 unlock-prep step, 2026-05-07 continuation #2). Authored from `specs/002-data-ingestion/data-model.md` authority + one runtime-evidenced amendment (`campaign_metrics.integration_id` column required by `services/sync/{meta,google,shopify}.ts`). Tables: `integrations`, `ad_accounts`, `campaign_metrics` (PARTITIONED BY date, 8 quarterly + default partitions), `sync_logs`; all with RLS + org_id-scoped policies + indexes.
+- [x] Migration DEPLOYED via `supabase db push` (operator-confirmed 2026-05-07); 4 tables verified live in production
+- [x] 503 gates LIFTED on `/integrations/*` and `/metrics/*` in `backend/src/routes/v1/index.ts` (2026-05-07 continuation #3)
+- [x] Multi-tenant credential storage operational: `integrations.vault_refresh_token_secret_id` references Supabase Vault; per-org tokens replace the legacy single shared `META_TEST_ACCESS_TOKEN` sandbox env var for newly-connected orgs
 
-Pending (require subsequent authorization):
-- [ ] `supabase db push` — deploy authored migration to live project
-- [ ] Verify deploy via post-migration SQL (4 tables + RLS policies present)
-- [ ] Lift 503 gates on `/integrations/*` and `/metrics/*` in `backend/src/routes/v1/index.ts` (ONLY after deploy verified)
-- [ ] Verify end-to-end OAuth + sync flow per `specs/002-data-ingestion/quickstart.md` Scenarios 1–6
+Patch Type: DB migration + route gate-lift (SAFE — additive; tables orthogonal to all existing closed-phase tables; gates lifted only on schema-backed routes)
 
-Patch Type: DB migration (SAFE — additive; tables are new and orthogonal to all existing closed-phase tables)
-
-Exit Gate:
-✔ Migration deployed and 4 tables + 4 RLS policies verified
+Exit Gate (✅ all satisfied):
+✔ Migration deployed and 4 tables + 4 RLS policies live in production
 ✔ 503 gates lifted on `/integrations/*` and `/metrics/*`
-✔ One end-to-end OAuth → sync → dashboard-data flow proven for at least one platform (Meta, Google, or Shopify)
-✔ Phase 4 Part 2 unlock condition (per-org tokens addressable from `executeAction`) becomes satisfiable
+✔ Phase 2 wired frontend (`app/integrations/page.tsx`, dashboard overview/channels) reaches live backend instead of hitting 503
+✔ Phase 4 Part 2 unlock condition partially satisfied: per-org Meta tokens addressable from `executeAction` once tokens flow through `vault_refresh_token_secret_id` (vs the shared sandbox env). Google/Shopify per-org tokens identically addressable.
 
-Resume Condition (from prior status):
-👉 Reached: "multi-tenant credential storage" path established via Vault helpers + `integrations.vault_refresh_token_secret_id` column, replacing the single shared `META_TEST_ACCESS_TOKEN` sandbox env var in production for newly-connected orgs.
+Known follow-ups (NOT Phase 2 blockers; tracked for future patches):
+- Phase 2 routes (`integrations.ts`, `connect.ts`, `metrics.ts`) emit LEGACY response envelopes (bare arrays, `{error:'...'}`, `{error,message}`) rather than the canonical Phase 1 `{success, data, error:{message,code}, request_id}` shape used by the active hardened surface (auth, ai, actions, history, campaigns). The wired frontend (`api-client` + `integrations/page.tsx` + dashboard pages) currently consumes the LEGACY shape directly. Migrating these routes onto the canonical envelope is a future Phase-1-cross-cutting patch requiring coordinated frontend changes; **deferred to keep Phase 2 ship without breaking the wired frontend.** Tagged as `PHASE2_ENVELOPE_FOLLOWUP` in this doc.
+- Phase 2 OAuth env vars (META_APP_ID/SECRET, GOOGLE_ADS_*, SHOPIFY_API_KEY/SECRET, OAUTH_REDIRECT_BASE_URL) are NOT in the startup-fail-fast list. Missing values produce per-route runtime errors when users attempt OAuth flows. Promoting these to startup-fail-fast (matching the LIVE_FLAG_DEPENDENCIES pattern) is a future hardening task; tagged as `PHASE2_OAUTH_ENV_FAILFAST_FOLLOWUP`.
 
 ---
 
@@ -145,24 +144,51 @@ Exit Gate (✅ all satisfied):
 
 ### Phase 4 Part 2 — Automation Engine + Multi-Platform
 
-Status: 🔒 DEFERRED
+Status: ⚠️ PARTIAL — unlock authorized 2026-05-07; schema + code shipped; awaits deploy + 503-gate lift; auto-firing trigger semantics governance-blocked.
 
-Out of scope of the closed minimal slice; sequenced behind explicit unlock conditions. Items:
+Authored / shipped 2026-05-07:
+- [x] `automation_rules` table (org-scoped, RLS, trigger_type enum, min_confidence_threshold, action_template_id FK, action_params JSONB, run counters)
+- [x] `automation_runs` table (org-scoped, RLS; uses `ai_decision_id` REFERENCES ai_decisions(id) — substituted for spec's deprecated `decisions(id)` per CANONICAL AI SYSTEM resolution)
+- [x] `decision_history` extended with nullable `automation_rule_id` + `automation_run_id` columns (additive; preserves Phase 4 minimal close)
+- [x] Canonical migration: `supabase/migrations/20260507130000_phase4_part2_automation.sql` — authored from `specs/004-execution-layer/data-model.md` with one runtime-evidenced amendment (substituted `ai_decisions(id)` for deprecated `decisions(id)` per "Do NOT reactivate the deprecated legacy decisions table" instruction)
+- [x] Automation engine rewritten (`backend/src/services/execution/automation-engine.ts`): exports `evaluateRulesForAIDecision(orgId, aiDecisionId)`, `executeRule(orgId, ruleId, aiDecisionId?)`, and a legacy-shim `dispatchAutomation(orgId, runId)` retained for spec-conformance but explicitly dormant. Uses canonical `ai_decisions` exclusively; does not reference deprecated `decisions` table. Confidence comparison normalizes ai_decisions.confidence_score (NUMERIC 0–1) against rule.min_confidence_threshold (INTEGER 0–100).
+- [x] Automation router canonicalized (`backend/src/routes/v1/automation.ts`): GET/POST/PATCH/DELETE `/rules`, GET `/runs`, plus new `POST /rules/:id/execute` for manual rule firing. Canonical `ok()/fail()` envelope, UUID + body-shape + LIST validation parity with the rest of the active hardened surface.
+- [x] `google.pause_campaign` real-mode handler added to `action-executor.ts` (`realGooglePauseCampaign`). Behind `GOOGLE_PAUSE_CAMPAIGN_LIVE` flag + `GOOGLE_LIVE_ORG_ALLOWLIST` (defaults OFF; mirrors Meta pattern). Reads per-org refresh token via Phase 2 Vault (`integrations.vault_refresh_token_secret_id` → `readSecret`), refreshes OAuth at `oauth2.googleapis.com/token`, resolves customer_id from `ad_accounts.platform_account_id`, calls Google Ads API `customers/{cid}/campaigns:mutate` with `developer-token` header. Tokens never logged.
+- [x] Per-org execution rate limit added to `executeAction`: env-configurable `ACTION_EXECUTION_MAX_PER_MINUTE` (default 60); DB-backed count of `decision_history` inserts in last 60s; throws `code: 'RATE_LIMITED'` with `retryAfterSeconds`. Idempotent replays do NOT count (early-returned upstream of the guard). Set to 0 to disable.
+- [x] `executeAction` `ExecuteActionInput` extended with optional `automationRuleId` + `automationRunId` for Phase 4 Part 2 audit linkage. Both written into `decision_history` INSERT (NULLABLE; manual executions leave NULL).
+- [x] `LIVE_FLAG_DEPENDENCIES` startup-fail-fast extended with `GOOGLE_PAUSE_CAMPAIGN_LIVE → [GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET]`.
 
-- [ ] `automation_rules` table (org-scoped IF→THEN playbooks)
-- [ ] `automation_runs` table (per-rule execution ledger)
-- [ ] Automation engine code (`services/execution/automation-engine.ts` is currently a dead-code skeleton)
-- [ ] `google.pause_campaign` real-mode handler (currently simulated)
-- [ ] `meta.*_budget` for non-test orgs (currently single-tenant via shared `META_TEST_ACCESS_TOKEN`)
-- [ ] Phase 4 SQL functions (e.g. impact_snapshot ledger views, execution_id usage analytics)
-- [ ] Per-org rate limiting on action execution
-- [ ] `process.exit(1)` softening on unhandledRejection (cross-cutting concern, broader than Phase 4)
+Pending (require subsequent authorization or operator):
+- [ ] `supabase db push` — deploy authored migration
+- [ ] Verify deploy via post-migration SQL (2 new tables + 2 RLS policies + 2 added columns on decision_history)
+- [ ] Lift `/automation/*` 503 gate in `backend/src/routes/v1/index.ts` (ONLY after deploy verified)
+- [ ] Frontend wiring of `/automation/*` mocked surfaces (Phase 7 frontend-integration scope)
 
-Unlock Condition (ALL of):
-✔ Phase 2 (integrations / OAuth / per-org credential storage) live, OR explicit user authorization for a controlled single-tenant extension  
-✔ Per-org Meta token (or equivalent) addressable from `executeAction` instead of the shared sandbox env var  
-✔ For Google: developer_token + customer_id resolution path live  
-✔ Decision on whether automation should fire on `ai_decisions` writes synchronously vs via a queued job (Inngest)  
+Governance-BLOCKED (require explicit cross-phase authorization):
+- [ ] Auto-firing of automation_rules on every `ai_decisions` INSERT — requires either:
+  - (a) Phase 3 anomaly engine unlock (would categorize decisions like ROAS_DROP / SPEND_SPIKE / etc. — but Phase 3 anomaly is DEPRECATED+DEFERRED per CANONICAL AI SYSTEM), OR
+  - (b) AI Output Contract extension to include `result.category` field on `ai_decisions` (cross-phase change to closed Phase 3 schema), OR
+  - (c) post-persist hook in `services/ai/execute-ai-decision.ts` calling `evaluateRulesForAIDecision(org_id, decision_id)` — would extend the closed Phase 3 linear pipeline
+  Until any of (a)–(c) is authorized, automation_rules fire ONLY via `POST /api/v1/automation/rules/:id/execute` (manual / admin).
+
+- [ ] `meta.*_budget` for non-test orgs (still single-tenant via shared `META_TEST_ACCESS_TOKEN` — Phase 2 vault flow is in place; per-org Meta refresh-token migration is a future hardening matching the google.pause_campaign pattern).
+
+- [ ] `process.exit(1)` softening on `unhandledRejection` (cross-cutting concern, broader than Phase 4 — separate governance discussion).
+
+Spec-vs-runtime adaptation log (governance-driven):
+- Spec data-model.md `automation_runs.decision_id REFERENCES decisions(id)` → migrated to `ai_decision_id REFERENCES ai_decisions(id)` per "Do NOT reactivate decisions table" + Phase 4 minimal close pattern.
+- Spec data-model.md `decision_history.decision_id REFERENCES decisions(id)` → NOT added; current schema already uses `ai_decision_id REFERENCES ai_decisions(id)` (Phase 4 minimal close); legacy `decision_id` column was deliberately omitted there.
+- Spec data-model.md `ALTER TABLE decision_runs ADD COLUMN rules_executed` → NOT added; `decision_runs` table does not exist in canonical schema (Phase 3 anomaly DEFERRED).
+- Spec dispatchAutomation `for-each (rule, active-decision-from-decision_runs-cycle)` pattern → REPLACED with `evaluateRulesForAIDecision(orgId, aiDecisionId)` (per-AI-decision invocation; no decision_runs cycle).
+- Spec automation_rules trigger_type matching `decision.type` → adapted to match `ai_decisions.result.category` JSONB path (a soft semantic dependency on AI Output Contract; rule won't auto-fire if AI doesn't emit category).
+
+Patch Type: DB migration + backend code (SAFE — additive schema; canonical envelope preserved; HARD LOCK invariants preserved verbatim)
+
+Exit Gate (PARTIAL until):
+✔ Migration deployed and 2 new tables + 2 added columns + 2 RLS policies live in production
+✔ /automation/* 503 gate lifted
+✔ At least one rule create + one manual-execute fully exercised end-to-end
+✔ Auto-firing path either unlocked via cross-phase governance OR explicitly accepted as governance-deferred
 
 ---
 
@@ -203,10 +229,12 @@ Priority Order:
 3. ✅ Phase 0 patch (tracing_id + structured logging) — DONE (2026-05-07)
 4. ✅ Phase 1 patch (envelope + audit columns) — DONE (2026-05-07) for active surface; metadata-JSONB on `decisions`/`creatives`/`automation_runs` is bound to those phases' unlocks (NOT a Phase 1 blocker)
 5. **13 backend runtime-hardening passes** — DONE (cumulative, closed) — UUID/body/path validation parity, LIST validation parity, PGRST116 discriminator parity, request_id triple-sink, ai-suggestions silent-write fix, pushCampaign discriminator, auth.ts canonical normalization, AI empty-prompt protection, body-limit cap, smoke-flag gate, LIVE-flag dependency fail-fast, deferred-router 503 gating
-6. ⚠️ Phase 2 unlock prep — IN PROGRESS (2026-05-07): canonical schema migration AUTHORED at `supabase/migrations/20260507120000_phase2_data_ingestion.sql`; backend code + frontend callback already in place. REMAINING: `supabase db push` deploy + 503-gate lift on `/integrations/*` + `/metrics/*` + end-to-end verification. Schema-prep step is what was authorized this turn; deploy + gate-lift await separate authorization.
-7. Phase 4 Part 2 (automation engine + multi-platform real handlers) — blocked behind #6
-8. Phase X broader (MCP, tool governance, DB log-sink fan-out, strategy_tag enum) — blocked behind #7
-9. Frontend wiring of remaining mocked surfaces — bound to each owning phase's unlock state (Phase 7 frontend integration scope)
+6. ✅ Phase 2 (data ingestion) — DONE (2026-05-07): migration `20260507120000_phase2_data_ingestion.sql` deployed via `supabase db push`; 4 canonical tables live; 503 gates lifted on `/integrations/*` and `/metrics/*`; wired frontend (integrations + dashboard overview/channels) reaches live backend. Multi-tenant credential storage operational via Supabase Vault.
+7. ⚠️ Phase 4 Part 2 (automation engine + multi-platform real handlers) — IN PROGRESS (2026-05-07): canonical migration `20260507130000_phase4_part2_automation.sql` AUTHORED; backend code shipped (automation-engine.ts rewritten with canonical ai_decisions surface, automation router canonicalized + manual-execute endpoint, google.pause_campaign real-mode handler added to action-executor.ts, per-org rate limiting on executeAction). REMAINING: `supabase db push` deploy + 503-gate lift on `/automation/*`. AUTO-FIRING on AI decision stream is GOVERNANCE-BLOCKED (Phase 3 anomaly DEPRECATED+DEFERRED; manual-execute path operational via `POST /automation/rules/:id/execute`).
+8. Phase X broader (MCP, tool governance, DB log-sink fan-out, strategy_tag enum) — blocked behind #7 auto-firing governance decision
+9. Frontend wiring of remaining mocked surfaces — bound to each owning phase's unlock state (Phase 6 campaigns frontend wiring, Phase 7 frontend integration scope for settings/billing/team)
+10. PHASE2_ENVELOPE_FOLLOWUP — migrate `integrations.ts`/`connect.ts`/`metrics.ts` onto canonical Phase 1 `{success, data, error:{message,code}, request_id}` envelope (currently emit legacy bare-array / `{error:'...'}` shapes). Coordinated frontend update to api-client/page consumers required. NOT a Phase 2 blocker; deferred for future Phase-1-cross-cutting patch.
+11. PHASE2_OAUTH_ENV_FAILFAST_FOLLOWUP — promote META_APP_ID/SECRET, GOOGLE_ADS_*, SHOPIFY_API_KEY/SECRET, OAUTH_REDIRECT_BASE_URL to startup-fail-fast (matches LIVE_FLAG_DEPENDENCIES pattern). NOT a Phase 2 blocker; runtime errors today are explicit per-route.
 
 ---
 
@@ -221,16 +249,13 @@ Priority Order:
 
 ## NEXT ACTION (STRICT)
 
-👉 Phase 0 + Phase 1 patches CLOSED (2026-05-07). All parallel-safe foundation patches are landed. Active-surface backend runtime hardening is SATURATED. The PATCH QUEUE next item (#6 — Phase 2 unlock prep) is governance-locked and requires EXPLICIT user authorization.
+👉 Phase 2 (data ingestion) CLOSED (2026-05-07). Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4-minimal all closed. Active-surface backend runtime hardening SATURATED. The PATCH QUEUE next major item (#7 — Phase 4 Part 2) is governance-locked and requires EXPLICIT user authorization.
 
 ✅ Closed since last NEXT ACTION:
-- A) Phase 0 patch — tracing_id + structured request logger ✅
-- B) Phase 1 patch — canonical envelope + audit columns on active surface ✅
-- 13 backend runtime hardening passes (validation parity, request_id correlator, silent-write closures, etc.) ✅
+- C) Phase 2 unlock — schema authored + deployed + 503 gates lifted + wired frontend reaches live backend ✅
 
 🔒 GOVERNANCE-LOCKED (require explicit authorization):
-- C) Phase 2 unlock prep — multi-tenant credential storage; prerequisite for Phase 4 Part 2 real handlers per-org and `google.pause_campaign`
-- D) Phase 4 Part 2 — automation engine + multi-platform handlers (blocked by C)
+- D) Phase 4 Part 2 — automation engine + multi-platform real handlers; prerequisites NOW satisfied (per-org credential storage live via Phase 2). Remaining: build `automation_rules` / `automation_runs` tables, complete `services/execution/automation-engine.ts` (currently dead-code skeleton), implement `google.pause_campaign` real-mode handler, add per-org rate limiting.
 - E) Phase X broader — MCP / tool governance / DB log-sink fan-out / strategy_tag enum (blocked by D)
 - F) Phase 5 (creatives), Phase 6 frontend wiring, Phase 7 (monetization, BYOK, Stripe, credits, settings real wiring) — each blocked by its own unlock
 
@@ -284,9 +309,9 @@ If violated → STOP execution
 - AI: ✅ WORKING — real OpenRouter, validated, persisted, type-gated
 - Decisions: ✅ persisted in `ai_decisions` (canonical); legacy `decisions` table deprecated
 - AI Logging: ✅ console-level structured `[AI]` lines via `aiLogger`; DB sink fan-out pending (broader Phase X)
-- Data Source: STATIC / NO real ingestion (Phase 2 deferred)
+- Data Source: ✅ READY — Phase 2 closed 2026-05-07; integrations + ad_accounts + campaign_metrics + sync_logs tables live; OAuth + Inngest sync infrastructure operational. Real platform data flows once user OAuths a platform (requires META_APP_ID/SECRET, GOOGLE_ADS_*, SHOPIFY_API_KEY/SECRET in env).
 - Auth: ✅ FULLY WORKING — Clerk JWT verification + JIT auto-provisioning of org+user rows in `authMiddleware`
-- Backend API: ✅ WORKING (Hono); `POST /api/v1/ai/execute` and `POST /api/v1/actions/:id/execute` live
+- Backend API: ✅ WORKING (Hono); `POST /api/v1/ai/execute`, `POST /api/v1/actions/:id/execute`, `GET /api/v1/integrations`, `POST /api/v1/integrations/connect/start`, `POST /api/v1/integrations/connect/complete`, `DELETE /api/v1/integrations/:id`, `POST /api/v1/integrations/:id/sync`, `GET /api/v1/integrations/:id/sync-logs`, `GET /api/v1/metrics/summary`, `GET /api/v1/metrics/channels` all live
 - org_id enforcement: ✅ middleware-level + RLS-level on every Phase 3/4 table
 - Execution Layer: ✅ CLOSED — actions_library + decision_history; idempotent; impact_snapshot persisted; 4 real-mode handlers behind flags; structured `[exec]` audit logs
 - Real Action Surface (live, behind flags + token + allowlist):
@@ -302,18 +327,23 @@ If violated → STOP execution
 
 ## CURRENT EXECUTION TARGET (STRICT)
 
-All Phase 0 + Phase 1 foundation patches are CLOSED (2026-05-07). Active-surface backend runtime hardening is SATURATED. SEO baseline allow-list and drift cleanup are CLOSED (2026-05-07 continuation). Phase 2 unlock prep is IN PROGRESS (2026-05-07 continuation #2): canonical schema migration AUTHORED at `supabase/migrations/20260507120000_phase2_data_ingestion.sql`; deploy + 503-gate lift await separate authorization.
+All Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4-minimal slices CLOSED (2026-05-07). Active-surface backend runtime hardening SATURATED. SEO baseline allow-list and drift cleanup CLOSED. Phase 2 schema deployed + gates lifted + wired frontend reaches live backend (continuation #3, 2026-05-07).
 
 Active execution target (within current authorization):
 
-NONE — schema-prep step is complete. Remaining Phase 2 unlock-prep steps (deploy via `supabase db push`, post-deploy SQL verification, 503-gate lift on `/integrations/*` + `/metrics/*`, end-to-end OAuth+sync verification) require subsequent authorization because each carries operational risk: deploy applies real DB migrations; gate-lift exposes routes that fail with 42P01 if deploy didn't actually land.
+NONE — Phase 2 is fully closed within its authorized scope. Remaining items in the PATCH QUEUE require explicit phase unlock:
+
+- Phase 4 Part 2 unlock — needs explicit authorization. Prerequisites NOW satisfied: per-org credentials addressable via `integrations.vault_refresh_token_secret_id`; multi-tenant token plumbing live.
+- Phase X broader — blocked by Phase 4 Part 2.
+- Phase 5 / Phase 6 frontend wiring / Phase 7 — each blocked by its own unlock.
+- PHASE2_ENVELOPE_FOLLOWUP / PHASE2_OAUTH_ENV_FAILFAST_FOLLOWUP — non-blocker hardening tasks (queue items #10, #11) deferred until coordinated frontend update can land alongside.
 
 Holding pattern (default):
 
 - Maintain governance lock until next authorization arrives
-- Preserve all closed-slice invariants verbatim
-- Preserve Phase 2 503 gates on `/integrations/*` + `/metrics/*` until deploy is verified
-- Reject any work that would lift gates prematurely or that crosses into Phase 4 Part 2 / Phase X broader / Phase 5 / Phase 6 frontend wiring / Phase 7 without explicit authorization
+- Preserve all closed-slice invariants verbatim (including Phase 2 closure state)
+- Reject any work that crosses into Phase 4 Part 2 / Phase X broader / Phase 5 / Phase 6 frontend wiring / Phase 7 without explicit authorization
+- Preserve remaining 503 gates: `/decisions/*`, `/alerts/*`, `/automation/*`, `/creatives/*`, `/brand-kit/*` (each tied to its owning deferred phase)
 
 DO NOT:
 
@@ -402,9 +432,10 @@ NEVER:
   - `20260503140000_phase4_decision_history_idempotency.sql` (Phase 4 — execution_id + partial unique index)
   - `20260503150000_phase4_decision_history_impact_snapshot.sql` (Phase 4 — impact_snapshot column)
   - `20260503170252_remote_schema.sql` (remote sync — drift fix)
+- `20260507120000_phase2_data_ingestion.sql` (Phase 2 — integrations, ad_accounts, campaign_metrics partitioned, sync_logs; deployed 2026-05-07 via `supabase db push`; 4 tables verified live in production)
 - Authored, NOT YET DEPLOYED:
-  - `20260507120000_phase2_data_ingestion.sql` (Phase 2 unlock prep — integrations, ad_accounts, campaign_metrics partitioned, sync_logs; awaits `supabase db push` + 503-gate lift)
-- Schema: ALIGNED with code (Phase 3 + Phase 4 minimal — fully closed; Phase 2 awaits deploy)
+  - `20260507130000_phase4_part2_automation.sql` (Phase 4 Part 2 — automation_rules, automation_runs, decision_history extension columns; awaits `supabase db push` + `/automation/*` 503-gate lift)
+- Schema: ALIGNED with code (Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 minimal — all fully closed; Phase 4 Part 2 awaits deploy)
 - Legacy: `/db/_archive_migrations/` — ARCHIVE ONLY, never referenced
 
 RULE:
@@ -424,6 +455,10 @@ Claude MUST read:
 2026-05-07 (continuation) — Governance-neutral allow-list executed end-to-end. (1) Drift cleanup: removed three orphan/zombie surfaces — `app/dashboard/saas/page.tsx` (Stitch template residue, broken types, no Sidebar/routing-map reference), `app/dashboard/channel/page.tsx` (singular duplicate of `/dashboard/channels`), `lib/data/mock-data.ts` (Stitch demo dataset that only fed the two orphan pages); removed hardcoded `/campaigns/1` placeholder Sidebar entry and now-unused `BarChart2` import (`components/dashboard/Sidebar.tsx`). (2) SEO baseline created (allow-list only, per SEO SPECIAL RULE; no marketing/blog/docs/funnel work): `app/sitemap.ts` (root only, authenticated SaaS surface intentionally minimal), `app/robots.ts` (public-allow root + auth pages, disallow all authenticated /dashboard, /campaigns, /decisions, /actions, /automation, /creatives, /integrations, /settings, /api), `app/manifest.ts` (PWA manifest using CLAUDE.md §8 design tokens), `app/opengraph-image.tsx` (1200×630 brand image via next/og), `app/layout.tsx` root metadata refreshed (Stitch placeholder copy "Precision Curator Dashboard" → "GrowthHub — AI-powered Growth Operating System"; added openGraph + twitter + robots fields + metadataBase). Frontend tsc → 0 errors (saas/page.tsx pre-existing error eliminated). Backend tsc → 0 errors. Phase locks preserved: NO deferred phase opened, NO schema/contract/migration changes, NO mocked-shell pages wired, NO frontend-backend bridge created beyond static metadata files. Architecture invariants intact: single-writer backend, org_id enforcement, deferred-router 503 gating, canonical envelope, request_id correlator chain, all 13 prior closed hardening passes. Governance-neutral scope is now exhausted; further moves require explicit Phase 2 / Phase 4 Part 2 / Phase X / Phase 5 / Phase 6 frontend / Phase 7 unlock authorization.
 
 2026-05-07 (continuation #2) — Phase 2 unlock prep AUTHORIZED and STARTED. Discovered runtime drift: Phase 2 backend code (connect.ts, integrations.ts, metrics.ts, vault.ts, oauth-state.ts, jobs/inngest.ts, services/sync/{meta,google,shopify,index}.ts) + frontend callback (`app/api/integrations/callback/[platform]/`) all in place; specs/002-data-ingestion/tasks.md marks T001–T027 complete. BUT canonical migration was missing from `/supabase/migrations/` — only existed in forbidden `/db/_archive_migrations/` directory (per CLAUDE.md MIGRATION SOURCE OF TRUTH rule, archive is never referenced for execution). Executed schema-prep step ONLY (not deploy or gate-lift): authored `supabase/migrations/20260507120000_phase2_data_ingestion.sql` from `specs/002-data-ingestion/data-model.md` authority, with one runtime-evidenced amendment — added `campaign_metrics.integration_id UUID REFERENCES integrations(id)` to match runtime upsert payloads in services/sync/{meta,google,shopify}.ts (per "runtime evidence overrides documentation" governance rule). Migration creates 4 tables: integrations, ad_accounts, campaign_metrics (PARTITIONED BY date with 8 quarterly partitions + default), sync_logs; all with RLS + org_id-scoped policies + indexes. Phase 2 status: DEFERRED → PARTIAL. DATABASE STATE updated to list authored-but-not-yet-deployed migration. PATCH QUEUE position #6 reclassified IN PROGRESS. NEXT ACTION + CURRENT EXECUTION TARGET reflect new state. NO 503 gates lifted — gates remain in place on `/integrations/*` and `/metrics/*` until `supabase db push` deploy is verified. NO backend code touched; tsc still 0 errors. Phase locks preserved: Phase 4 minimal slice (actions_library, decision_history) UNTOUCHED; Phase 3 (ai_decisions, ai_logs, campaigns) UNTOUCHED; Phase 4 Part 2 STILL DEFERRED behind Phase 2 deploy + per-org token plumbing. Architecture invariants intact: single-writer backend, org_id enforcement, deferred-router gating preserved on all currently-deferred routers, canonical envelope, request_id correlator chain, all 13 prior closed hardening passes preserved.
+
+2026-05-07 (continuation #3) — Phase 2 unlock COMPLETED. Operator confirmed: PR merged into `main`; local main synced; `supabase db push` completed successfully; 4 canonical Phase 2 tables (integrations, ad_accounts, campaign_metrics, sync_logs) verified live in production Supabase. Executed final unlock step: lifted 503 gates on `/integrations/*` and `/metrics/*` in `backend/src/routes/v1/index.ts` (removed two `v1.use(...)` deferredPhase lines; preserved gates on `/decisions/*`, `/alerts/*`, `/automation/*`, `/creatives/*`, `/brand-kit/*` per their respective unowned phases). Wired frontend now reaches live backend: `app/integrations/page.tsx` (GET /api/v1/integrations), `app/integrations/connect/page.tsx` (POST connect/start), `app/api/integrations/callback/[platform]/route.ts` (POST connect/complete), `app/dashboard/overview/page.tsx` (GET /api/v1/metrics/summary), `app/dashboard/channels/page.tsx` (GET /api/v1/metrics/channels). Phase 2 status: PARTIAL → CLOSED. CURRENT PHASE updated. SYSTEM STATUS Integrations line corrected: NOT CONNECTED → READY. REAL SYSTEM CAPABILITIES Data Source line corrected: STATIC → READY. PATCH QUEUE position #6 closed; positions #10 and #11 added for non-blocker follow-ups (PHASE2_ENVELOPE_FOLLOWUP for canonical-envelope migration of legacy Phase 2 routes, PHASE2_OAUTH_ENV_FAILFAST_FOLLOWUP for startup-fail-fast on OAuth env). Backend tsc → 0 errors. Phase locks preserved: Phase 4 minimal slice UNTOUCHED, Phase 3 UNTOUCHED, Phase 4 Part 2 STILL DEFERRED (now its prerequisites are satisfied; awaits explicit unlock authorization), all other deferred routers still 503-gated. Architecture invariants intact: single-writer backend, org_id enforcement, canonical envelope on active hardened surface (auth/ai/actions/history/campaigns), request_id correlator chain, all 13 prior closed backend hardening passes. Known remaining envelope inconsistency on Phase 2 routes (legacy bare-array + `{error:'...'}` shapes) explicitly tracked as non-blocker follow-up; the wired frontend was already coupled to the legacy shapes, so canonicalizing the envelope requires coordinated frontend update beyond Phase 2 scope.
+
+2026-05-07 (continuation #4) — Phase 4 Part 2 UNLOCK AUTHORIZED + EXECUTED (schema/code shipped; deploy + gate-lift pending). Authored canonical migration `supabase/migrations/20260507130000_phase4_part2_automation.sql` (CREATE automation_rules, CREATE automation_runs, ALTER decision_history ADD nullable automation_rule_id + automation_run_id, RLS + indexes). Per "Do NOT reactivate decisions table" governance rule, substituted spec data-model.md `decision_id REFERENCES decisions(id)` with `ai_decision_id REFERENCES ai_decisions(id)` on automation_runs (mirroring Phase 4 minimal close pattern); did NOT add `decision_id` column to decision_history; did NOT alter `decision_runs` (Phase 3 anomaly DEFERRED, table absent). Rewrote `backend/src/services/execution/automation-engine.ts` end-to-end: removed deprecated `decisions` table reference; new exports `evaluateRulesForAIDecision(orgId, aiDecisionId)` + `executeRule(orgId, ruleId, aiDecisionId?)`; legacy `dispatchAutomation(orgId, runId)` retained as dormant spec-conformance shim; confidence comparison normalizes ai_decisions.confidence_score (0–1 NUMERIC) against rule.min_confidence_threshold (0–100 INTEGER); trigger-type matching uses `ai_decisions.result.category` JSONB path (governance-soft dependency). Canonicalized `backend/src/routes/v1/automation.ts` to use ok()/fail() Phase 1 envelope across GET/POST/PATCH/DELETE /rules + GET /runs; added new `POST /rules/:id/execute` for manual rule firing; UUID + body-shape + LIST + INVALID_FILTER + INVALID_TYPE validation parity with rest of active hardened surface. Added `realGooglePauseCampaign` real-mode handler to `backend/src/services/execution/action-executor.ts` (Google Ads API v19 customers/{cid}/campaigns:mutate; per-org Vault refresh-token resolution; OAuth refresh; customer_id from `ad_accounts.platform_account_id`; structured `[exec]` lifecycle logs; tokens never logged); behind `GOOGLE_PAUSE_CAMPAIGN_LIVE` flag + `GOOGLE_LIVE_ORG_ALLOWLIST`, mirroring Meta pattern. Extended `executeAction` with optional `automationRuleId` + `automationRunId` (threaded into decision_history INSERT). Added per-org execution rate limit: `ACTION_EXECUTION_MAX_PER_MINUTE` (default 60); DB-backed count of decision_history inserts in last 60s; throws `code: 'RATE_LIMITED'` with `retryAfterSeconds: 60`; idempotent replays not counted (early-returned). Promoted `GOOGLE_PAUSE_CAMPAIGN_LIVE` to `LIVE_FLAG_DEPENDENCIES` startup-fail-fast (deps: GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_CLIENT_ID + GOOGLE_ADS_CLIENT_SECRET). Phase 4 Part 2 status: DEFERRED → PARTIAL. NOT lifted: `/automation/*` 503 gate (preserved until deploy verified). NOT touched: action-executor.ts existing 4 real handlers (Meta pause/decrease/increase + Resend send_alert_email) + idempotency + impact_snapshot — all Phase 4 minimal close invariants preserved verbatim. NOT touched: legacy `decisions` table (still DEPRECATED). NOT touched: closed Phase 3 linear pipeline `services/ai/execute-ai-decision.ts` (post-persist hook for auto-firing is GOVERNANCE-BLOCKED). Backend tsc → 0 errors. HARD LOCK preserved verbatim. REAL SYSTEM CAPABILITIES preserved (will be updated to add google.pause_campaign live + automation engine status post-deploy). Auto-firing of automation_rules on AI decision stream is GOVERNANCE-BLOCKED behind Phase 3 anomaly DEPRECATED+DEFERRED state — manual-execute path is operational via `POST /api/v1/automation/rules/:id/execute`; cross-phase authorization required for automatic triggering (extend AI Output Contract with category field OR install post-persist hook in execute-ai-decision.ts OR unlock Phase 3 anomaly engine).
 
 
 

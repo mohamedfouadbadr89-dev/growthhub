@@ -103,10 +103,15 @@ if (missingVars.length > 0) {
 // deployments fail-fast. The per-request runtime check in
 // action-executor.ts is intentionally retained as defense-in-depth.
 const LIVE_FLAG_DEPENDENCIES: Array<{ flag: string; deps: readonly string[] }> = [
-  { flag: 'META_PAUSE_CAMPAIGN_LIVE',  deps: ['META_TEST_ACCESS_TOKEN'] },
-  { flag: 'META_DECREASE_BUDGET_LIVE', deps: ['META_TEST_ACCESS_TOKEN'] },
-  { flag: 'META_INCREASE_BUDGET_LIVE', deps: ['META_TEST_ACCESS_TOKEN'] },
-  { flag: 'SEND_ALERT_EMAIL_LIVE',     deps: ['RESEND_API_KEY'] },
+  { flag: 'META_PAUSE_CAMPAIGN_LIVE',   deps: ['META_TEST_ACCESS_TOKEN'] },
+  { flag: 'META_DECREASE_BUDGET_LIVE',  deps: ['META_TEST_ACCESS_TOKEN'] },
+  { flag: 'META_INCREASE_BUDGET_LIVE',  deps: ['META_TEST_ACCESS_TOKEN'] },
+  { flag: 'SEND_ALERT_EMAIL_LIVE',      deps: ['RESEND_API_KEY'] },
+  // Phase 4 Part 2: Google pause_campaign requires Phase 2 OAuth credentials
+  // (developer token + OAuth client) at startup. Per-org refresh tokens are
+  // resolved per-request via Supabase Vault (integrations.vault_refresh_token_secret_id);
+  // those are NOT in this static check by design.
+  { flag: 'GOOGLE_PAUSE_CAMPAIGN_LIVE', deps: ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET'] },
 ]
 
 const liveMisconfig: string[] = []

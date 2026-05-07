@@ -49,6 +49,7 @@
  */
 
 import { supabaseAdmin } from '../../lib/supabase.js'
+import { readSecret } from '../../lib/vault.js'
 
 // ─── Real-execution guards (env-driven, default OFF) ──────────────────
 
@@ -81,6 +82,31 @@ const SEND_ALERT_EMAIL_LIVE = process.env.SEND_ALERT_EMAIL_LIVE === 'true'
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const ALERT_EMAIL_FROM =
   process.env.ALERT_EMAIL_FROM ?? 'alerts@growthhub.local'
+
+// ─── Phase 4 Part 2 — Google pause_campaign real-execution guards ────
+// Default OFF — same flag-gated pattern as Meta handlers. When LIVE,
+// per-org Google refresh token is read from Phase 2 Vault storage
+// (integrations.vault_refresh_token_secret_id); customer_id is resolved
+// from ad_accounts.platform_account_id. Developer token + OAuth client
+// credentials come from env (configured during Phase 2 unlock).
+const GOOGLE_PAUSE_CAMPAIGN_LIVE =
+  process.env.GOOGLE_PAUSE_CAMPAIGN_LIVE === 'true'
+const GOOGLE_LIVE_ORG_ALLOWLIST = (process.env.GOOGLE_LIVE_ORG_ALLOWLIST ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION ?? 'v19'
+
+// ─── Phase 4 Part 2 — Per-org execution rate limit ────────────────────
+// Caps `decision_history` inserts per org per minute. Idempotent replays
+// (matched on `executionId` BEFORE this guard) are NOT counted. Default
+// 60/min — operator may lower for tight environments or raise for
+// power-user / batch scenarios. Set to 0 to disable.
+const ACTION_EXECUTION_MAX_PER_MINUTE = (() => {
+  const raw = process.env.ACTION_EXECUTION_MAX_PER_MINUTE
+  const n = raw !== undefined ? Number(raw) : NaN
+  return Number.isFinite(n) && n >= 0 ? n : 60
+})()
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -121,6 +147,18 @@ export interface ExecuteActionInput {
    * `(org_id, execution_id)`).
    */
   executionId?: string
+  /**
+   * Phase 4 Part 2 linkage. When this execution is dispatched by the
+   * automation engine (services/execution/automation-engine.ts), the
+   * caller threads in the rule + run identifiers so decision_history
+   * carries the full audit chain:
+   *   ai_decisions ← (ai_decision_id) → automation_rules ← (automation_rule_id)
+   *                                  → automation_runs   ← (automation_run_id)
+   * Both fields are nullable in the schema (Phase 4 Part 2 migration);
+   * manual executions leave them undefined and the row stores NULL.
+   */
+  automationRuleId?: string
+  automationRunId?: string
 }
 
 export interface ExecuteActionResult {
@@ -272,14 +310,27 @@ function safeStringify(value: unknown): string {
 
 const ACTION_HANDLERS: Record<string, ActionHandler> = {
   pause_campaign: async (params, ctx) => {
-    const liveAllowed =
+    const metaLiveAllowed =
       ctx.platform === 'meta' &&
       META_PAUSE_CAMPAIGN_LIVE &&
       (META_LIVE_ORG_ALLOWLIST.length === 0 ||
         META_LIVE_ORG_ALLOWLIST.includes(ctx.orgId))
 
-    if (liveAllowed) {
+    if (metaLiveAllowed) {
       return realMetaPauseCampaign(params, ctx)
+    }
+
+    // Phase 4 Part 2 — Google pause_campaign real-mode behind its own flag
+    // + allowlist + Phase-2-vault per-org credentials. Default OFF; same
+    // simulated-fallback contract as the Meta path.
+    const googleLiveAllowed =
+      ctx.platform === 'google' &&
+      GOOGLE_PAUSE_CAMPAIGN_LIVE &&
+      (GOOGLE_LIVE_ORG_ALLOWLIST.length === 0 ||
+        GOOGLE_LIVE_ORG_ALLOWLIST.includes(ctx.orgId))
+
+    if (googleLiveAllowed) {
+      return realGooglePauseCampaign(params, ctx)
     }
 
     return {
@@ -525,6 +576,304 @@ async function realMetaPauseCampaign(
       campaign_id,
       http_status: resp.status,
       body: bodyObj,
+    },
+  }
+}
+
+// ─── Real google.pause_campaign (Google Ads API; Phase 4 Part 2) ─────
+//
+// Endpoint: POST https://googleads.googleapis.com/{ver}/customers/{customer_id}/campaigns:mutate
+//   Headers:
+//     Authorization: Bearer <access_token>      (refreshed per call)
+//     developer-token: <GOOGLE_ADS_DEVELOPER_TOKEN>
+//     login-customer-id: <GOOGLE_ADS_LOGIN_CUSTOMER_ID> (optional, MCC)
+//   Body:
+//     { "operations":[{ "update": { "resourceName":"customers/{cid}/campaigns/{campaign_id}",
+//                                   "status":"PAUSED" },
+//                       "updateMask":"status" }] }
+//
+// Per-org credentials flow (Phase 2 → Phase 4 Part 2 unlock):
+//   integrations.vault_refresh_token_secret_id  → readSecret() → refresh_token
+//   refresh_token + GOOGLE_ADS_CLIENT_ID + GOOGLE_ADS_CLIENT_SECRET → access_token (60 min)
+//   ad_accounts.platform_account_id (per integration) → customer_id
+//
+// Idempotency, parameter validation, and audit-row insertion are all
+// enforced by `executeAction` upstream — this function only performs
+// the live API call and emits structured `[exec]` lifecycle logs (token
+// values are NEVER logged).
+async function realGooglePauseCampaign(
+  params: Record<string, unknown>,
+  ctx: HandlerCtx,
+): Promise<{ success: boolean; result_data: Record<string, unknown>; error_message?: string }> {
+  const campaign_id = params.campaign_id
+
+  if (typeof campaign_id !== 'string' || campaign_id.length === 0) {
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: { message: 'campaign_id missing or invalid' },
+    })
+    return {
+      success: false,
+      result_data: {},
+      error_message: 'campaign_id missing or invalid',
+    }
+  }
+
+  // Required env (configured during Phase 2 unlock).
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+  const oauthClientId = process.env.GOOGLE_ADS_CLIENT_ID
+  const oauthClientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET
+  const loginCustomerId = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
+  if (!developerToken || !oauthClientId || !oauthClientSecret) {
+    const missing = [
+      !developerToken && 'GOOGLE_ADS_DEVELOPER_TOKEN',
+      !oauthClientId && 'GOOGLE_ADS_CLIENT_ID',
+      !oauthClientSecret && 'GOOGLE_ADS_CLIENT_SECRET',
+    ].filter(Boolean).join(', ')
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: { message: `GOOGLE_PAUSE_CAMPAIGN_LIVE=true but ${missing} not configured` },
+    })
+    return {
+      success: false,
+      result_data: {},
+      error_message: `Google Ads credentials not configured (${missing})`,
+    }
+  }
+
+  // 1. Resolve the org's Google integration + Vault refresh token.
+  const { data: integration, error: intErr } = await supabaseAdmin
+    .from('integrations')
+    .select('id, vault_refresh_token_secret_id, status')
+    .eq('org_id', ctx.orgId)
+    .eq('platform', 'google')
+    .maybeSingle()
+
+  if (intErr) {
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'integration_lookup' },
+      error_message: `Google integration lookup failed: ${intErr.message}`,
+    }
+  }
+  if (!integration || integration.status !== 'connected' || !integration.vault_refresh_token_secret_id) {
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'integration_missing' },
+      error_message: 'Google integration not connected for this organization',
+    }
+  }
+
+  let refreshToken: string
+  try {
+    refreshToken = await readSecret(integration.vault_refresh_token_secret_id as string)
+  } catch (e) {
+    const err = e as Error
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'vault_read' },
+      error_message: `Vault read failed: ${err.message}`,
+    }
+  }
+
+  // 2. Resolve the Google customer_id from ad_accounts. We use the first
+  //    matching account (operators with multiple Google accounts per org
+  //    today must select via the rule.action_params.customer_id explicit
+  //    override — preserving Phase 2's "first account" convention).
+  let customerId: string
+  if (typeof params.customer_id === 'string' && params.customer_id.length > 0) {
+    customerId = params.customer_id
+  } else {
+    const { data: account, error: acctErr } = await supabaseAdmin
+      .from('ad_accounts')
+      .select('platform_account_id')
+      .eq('org_id', ctx.orgId)
+      .eq('integration_id', integration.id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (acctErr) {
+      return {
+        success: false,
+        result_data: { mode: 'live', stage: 'ad_account_lookup' },
+        error_message: `Google ad_account lookup failed: ${acctErr.message}`,
+      }
+    }
+    if (!account) {
+      return {
+        success: false,
+        result_data: { mode: 'live', stage: 'ad_account_missing' },
+        error_message: 'No Google ad_account discovered for this organization yet — run a Google sync first',
+      }
+    }
+    customerId = String(account.platform_account_id).replace(/-/g, '')
+  }
+
+  // 3. Refresh OAuth access token. Token never logged.
+  let accessToken: string
+  try {
+    const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: oauthClientId,
+        client_secret: oauthClientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }).toString(),
+    })
+    if (!tokenResp.ok) {
+      const detail = await tokenResp.text().catch(() => '')
+      return {
+        success: false,
+        result_data: { mode: 'live', stage: 'oauth_refresh', http_status: tokenResp.status },
+        error_message: `Google OAuth refresh failed (HTTP ${tokenResp.status}): ${detail.slice(0, 200)}`,
+      }
+    }
+    const tokenJson = (await tokenResp.json()) as { access_token?: string }
+    if (!tokenJson.access_token) {
+      return {
+        success: false,
+        result_data: { mode: 'live', stage: 'oauth_refresh' },
+        error_message: 'Google OAuth refresh returned no access_token',
+      }
+    }
+    accessToken = tokenJson.access_token
+  } catch (e) {
+    const err = e as Error
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'oauth_refresh_transport' },
+      error_message: `Google OAuth transport failed: ${err.message}`,
+    }
+  }
+
+  // 4. Issue the mutate call.
+  const url = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${encodeURIComponent(customerId)}/campaigns:mutate`
+  const body = {
+    operations: [
+      {
+        update: {
+          resourceName: `customers/${customerId}/campaigns/${campaign_id}`,
+          status: 'PAUSED',
+        },
+        updateMask: 'status',
+      },
+    ],
+  }
+
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_call',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+    campaign_id,
+  })
+
+  const t0 = Date.now()
+  let resp: Response
+  let respBody: unknown
+  try {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${accessToken}`,
+      'developer-token': developerToken,
+      'Content-Type': 'application/json',
+    }
+    if (loginCustomerId) headers['login-customer-id'] = loginCustomerId
+    resp = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+    respBody = await resp.json().catch(() => null)
+  } catch (e) {
+    const latency_ms = Date.now() - t0
+    const err = e as Error
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.api_response',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      campaign_id,
+      latency_ms,
+      ok: false,
+      error: { name: err?.name, message: err?.message ?? 'fetch failed' },
+    })
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'transport' },
+      error_message: `Google Ads API transport: ${err?.message ?? 'fetch failed'}`,
+    }
+  }
+
+  const latency_ms = Date.now() - t0
+  const ok = resp.ok
+
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_response',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+    campaign_id,
+    latency_ms,
+    http_status: resp.status,
+    ok,
+  })
+
+  if (!ok) {
+    return {
+      success: false,
+      result_data: { mode: 'live', http_status: resp.status, body: respBody, customer_id: customerId },
+      error_message: typeof respBody === 'object' && respBody !== null
+        ? safeStringify(respBody)
+        : `HTTP ${resp.status}`,
+    }
+  }
+
+  return {
+    success: true,
+    result_data: {
+      mode: 'live',
+      campaign_id,
+      customer_id: customerId,
+      http_status: resp.status,
+      body: respBody,
     },
   }
 }
@@ -1532,6 +1881,36 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
     }
   }
 
+  // 0b. Phase 4 Part 2 — Per-org execution rate limit (DB-backed).
+  //     Counts decision_history rows for the calling org in the last 60s.
+  //     Rejects with code='RATE_LIMITED' when the configured cap is reached.
+  //     Idempotent replays do not reach this point (early-return above), so
+  //     they do not count toward the limit. Set ACTION_EXECUTION_MAX_PER_MINUTE
+  //     to 0 in env to disable.
+  if (ACTION_EXECUTION_MAX_PER_MINUTE > 0) {
+    const sinceIso = new Date(Date.now() - 60_000).toISOString()
+    const { count: recentCount, error: rlErr } = await supabaseAdmin
+      .from('decision_history')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', input.orgId)
+      .gte('created_at', sinceIso)
+    if (rlErr) {
+      const err = new Error(
+        `executeAction: rate-limit lookup failed: ${rlErr.message}`,
+      ) as Error & { code: string }
+      err.code = 'RATE_LIMIT_LOOKUP_FAILED'
+      throw err
+    }
+    if ((recentCount ?? 0) >= ACTION_EXECUTION_MAX_PER_MINUTE) {
+      const err = new Error(
+        `executeAction: org ${input.orgId} exceeded ${ACTION_EXECUTION_MAX_PER_MINUTE} executions/minute`,
+      ) as Error & { code: string; retryAfterSeconds: number }
+      err.code = 'RATE_LIMITED'
+      err.retryAfterSeconds = 60
+      throw err
+    }
+  }
+
   // 1. Fetch action template (system-global, no org_id filter on actions_library)
   const { data: template, error: tErr } = await supabaseAdmin
     .from('actions_library')
@@ -1721,6 +2100,11 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
       ai_explanation: aiLink ? deriveAIExplanation(aiLink.reasoning_steps) : null,
       confidence_score: aiLink?.confidence_score ?? null,
       ai_decision_id: input.aiDecisionId ?? null,
+      // Phase 4 Part 2 audit linkage. Both columns are NULLABLE per
+      // 20260507130000_phase4_part2_automation.sql. Manual executions
+      // omit them; automation-engine.ts threads them via fireRule().
+      automation_rule_id: input.automationRuleId ?? null,
+      automation_run_id:  input.automationRunId  ?? null,
       trace_id: traceId,
       execution_id: input.executionId ?? null,
       impact_snapshot: impactSnapshotForDb,
