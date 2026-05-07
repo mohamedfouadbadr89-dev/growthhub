@@ -23,6 +23,7 @@ import {
   executeAIDecision,
   AIPipelineError,
 } from '../../services/ai/execute-ai-decision.js'
+import { ok, fail } from '../../utils/response.js'
 
 // requestId is set by tracingMiddleware mounted at app level (index.ts:53);
 // guaranteed present before any v1 handler runs. Declaring it here makes
@@ -58,16 +59,10 @@ aiRouter.post('/decisions/generate', async (c) => {
   try {
     body = await c.req.json()
   } catch {
-    return c.json(
-      { success: false, error: { phase: 'request', message: 'invalid JSON body' } },
-      400,
-    )
+    return fail(c, 'invalid JSON body', 400, { phase: 'request' })
   }
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return c.json(
-      { success: false, error: { phase: 'request', message: 'body must be a JSON object' } },
-      400,
-    )
+    return fail(c, 'body must be a JSON object', 400, { phase: 'request' })
   }
 
   const { prompt, model, kind } = body as {
@@ -76,10 +71,17 @@ aiRouter.post('/decisions/generate', async (c) => {
     kind?: unknown
   }
   if (prompt === undefined || prompt === null) {
-    return c.json(
-      { success: false, error: { phase: 'request', message: 'prompt is required' } },
-      400,
-    )
+    return fail(c, 'prompt is required', 400, { phase: 'request' })
+  }
+  // Cost-leak guard: reject empty / whitespace-only string prompts BEFORE
+  // any OpenRouter call. Pre-fix, `prompt: ""` / `"   "` / `"\t\n"` would
+  // pass the undefined/null gate, reach `client.chat.completions.create`,
+  // burn provider credits, and persist a vacuous row to `ai_decisions`.
+  // Non-string prompts (objects, arrays, primitives) continue to flow
+  // through the existing `JSON.stringify(prompt)` fallback — this guard
+  // covers only the most common accidental case (string typed but empty).
+  if (typeof prompt === 'string' && prompt.trim() === '') {
+    return fail(c, 'prompt must not be empty or whitespace-only', 400, { phase: 'request' })
   }
 
   const finalModel =
@@ -90,13 +92,7 @@ aiRouter.post('/decisions/generate', async (c) => {
 
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
-    return c.json(
-      {
-        success: false,
-        error: { phase: 'transport', message: 'OPENROUTER_API_KEY is not configured' },
-      },
-      500,
-    )
+    return fail(c, 'OPENROUTER_API_KEY is not configured', 500, { phase: 'transport' })
   }
   const client = getOpenRouterClient(apiKey)
 
@@ -148,49 +144,24 @@ aiRouter.post('/decisions/generate', async (c) => {
     })
     // Legacy-compatible response: {type, result, confidence_score} are at
     // the original depth. Additive Phase 3 fields appended.
-    return c.json(
-      {
-        success: true,
-        data: {
-          type: result.response.type,
-          result: result.response.result,
-          confidence_score: result.response.confidence_score,
-          reasoning_steps: result.response.reasoning_steps,
-          decision_id: result.decision_id,
-          trace_id: result.trace_id,
-        },
-      },
-      200,
-    )
+    return ok(c, {
+      type: result.response.type,
+      result: result.response.result,
+      confidence_score: result.response.confidence_score,
+      reasoning_steps: result.response.reasoning_steps,
+      decision_id: result.decision_id,
+      trace_id: result.trace_id,
+    })
   } catch (err) {
     if (err instanceof AIPipelineError) {
       const status =
         err.phase === 'transport' ? 502 :
         err.phase === 'validation' ? 422 :
         500
-      return c.json(
-        {
-          success: false,
-          error: {
-            phase: err.phase,
-            message: err.message,
-            trace_id: err.trace_id,
-          },
-        },
-        status,
-      )
+      return fail(c, err.message, status, { phase: err.phase, trace_id: err.trace_id })
     }
     const e = err as Error
-    return c.json(
-      {
-        success: false,
-        error: {
-          phase: 'unknown',
-          message: e?.message ?? 'unknown error',
-        },
-      },
-      500,
-    )
+    return fail(c, e?.message ?? 'unknown error', 500, { phase: 'unknown' })
   }
 })
 
@@ -221,16 +192,10 @@ aiRouter.post('/execute', async (c) => {
   try {
     body = await c.req.json()
   } catch {
-    return c.json(
-      { success: false, error: { phase: 'request', message: 'invalid JSON body' } },
-      400,
-    )
+    return fail(c, 'invalid JSON body', 400, { phase: 'request' })
   }
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return c.json(
-      { success: false, error: { phase: 'request', message: 'body must be a JSON object' } },
-      400,
-    )
+    return fail(c, 'body must be a JSON object', 400, { phase: 'request' })
   }
 
   const { prompt, model, kind } = body as {
@@ -239,10 +204,17 @@ aiRouter.post('/execute', async (c) => {
     kind?: unknown
   }
   if (prompt === undefined || prompt === null) {
-    return c.json(
-      { success: false, error: { phase: 'request', message: 'prompt is required' } },
-      400,
-    )
+    return fail(c, 'prompt is required', 400, { phase: 'request' })
+  }
+  // Cost-leak guard: reject empty / whitespace-only string prompts BEFORE
+  // any OpenRouter call. Pre-fix, `prompt: ""` / `"   "` / `"\t\n"` would
+  // pass the undefined/null gate, reach `client.chat.completions.create`,
+  // burn provider credits, and persist a vacuous row to `ai_decisions`.
+  // Non-string prompts (objects, arrays, primitives) continue to flow
+  // through the existing `JSON.stringify(prompt)` fallback — this guard
+  // covers only the most common accidental case (string typed but empty).
+  if (typeof prompt === 'string' && prompt.trim() === '') {
+    return fail(c, 'prompt must not be empty or whitespace-only', 400, { phase: 'request' })
   }
 
   const finalModel =
@@ -256,13 +228,7 @@ aiRouter.post('/execute', async (c) => {
   //    that is the orchestration function's job.
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
-    return c.json(
-      {
-        success: false,
-        error: { phase: 'transport', message: 'OPENROUTER_API_KEY is not configured' },
-      },
-      500,
-    )
+    return fail(c, 'OPENROUTER_API_KEY is not configured', 500, { phase: 'transport' })
   }
   const client = getOpenRouterClient(apiKey)
 
@@ -318,50 +284,25 @@ aiRouter.post('/execute', async (c) => {
       prompt,
       providerCall,
     })
-    return c.json(
-      {
-        success: true,
-        data: {
-          decision_id: result.decision_id,
-          response: result.response,
-          trace_id: result.trace_id,
-        },
-      },
-      200,
-    )
+    return ok(c, {
+      decision_id: result.decision_id,
+      response: result.response,
+      trace_id: result.trace_id,
+    })
   } catch (err) {
     if (err instanceof AIPipelineError) {
       // Map pipeline phase to a sensible HTTP status. Body shape is fixed
-      // by the spec and identical across statuses.
+      // by the Phase 1 envelope and identical across statuses.
       const status =
         err.phase === 'transport' ? 502 :
         err.phase === 'validation' ? 422 :
         500
-      return c.json(
-        {
-          success: false,
-          error: {
-            phase: err.phase,
-            message: err.message,
-            trace_id: err.trace_id,
-          },
-        },
-        status,
-      )
+      return fail(c, err.message, status, { phase: err.phase, trace_id: err.trace_id })
     }
 
     // Anything not a typed pipeline error is unexpected. Surface it
     // without leaking internals — but never silently swallow.
     const e = err as Error
-    return c.json(
-      {
-        success: false,
-        error: {
-          phase: 'unknown',
-          message: e?.message ?? 'unknown error',
-        },
-      },
-      500,
-    )
+    return fail(c, e?.message ?? 'unknown error', 500, { phase: 'unknown' })
   }
 })

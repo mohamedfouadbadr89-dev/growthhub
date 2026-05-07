@@ -25,11 +25,14 @@ import * as Sentry from '@sentry/node'
  * The original `err` object is preserved verbatim in the console.error
  * call so Node's native stack-trace formatting still fires.
  *
- * Body shape:
- *   pre-fix:  { "error": "Internal Server Error" }
- *   post-fix: { "error": "Internal Server Error", "request_id": "..." }
+ * Body shape (Phase 1 envelope — backend/src/utils/response.ts):
+ *   { "success": false,
+ *     "error": { "message": "Internal Server Error" },
+ *     "request_id": "..." }
  *
- * Additive — existing readers of `data.error` are unaffected.
+ * The `request_id` field is preserved at the top level (same position as
+ * the X-Request-ID response header tracingMiddleware emits) so client
+ * correlators continue to work without an envelope walk.
  */
 
 Sentry.init({ dsn: process.env.SENTRY_DSN })
@@ -60,5 +63,17 @@ export const errorHandler: ErrorHandler = (err, c) => {
   // eslint-disable-next-line no-console
   console.error(`[err] request_id=${request_id ?? '<missing>'}`, err)
 
-  return c.json({ error: 'Internal Server Error', request_id }, 500)
+  // Canonical Phase 1 failure envelope. Cannot delegate to fail()
+  // (utils/response.ts) here because that helper re-reads requestId
+  // from the context — this handler has already resolved it once and
+  // we want to preserve the resolved value in case the context get()
+  // throws on a malformed chain. Body shape is identical.
+  return c.json(
+    {
+      success: false,
+      error: { message: 'Internal Server Error' },
+      request_id,
+    },
+    500,
+  )
 }

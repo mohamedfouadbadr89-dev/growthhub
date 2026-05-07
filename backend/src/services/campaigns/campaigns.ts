@@ -66,19 +66,33 @@ const GOOGLE_CREATE_ACTION_ID = '00000000-0000-0000-0000-000000000010'
 //     ("relation does not exist") until Phase 2 unlocks.
 //
 //   - The legacy `decisions` table is deployed (per remote_schema dump
-//     20260503170252) but its `org_id` is UUID; this code passes Clerk's
-//     TEXT `org_xxx` ids → expect 22P02 ("invalid input syntax for type
-//     uuid"). Phase 4 minimal migration preamble explicitly tags this
-//     table as "deprecated and malformed in the live DB". The /decisions
-//     route is already gated behind 503; the campaigns overlay is the
-//     last remaining caller of the malformed table.
+//     20260503170252) but its `org_id` is UUID and its column shape
+//     diverges from what this service was originally written against:
+//       deployed: id, org_id, type, status, reasoning_steps,
+//                 suggested_action_id, metadata, confidence_score,
+//                 created_at
+//       requested: id, title, confidence_score, status, action_id +
+//                  filter on campaign_name
+//     → expect 22P02 ("invalid input syntax for type uuid") on org_id
+//       AND 42703 ("undefined_column") on title / action_id /
+//       campaign_name. Phase 4 minimal migration preamble explicitly
+//       tags this table as "deprecated and malformed in the live DB"
+//       and SYSTEM_CONTROL.md "CANONICAL AI SYSTEM" classifies it as
+//       DEPRECATED. The /decisions route is already gated behind 503;
+//       the campaigns overlay is the last remaining caller of the
+//       malformed table. Re-aligning the SELECT to the deployed columns
+//       would be tantamount to resurrecting the deprecated anomaly
+//       engine — explicitly forbidden by governance. Tolerating the
+//       column-shape mismatch as documented expected drift preserves
+//       the deprecation while keeping campaigns/[id] data hydration
+//       intact (overlay degrades to []).
 //
-// This guard treats ONLY those two specific codes as documented
+// This guard treats ONLY those three specific codes as documented
 // silent-degrade conditions (campaigns continue to render with zero
 // metrics / no decisions overlay — preserves operational behavior).
-// Any OTHER Postgres error (RLS denial, network, unknown column,
-// connection pool, etc.) throws — surfacing real production issues
-// rather than masking them as "empty data".
+// Any OTHER Postgres error (RLS denial, network, connection pool, etc.)
+// throws — surfacing real production issues rather than masking them
+// as "empty data".
 //
 // Pre-fix behavior was `const { data } = await ...` which dropped the
 // error object entirely; that was a Constitution §3 violation
@@ -86,6 +100,7 @@ const GOOGLE_CREATE_ACTION_ID = '00000000-0000-0000-0000-000000000010'
 const EXPECTED_SCHEMA_DRIFT = new Set([
   '42P01', // relation does not exist  → Phase 2 deferred tables
   '22P02', // invalid input syntax for type → legacy decisions.org_id type drift
+  '42703', // undefined_column → legacy decisions.{title, action_id, campaign_name} drift
 ])
 
 function checkDbReadError(
@@ -292,7 +307,14 @@ export async function createCampaign(
     daily_budget?: number
     ad_account_id?: string
     targeting?: Record<string, unknown>
-  }
+  },
+  // Phase 1 audit-column population (created_by / updated_by populated
+  // verbatim from the authenticated Clerk userId on every campaign create).
+  // Optional for backward-compat with any caller that doesn't have an HTTP
+  // context — in which case the columns remain NULL on the row, matching
+  // pre-Phase-1 rows. Server-side only: the userId is read from the route
+  // handler's `c.get('userId')` (Clerk JWT subject), never from the body.
+  userId?: string,
 ): Promise<Campaign> {
   const { data, error } = await supabaseAdmin
     .from('campaigns')
@@ -303,6 +325,7 @@ export async function createCampaign(
       daily_budget: body.daily_budget ?? null,
       ad_account_id: body.ad_account_id ?? null,
       targeting:    body.targeting ?? {},
+      ...(userId ? { created_by: userId, updated_by: userId } : {}),
     })
     .select('*')
     .single()
@@ -329,7 +352,12 @@ export async function updateCampaign(
     targeting?: Record<string, unknown>
     name?: string
   },
-  role: string
+  role: string,
+  // Phase 1 audit-column population. Mirrors createCampaign's userId
+  // semantics: server-side only, Clerk JWT subject from c.get('userId'),
+  // never trusted from the body. When supplied, every UPDATE re-stamps
+  // updated_by; created_by is preserved by the partial column list below.
+  userId?: string,
 ): Promise<Campaign | null> {
   const { data: existing, error: fetchErr } = await supabaseAdmin
     .from('campaigns')
@@ -371,6 +399,7 @@ export async function updateCampaign(
       ...(patch.daily_budget !== undefined && { daily_budget: patch.daily_budget }),
       ...(patch.targeting    !== undefined && { targeting: patch.targeting }),
       ...(patch.name         !== undefined && { name: patch.name }),
+      ...(userId             !== undefined && { updated_by: userId }),
     })
     .eq('org_id', orgId)
     .eq('id', id)

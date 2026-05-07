@@ -1,7 +1,11 @@
 import { Hono } from 'hono'
 import { supabaseAdmin } from '../../lib/supabase.js'
+import { ok, fail } from '../../utils/response.js'
 
-type Variables = { userId: string; orgId: string }
+// requestId is set by tracingMiddleware (mounted at app level in index.ts).
+// Declaring it here makes the Phase 1 envelope helpers (ok/fail) type-safe
+// when they call c.get('requestId') to populate the request_id field.
+type Variables = { userId: string; orgId: string; requestId: string }
 
 const authRouter = new Hono<{ Variables: Variables }>()
 
@@ -33,10 +37,10 @@ authRouter.post('/verify', async (c) => {
     throw new Error(`auth verify: users lookup failed: ${error.message}`)
   }
   if (!user) {
-    return c.json({ error: 'Forbidden', message: 'User has no organization assigned' }, 403)
+    return fail(c, 'User has no organization assigned', 403, { code: 'FORBIDDEN' })
   }
 
-  return c.json({ userId, orgId, email: user.email, role: user.role })
+  return ok(c, { userId, orgId, email: user.email, role: user.role })
 })
 
 export { authRouter }

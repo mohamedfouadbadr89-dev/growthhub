@@ -68,11 +68,26 @@ clerkWebhook.post('/', async (c) => {
       const orgId = data.id as string
       const name = data.name as string
       const createdAt = new Date(data.created_at as number).toISOString()
+      // Phase 1 audit-column population. Clerk's organization.created
+      // event payload includes `created_by` — the user_id of the user who
+      // created the organization. Defensively typed: only stamp the column
+      // when the field is a non-empty string (older Clerk payloads / test
+      // fixtures may omit it; a NULL column is preferable to a fabricated
+      // creator).
+      const createdBy =
+        typeof data.created_by === 'string' && data.created_by.length > 0
+          ? data.created_by
+          : null
 
       const { error } = await supabaseAdmin
         .from('organizations')
         .upsert(
-          { org_id: orgId, name, created_at: createdAt },
+          {
+            org_id: orgId,
+            name,
+            created_at: createdAt,
+            ...(createdBy ? { created_by: createdBy } : {}),
+          },
           { onConflict: 'org_id' }
         )
 
@@ -93,6 +108,10 @@ clerkWebhook.post('/', async (c) => {
       const role = rawRole.replace(/^org:/, '') === 'admin' ? 'admin' : 'member'
       const createdAt = new Date(data.created_at as number).toISOString()
 
+      // Phase 1 audit-column population. The user record represents
+      // "user clerkId is in org orgId"; the user is the creator of their
+      // own membership row → created_by = clerkId (self-creation
+      // semantics). Mirrors the JIT auth-middleware path.
       const { error } = await supabaseAdmin
         .from('users')
         .upsert(
@@ -102,6 +121,7 @@ clerkWebhook.post('/', async (c) => {
             email,
             role,
             created_at: createdAt,
+            created_by: clerkId,
           },
           { onConflict: 'clerk_id' }
         )

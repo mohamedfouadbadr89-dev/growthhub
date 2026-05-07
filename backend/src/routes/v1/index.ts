@@ -47,12 +47,25 @@ const deferredPhase = (routerPath: string, phaseLabel: string) =>
     } catch {
       /* tracing not in chain — leave null */
     }
+    // Phase 1 canonical envelope (backend/src/utils/response.ts). The
+    // additive `phase: 'deferred'` and `router` fields are preserved
+    // inside `error` so any operator scraping for deferred-phase 503s
+    // keeps their existing matcher.
+    //
+    // `code: 'DEFERRED'` is the canonical envelope discriminator. The
+    // frontend api-client uses the presence of `error.code` to decide
+    // whether the server's message is intentionally caller-facing
+    // (explicit fail() / deferredPhase) and should bypass the generic
+    // friendlyMessage mask. Without this code, the deferred-phase 503
+    // body collapses to "Server error — try again in a few moments" at
+    // the UI, hiding the actionable "Phase X disabled" copy.
     return c.json(
       {
         success: false,
         error: {
-          phase: 'deferred',
           message: `${routerPath} is intentionally disabled (${phaseLabel} per SYSTEM_CONTROL.md). Backing infrastructure is not deployed.`,
+          code: 'DEFERRED',
+          phase: 'deferred',
           router: routerPath,
         },
         request_id,
