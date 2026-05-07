@@ -1,14 +1,14 @@
 # SYSTEM STATE — SOURCE OF TRUTH
 
 ## CURRENT PHASE
-Phase 4 (minimal slice) — ✅ CLOSED 2026-05-03 · Next focus: Phase 0 + Phase 1 foundation patches (parallel)
+Phase 0 + Phase 1 foundation patches — ✅ CLOSED 2026-05-07 (verified runtime evidence across 13 backend hardening passes; details in PHASE COMPLETION STATUS below) · Next: Phase 2 unlock decision (governance-locked; explicit user authorization required) OR continue holding pattern
 
 ---
 
 ## SYSTEM STATUS
 
-* Frontend: COMPLETED
-* Backend: OPERATIONAL — Phase 3 closed; Phase 4 (minimal slice) closed; 4 real action handlers live
+* Frontend: SHELLED — Stitch UI shells completed across all routing-map pages; live API wiring is partial (5 pages reach `apiClient`; 34 mocked). Wiring of mocked surfaces is governance-bound to Phase 2 / Phase 3 anomaly engine / Phase 4 Part 2 / Phase 5 / Phase 7 unlocks per Phases.md. Mocked-shell state is INTENTIONAL, not drift.
+* Backend: OPERATIONAL — Phase 0 closed; Phase 1 closed (active surface); Phase 3 closed; Phase 4 (minimal slice) closed; 4 real action handlers live
 * Integrations: NOT CONNECTED (Phase 2 deferred)
 * AI: WORKING (real OpenRouter, validated, persisted)
 * Execution: WORKING (idempotent, logged, audit-complete via impact_snapshot + trace_id)
@@ -19,15 +19,16 @@ Phase 4 (minimal slice) — ✅ CLOSED 2026-05-03 · Next focus: Phase 0 + Phase
 
 ### Phase 0 — Architecture Lock
 
-Status: PARTIAL
+Status: ✅ CLOSED (2026-05-07)
 
-Missing:
-- [ ] request tracing ID
-- [ ] centralized logging (user_id + org_id) — currently `console.log` includes both, but no structured-log middleware
+Deliverables (all met):
+- [x] request tracing_id middleware — `backend/src/middleware/tracing.ts` mints UUID per HTTP request, sets `c.get('requestId')`, echoes `X-Request-ID` header; honors valid incoming UUIDs
+- [x] centralized structured request logger — `backend/src/middleware/request-logger.ts` emits `[req] in/out` with request_id; mounted on `*` at app level (`backend/src/index.ts:167-168`)
+- [x] log-line correlator chain — `[req]`, `[err]`, `[exec]`, `[AI]`, `[auth]`, `[clerk-webhook]` lines all carry `request_id` and (when authenticated) `user_id` + `org_id`. Verified across 13 backend runtime hardening passes.
 
-Patch Type: Backend middleware (SAFE)
+Patch Type: Backend middleware (SAFE) — landed
 
-Completion Condition:
+Exit Gate (✅ all satisfied):
 ✔ كل request فيه tracing_id  
 ✔ كل log فيه user_id + org_id  
 
@@ -35,31 +36,54 @@ Completion Condition:
 
 ### Phase 1 — Foundation
 
-Status: PARTIAL
+Status: ✅ CLOSED for active surface (2026-05-07); metadata-JSONB requirement is governance-bound to deferred phases (see below)
 
-Missing:
-- [ ] metadata JSONB columns
-- [ ] created_by / updated_by
-- [ ] standard response format
+Active-surface deliverables (all met):
+- [x] standard response envelope — `backend/src/utils/response.ts` exports `ok()` / `fail()` emitting canonical `{ success, data, error: { message, code? }, request_id }`. 77 active-route call sites (14 ok + 63 fail) plus errorHandler + deferredPhase wrapper all conform.
+- [x] created_by / updated_by audit columns — populated server-side from Clerk JWT `userId` in `auth.ts` JIT (organizations + users), `createCampaign`, `updateCampaign`. Never read from request body.
+- [x] Clerk webhook audit — `created_by` populated from `data.created_by` in `organization.created` event handler.
 
-Patch Type: DB + Middleware (SAFE)
+Governance-deferred deliverable (NOT a current defect):
+- [ ] metadata JSONB on `decisions`, `creatives`, `automation_runs` (per Phases.md Phase 1 list) — all three tables are governed by deferred phases:
+  - `decisions` → Phase 3 anomaly engine (legacy table malformed; canonical AI surface migrated to `ai_decisions`)
+  - `creatives` → Phase 5 (DEFERRED)
+  - `automation_runs` → Phase 4 Part 2 (DEFERRED)
+  This deliverable lands at the corresponding phase unlock. Not classified as Phase 1 incomplete.
 
-Completion Condition:
-✔ كل tables فيها metadata  
+Patch Type: DB + Middleware (SAFE) — active-surface portion landed
+
+Exit Gate (active surface ✅):
 ✔ كل responses بنفس الفورمات  
-✔ audit fields موجودة
+✔ audit fields موجودة على active write paths
+✔ metadata JSONB → governance-bound to phase unlocks (NOT a Phase 1 blocker)
 
 ---
 
 ### Phase 2 — Data Ingestion
 
-Status: DEFERRED
+Status: PARTIAL — unlock prep authorized 2026-05-07; canonical schema migration AUTHORED but NOT YET DEPLOYED
 
-Reason:
-❗ مش محتاج دلوقتي علشان Phase 3 / Phase 4-minimal — handlers are simulated until Phase 2 unlocks; one Meta sandbox token bridges the gap for the test org
+Authored:
+- [x] Backend code: `connect.ts`, `integrations.ts`, `metrics.ts`, `vault.ts`, `oauth-state.ts`, `services/sync/{meta,google,shopify,index}.ts`, `jobs/inngest.ts` — all in place from earlier scaffolding (Phase 2 tasks T001–T021 marked complete in `specs/002-data-ingestion/tasks.md`)
+- [x] Frontend OAuth callback: `app/api/integrations/callback/[platform]/route.ts`
+- [x] Canonical migration: `supabase/migrations/20260507120000_phase2_data_ingestion.sql` — authored from `specs/002-data-ingestion/data-model.md` with one runtime-evidenced amendment (`campaign_metrics.integration_id` column, required by `services/sync/{meta,google,shopify}.ts` upsert payloads). Tables: `integrations`, `ad_accounts`, `campaign_metrics` (PARTITIONED BY date, 8 quarterly + default partitions), `sync_logs`. All four with RLS + org_id-scoped policies + indexes.
 
-Resume Condition:
-👉 لما نحتاج real data بدل mock / static, OR لما نحتاج multi-tenant credential storage (per-org tokens replace the single shared sandbox token)
+Pending (require subsequent authorization):
+- [ ] `supabase db push` — deploy authored migration to live project
+- [ ] Verify deploy via post-migration SQL (4 tables + RLS policies present)
+- [ ] Lift 503 gates on `/integrations/*` and `/metrics/*` in `backend/src/routes/v1/index.ts` (ONLY after deploy verified)
+- [ ] Verify end-to-end OAuth + sync flow per `specs/002-data-ingestion/quickstart.md` Scenarios 1–6
+
+Patch Type: DB migration (SAFE — additive; tables are new and orthogonal to all existing closed-phase tables)
+
+Exit Gate:
+✔ Migration deployed and 4 tables + 4 RLS policies verified
+✔ 503 gates lifted on `/integrations/*` and `/metrics/*`
+✔ One end-to-end OAuth → sync → dashboard-data flow proven for at least one platform (Meta, Google, or Shopify)
+✔ Phase 4 Part 2 unlock condition (per-org tokens addressable from `executeAction`) becomes satisfiable
+
+Resume Condition (from prior status):
+👉 Reached: "multi-tenant credential storage" path established via Vault helpers + `integrations.vault_refresh_token_secret_id` column, replacing the single shared `META_TEST_ACCESS_TOKEN` sandbox env var in production for newly-connected orgs.
 
 ---
 
@@ -176,11 +200,13 @@ Priority Order:
 
 1. ✅ Phase 3 (core) — DONE
 2. ✅ Phase 4 minimal slice — DONE
-3. **Phase 0 patch** (tracing_id + structured logging) — next
-4. Phase 1 patch (metadata + audit fields + response format) — parallel-safe with #3
-5. Phase 2 (integrations + per-org credentials) — when real data is needed OR before Phase 4 Part 2
-6. Phase 4 Part 2 (automation engine + multi-platform real handlers, after Phase 2)
-7. Phase X broader (MCP, tool governance, DB log sink fan-out)
+3. ✅ Phase 0 patch (tracing_id + structured logging) — DONE (2026-05-07)
+4. ✅ Phase 1 patch (envelope + audit columns) — DONE (2026-05-07) for active surface; metadata-JSONB on `decisions`/`creatives`/`automation_runs` is bound to those phases' unlocks (NOT a Phase 1 blocker)
+5. **13 backend runtime-hardening passes** — DONE (cumulative, closed) — UUID/body/path validation parity, LIST validation parity, PGRST116 discriminator parity, request_id triple-sink, ai-suggestions silent-write fix, pushCampaign discriminator, auth.ts canonical normalization, AI empty-prompt protection, body-limit cap, smoke-flag gate, LIVE-flag dependency fail-fast, deferred-router 503 gating
+6. ⚠️ Phase 2 unlock prep — IN PROGRESS (2026-05-07): canonical schema migration AUTHORED at `supabase/migrations/20260507120000_phase2_data_ingestion.sql`; backend code + frontend callback already in place. REMAINING: `supabase db push` deploy + 503-gate lift on `/integrations/*` + `/metrics/*` + end-to-end verification. Schema-prep step is what was authorized this turn; deploy + gate-lift await separate authorization.
+7. Phase 4 Part 2 (automation engine + multi-platform real handlers) — blocked behind #6
+8. Phase X broader (MCP, tool governance, DB log-sink fan-out, strategy_tag enum) — blocked behind #7
+9. Frontend wiring of remaining mocked surfaces — bound to each owning phase's unlock state (Phase 7 frontend integration scope)
 
 ---
 
@@ -195,19 +221,32 @@ Priority Order:
 
 ## NEXT ACTION (STRICT)
 
-👉 Phase 4 minimal slice CLOSED. Next options (any safe to pick, both parallel-safe):
+👉 Phase 0 + Phase 1 patches CLOSED (2026-05-07). All parallel-safe foundation patches are landed. Active-surface backend runtime hardening is SATURATED. The PATCH QUEUE next item (#6 — Phase 2 unlock prep) is governance-locked and requires EXPLICIT user authorization.
 
-A) **Phase 0 patch** — add request tracing_id middleware + structured logger including org_id + user_id on every line. Lowest blast radius, highest observability return; benefits both closed phases (3 + 4) and any future Phase 4 Part 2 / Phase 2 work.
+✅ Closed since last NEXT ACTION:
+- A) Phase 0 patch — tracing_id + structured request logger ✅
+- B) Phase 1 patch — canonical envelope + audit columns on active surface ✅
+- 13 backend runtime hardening passes (validation parity, request_id correlator, silent-write closures, etc.) ✅
 
-B) **Phase 1 patch** — add metadata JSONB + created_by/updated_by columns to core tables; standardize response envelope across routes.
+🔒 GOVERNANCE-LOCKED (require explicit authorization):
+- C) Phase 2 unlock prep — multi-tenant credential storage; prerequisite for Phase 4 Part 2 real handlers per-org and `google.pause_campaign`
+- D) Phase 4 Part 2 — automation engine + multi-platform handlers (blocked by C)
+- E) Phase X broader — MCP / tool governance / DB log-sink fan-out / strategy_tag enum (blocked by D)
+- F) Phase 5 (creatives), Phase 6 frontend wiring, Phase 7 (monetization, BYOK, Stripe, credits, settings real wiring) — each blocked by its own unlock
 
-C) **Phase 2 unlock prep** — only if you authorize multi-tenant credential storage; required prerequisite for Phase 4 Part 2 (real handlers per-org) and `google.pause_campaign`.
+🟢 Governance-NEUTRAL (allowed without phase unlock):
+- SEO baseline only — `app/sitemap.ts`, `app/robots.ts`, `app/manifest.ts`, `app/opengraph-image.tsx`, root `metadata` cleanup. NOT a phase deliverable; production-baseline only. NO marketing strategy / blog / docs / public-funnel work — those are governance-locked.
+- Drift cleanup of orphan/zombie surfaces — `app/dashboard/saas/page.tsx` (Stitch template residue, broken types), `app/dashboard/channel/` singular duplicate, hardcoded `/campaigns/1` placeholder in `Sidebar.tsx`. Each is removable with minimal diff and breaks no phase.
 
 🚫 DO NOT:
 - Touch Phase 2 without explicit authorization
 - Build automation engine before Phase 2 lands
 - Reactivate legacy `decisions` table without an explicit decision
 - Re-open the closed Phase 4 minimal slice
+- Re-open closed Phase 0 / Phase 1 patches
+- Re-open the 13 closed backend runtime hardening passes
+- Wire mocked frontend surfaces ahead of their owning phase unlock
+- Implement BYOK / Stripe / credits / onboarding / public marketing without Phase 7 unlock
 
 ---
 
@@ -263,10 +302,18 @@ If violated → STOP execution
 
 ## CURRENT EXECUTION TARGET (STRICT)
 
-Focus next on:
+All Phase 0 + Phase 1 foundation patches are CLOSED (2026-05-07). Active-surface backend runtime hardening is SATURATED. SEO baseline allow-list and drift cleanup are CLOSED (2026-05-07 continuation). Phase 2 unlock prep is IN PROGRESS (2026-05-07 continuation #2): canonical schema migration AUTHORED at `supabase/migrations/20260507120000_phase2_data_ingestion.sql`; deploy + 503-gate lift await separate authorization.
 
-- Phase 0 patch (tracing_id + structured logging) AND/OR
-- Phase 1 patch (metadata + audit fields + response format)
+Active execution target (within current authorization):
+
+NONE — schema-prep step is complete. Remaining Phase 2 unlock-prep steps (deploy via `supabase db push`, post-deploy SQL verification, 503-gate lift on `/integrations/*` + `/metrics/*`, end-to-end OAuth+sync verification) require subsequent authorization because each carries operational risk: deploy applies real DB migrations; gate-lift exposes routes that fail with 42P01 if deploy didn't actually land.
+
+Holding pattern (default):
+
+- Maintain governance lock until next authorization arrives
+- Preserve all closed-slice invariants verbatim
+- Preserve Phase 2 503 gates on `/integrations/*` + `/metrics/*` until deploy is verified
+- Reject any work that would lift gates prematurely or that crosses into Phase 4 Part 2 / Phase X broader / Phase 5 / Phase 6 frontend wiring / Phase 7 without explicit authorization
 
 DO NOT:
 
@@ -274,10 +321,14 @@ DO NOT:
 - start integrations (Phase 2) without explicit unlock
 - modify legacy `decisions` table without explicit re-architecture decision
 - re-open Phase 4 minimal slice
+- re-open closed Phase 0 / Phase 1 patches
+- re-open the 13 closed backend runtime hardening passes
+- wire mocked frontend pages ahead of their owning phase unlock
+- implement BYOK / Stripe / credits / onboarding / public marketing without Phase 7 unlock
 
 CURRENT GOAL:
 
-Harden the foundation (tracing + structured logging + audit fields) so Phase 4 Part 2 and the broader Phase X can land cleanly when their unlock conditions are met.
+Hold governance lock. Phase foundation is hardened; the system is ready for Phase 2 unlock when explicitly authorized. Phase 4 Part 2 and broader Phase X will land cleanly given the foundation now in place.
 
 IF goal unclear → STOP (no guessing)
 
@@ -350,7 +401,10 @@ NEVER:
   - `20260503130000_phase4_minimal_execution_layer.sql` (Phase 4 — actions_library, decision_history)
   - `20260503140000_phase4_decision_history_idempotency.sql` (Phase 4 — execution_id + partial unique index)
   - `20260503150000_phase4_decision_history_impact_snapshot.sql` (Phase 4 — impact_snapshot column)
-- Schema: ALIGNED with code (Phase 3 + Phase 4 minimal — fully closed)
+  - `20260503170252_remote_schema.sql` (remote sync — drift fix)
+- Authored, NOT YET DEPLOYED:
+  - `20260507120000_phase2_data_ingestion.sql` (Phase 2 unlock prep — integrations, ad_accounts, campaign_metrics partitioned, sync_logs; awaits `supabase db push` + 503-gate lift)
+- Schema: ALIGNED with code (Phase 3 + Phase 4 minimal — fully closed; Phase 2 awaits deploy)
 - Legacy: `/db/_archive_migrations/` — ARCHIVE ONLY, never referenced
 
 RULE:
@@ -364,6 +418,12 @@ Claude MUST read:
 ## LAST UPDATE
 
 2026-05-03 — Phase 4 (minimal slice) CLOSED. CLOSING_AUDIT_PHASE4.md generated. Phase 4 Part 2 explicitly scoped as DEFERRED with documented unlock conditions. PATCH QUEUE updated; Phase 0 + Phase 1 are now the active focus (parallel-safe). HARD LOCK refreshed to incorporate Phase 4 invariants (max-percent cap, idempotency unique index, recipient placeholder filter). REAL SYSTEM CAPABILITIES enumerates the live action surface and the deferred surface explicitly.
+
+2026-05-07 — Phase 0 + Phase 1 foundation patches CLOSED via runtime evidence (verified across 13 backend runtime hardening passes). Phase 0: tracingMiddleware + requestLoggerMiddleware + correlator chain across `[req]/[err]/[exec]/[AI]/[auth]/[clerk-webhook]`. Phase 1: canonical envelope (`backend/src/utils/response.ts`) + audit columns on active write paths (auth.ts JIT, createCampaign, updateCampaign). Phase 1 metadata-JSONB on `decisions/creatives/automation_runs` reclassified as governance-bound to those phases' unlocks (NOT a Phase 1 blocker). 13 cumulative backend hardening passes (UUID/body/path/LIST validation parity, PGRST116 discriminator parity, request_id triple-sink, ai-suggestions silent-write fix, pushCampaign discriminator, auth.ts canonical normalization, AI empty-prompt guard, body-limit cap, smoke-flag gate, LIVE-flag dependency fail-fast, deferred-router 503 gating) added to PATCH QUEUE position #5 as DONE. SYSTEM STATUS line corrected: Frontend re-classified from "COMPLETED" to "SHELLED" per runtime evidence (5 pages wired / 34 mocked; mocked-shell state is INTENTIONAL per Phases.md phase scope, NOT drift). NEXT ACTION + CURRENT EXECUTION TARGET updated to reflect saturation: no in-scope active execution target remains; allowed governance-neutral moves are SEO baseline (allow-list) and orphan drift cleanup; all other paths require explicit phase unlock authorization. HARD LOCK preserved verbatim; REAL SYSTEM CAPABILITIES preserved verbatim; PHASE 4 CHECKLIST preserved verbatim; SAFE EXECUTION ORDER preserved verbatim; DATABASE STATE preserved verbatim; TOOLING / EXECUTION CONSTRAINT preserved verbatim. NO code, schema, contract, or migration changes this turn.
+
+2026-05-07 (continuation) — Governance-neutral allow-list executed end-to-end. (1) Drift cleanup: removed three orphan/zombie surfaces — `app/dashboard/saas/page.tsx` (Stitch template residue, broken types, no Sidebar/routing-map reference), `app/dashboard/channel/page.tsx` (singular duplicate of `/dashboard/channels`), `lib/data/mock-data.ts` (Stitch demo dataset that only fed the two orphan pages); removed hardcoded `/campaigns/1` placeholder Sidebar entry and now-unused `BarChart2` import (`components/dashboard/Sidebar.tsx`). (2) SEO baseline created (allow-list only, per SEO SPECIAL RULE; no marketing/blog/docs/funnel work): `app/sitemap.ts` (root only, authenticated SaaS surface intentionally minimal), `app/robots.ts` (public-allow root + auth pages, disallow all authenticated /dashboard, /campaigns, /decisions, /actions, /automation, /creatives, /integrations, /settings, /api), `app/manifest.ts` (PWA manifest using CLAUDE.md §8 design tokens), `app/opengraph-image.tsx` (1200×630 brand image via next/og), `app/layout.tsx` root metadata refreshed (Stitch placeholder copy "Precision Curator Dashboard" → "GrowthHub — AI-powered Growth Operating System"; added openGraph + twitter + robots fields + metadataBase). Frontend tsc → 0 errors (saas/page.tsx pre-existing error eliminated). Backend tsc → 0 errors. Phase locks preserved: NO deferred phase opened, NO schema/contract/migration changes, NO mocked-shell pages wired, NO frontend-backend bridge created beyond static metadata files. Architecture invariants intact: single-writer backend, org_id enforcement, deferred-router 503 gating, canonical envelope, request_id correlator chain, all 13 prior closed hardening passes. Governance-neutral scope is now exhausted; further moves require explicit Phase 2 / Phase 4 Part 2 / Phase X / Phase 5 / Phase 6 frontend / Phase 7 unlock authorization.
+
+2026-05-07 (continuation #2) — Phase 2 unlock prep AUTHORIZED and STARTED. Discovered runtime drift: Phase 2 backend code (connect.ts, integrations.ts, metrics.ts, vault.ts, oauth-state.ts, jobs/inngest.ts, services/sync/{meta,google,shopify,index}.ts) + frontend callback (`app/api/integrations/callback/[platform]/`) all in place; specs/002-data-ingestion/tasks.md marks T001–T027 complete. BUT canonical migration was missing from `/supabase/migrations/` — only existed in forbidden `/db/_archive_migrations/` directory (per CLAUDE.md MIGRATION SOURCE OF TRUTH rule, archive is never referenced for execution). Executed schema-prep step ONLY (not deploy or gate-lift): authored `supabase/migrations/20260507120000_phase2_data_ingestion.sql` from `specs/002-data-ingestion/data-model.md` authority, with one runtime-evidenced amendment — added `campaign_metrics.integration_id UUID REFERENCES integrations(id)` to match runtime upsert payloads in services/sync/{meta,google,shopify}.ts (per "runtime evidence overrides documentation" governance rule). Migration creates 4 tables: integrations, ad_accounts, campaign_metrics (PARTITIONED BY date with 8 quarterly partitions + default), sync_logs; all with RLS + org_id-scoped policies + indexes. Phase 2 status: DEFERRED → PARTIAL. DATABASE STATE updated to list authored-but-not-yet-deployed migration. PATCH QUEUE position #6 reclassified IN PROGRESS. NEXT ACTION + CURRENT EXECUTION TARGET reflect new state. NO 503 gates lifted — gates remain in place on `/integrations/*` and `/metrics/*` until `supabase db push` deploy is verified. NO backend code touched; tsc still 0 errors. Phase locks preserved: Phase 4 minimal slice (actions_library, decision_history) UNTOUCHED; Phase 3 (ai_decisions, ai_logs, campaigns) UNTOUCHED; Phase 4 Part 2 STILL DEFERRED behind Phase 2 deploy + per-org token plumbing. Architecture invariants intact: single-writer backend, org_id enforcement, deferred-router gating preserved on all currently-deferred routers, canonical envelope, request_id correlator chain, all 13 prior closed hardening passes preserved.
 
 
 

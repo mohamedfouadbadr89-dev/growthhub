@@ -1,6 +1,7 @@
 import { createMiddleware } from 'hono/factory'
 import { verifyToken } from '@clerk/backend'
 import { supabaseAdmin } from '../lib/supabase.js'
+import { fail } from '../utils/response.js'
 
 /**
  * Clerk session-token payload shape we read from. Only the claims we
@@ -16,14 +17,28 @@ interface ClerkSessionPayload {
 }
 
 export const authMiddleware = createMiddleware<{
-  Variables: { userId: string; orgId: string }
+  // requestId is populated by tracingMiddleware (mounted at app level in
+  // index.ts) and is in scope before authMiddleware runs. Declaring it
+  // in Variables makes c.get('requestId') type-safe so the [auth] stdout
+  // emissions below can join the established `request_id=` correlator
+  // chain ([req] / [err] / [exec] / [AI] / [clerk-webhook]) without an
+  // `as never` cast at every call site.
+  Variables: { userId: string; orgId: string; requestId: string }
 }>(async (c, next) => {
+  // Capture request_id once for the entire middleware lifecycle. Threading
+  // it through every stdout emission below brings the [auth] surface in
+  // line with the [req] / [err] / [exec] / [AI] / [clerk-webhook] envelopes
+  // (all hardened in prior turns) — single grep on a request_id pivots
+  // across every log line that an authenticated request produced.
+  const request_id = c.get('requestId')
   const authHeader = c.req.header('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
-    return c.json(
-      { error: 'Unauthorized', message: 'Missing or invalid authentication token' },
-      401
-    )
+    // Phase 1 envelope (utils/response.ts): canonical { success:false,
+    // error:{ message, code }, request_id }. Replaces the legacy
+    // { error, message } shape; tracingMiddleware has already minted
+    // request_id by the time this rejection fires, so the helper can
+    // populate it and the X-Request-ID header still correlates.
+    return fail(c, 'Missing or invalid authentication token', 401, { code: 'UNAUTHORIZED' })
   }
 
   const token = authHeader.slice(7)
@@ -36,10 +51,7 @@ export const authMiddleware = createMiddleware<{
     const orgId = payload.org_id ?? payload.o?.id
 
     if (!orgId) {
-      return c.json(
-        { error: 'Forbidden', message: 'User has no organization assigned' },
-        403
-      )
+      return fail(c, 'User has no organization assigned', 403, { code: 'FORBIDDEN' })
     }
 
     // ── JIT auto-provision (Clerk → DB) ─────────────────────────────────
@@ -64,18 +76,22 @@ export const authMiddleware = createMiddleware<{
           ? payload.o.slg
           : orgId
 
+      // Phase 1 audit-column population — `created_by` recorded as the
+      // first user who authenticated for this org via JIT (the Clerk
+      // webhook is the canonical authoritative path; JIT is the
+      // best-effort fallback per CLAUDE.md "JIT auto-provision" comment
+      // above). `ignoreDuplicates: true` means existing rows are not
+      // overwritten — so `created_by` only lands on rows the JIT path
+      // genuinely creates, never on rows the webhook already provisioned.
       const { error: orgErr } = await supabaseAdmin
         .from('organizations')
         .upsert(
-          { org_id: orgId, name: orgName },
+          { org_id: orgId, name: orgName, created_by: userId },
           { onConflict: 'org_id', ignoreDuplicates: true }
         )
       if (orgErr) {
-        console.error(`[auth] JIT org upsert failed: ${orgErr.message}`)
-        return c.json(
-          { error: 'Internal', message: 'auth provision failed' },
-          500
-        )
+        console.error(`[auth] request_id=${request_id} JIT org upsert failed: ${orgErr.message}`)
+        return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
       }
 
       const { data: existingUser, error: lookupErr } = await supabaseAdmin
@@ -84,11 +100,8 @@ export const authMiddleware = createMiddleware<{
         .eq('clerk_id', userId)
         .maybeSingle()
       if (lookupErr) {
-        console.error(`[auth] JIT user lookup failed: ${lookupErr.message}`)
-        return c.json(
-          { error: 'Internal', message: 'auth provision failed' },
-          500
-        )
+        console.error(`[auth] request_id=${request_id} JIT user lookup failed: ${lookupErr.message}`)
+        return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
       }
 
       if (!existingUser) {
@@ -112,35 +125,47 @@ export const authMiddleware = createMiddleware<{
           if (stripped === 'admin' || stripped === 'member') role = stripped
         }
 
+        // Phase 1 audit-column population — for the JIT path the user
+        // self-creates their own row at first authentication, so
+        // created_by === clerk_id. The Clerk webhook handler (canonical
+        // path) records the same identity from the membership event.
         const { error: insertErr } = await supabaseAdmin
           .from('users')
-          .insert({ clerk_id: userId, org_id: orgId, email, role })
+          .insert({ clerk_id: userId, org_id: orgId, email, role, created_by: userId })
         if (insertErr) {
           // Race-safe: another concurrent first-request may have inserted
           // the same clerk_id between our SELECT and INSERT. Treat unique
           // violation as success and continue.
           const code = (insertErr as { code?: string }).code
           if (code !== '23505') {
-            console.error(`[auth] JIT user insert failed: ${insertErr.message}`)
-            return c.json(
-              { error: 'Internal', message: 'auth provision failed' },
-              500
-            )
+            console.error(`[auth] request_id=${request_id} JIT user insert failed: ${insertErr.message}`)
+            // Canonical Phase 1 envelope (utils/response.ts). Pre-fix this
+            // path emitted the legacy `{ error: 'Internal', message }` shape
+            // — the only same-function asymmetry left after the org-upsert
+            // and user-lookup branches above were migrated to fail() in
+            // prior turns. Aligning the four auth-provision-failure paths
+            // to a single envelope restores body-level request_id and
+            // exposes `error.code === 'AUTH_PROVISION_FAILED'` uniformly,
+            // so the discriminator is coherent for all auth-provision
+            // failure modes (CONSTITUTION §3 "Fail Loudly" + the
+            // request_id correlator-chain invariant).
+            return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
           }
         }
       } else if (existingUser.org_id !== orgId) {
         // User switched orgs in Clerk — keep the FK in sync; preserve
         // email/role exactly (do NOT overwrite with placeholders).
+        // Phase 1 audit-column population — re-stamp updated_by on every
+        // org-switch sync. `created_by` is preserved (partial UPDATE).
         const { error: updateErr } = await supabaseAdmin
           .from('users')
-          .update({ org_id: orgId })
+          .update({ org_id: orgId, updated_by: userId })
           .eq('clerk_id', userId)
         if (updateErr) {
-          console.error(`[auth] JIT user org update failed: ${updateErr.message}`)
-          return c.json(
-            { error: 'Internal', message: 'auth provision failed' },
-            500
-          )
+          console.error(`[auth] request_id=${request_id} JIT user org update failed: ${updateErr.message}`)
+          // Same canonical-envelope rationale as the JIT user insert
+          // failure branch above — see comment there for full context.
+          return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
         }
       }
       // else: user exists with matching org_id — no DB write.
@@ -158,11 +183,8 @@ export const authMiddleware = createMiddleware<{
     // CONSTITUTION §3 "Fail Loudly" + Phase 0 patch (centralized logging).
     const e = err as Error
     console.error(
-      `[auth] verifyToken failed: name=${e?.name} message=${e?.message}`,
+      `[auth] request_id=${request_id} verifyToken failed: name=${e?.name} message=${e?.message}`,
     )
-    return c.json(
-      { error: 'Unauthorized', message: 'Missing or invalid authentication token' },
-      401
-    )
+    return fail(c, 'Missing or invalid authentication token', 401, { code: 'UNAUTHORIZED' })
   }
 })
