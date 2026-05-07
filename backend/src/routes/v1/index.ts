@@ -74,9 +74,18 @@ const deferredPhase = (routerPath: string, phaseLabel: string) =>
     )
   }
 
-// /integrations/* covers /integrations/connect/* too (Phase 2 ingestion).
-v1.use('/integrations/*', deferredPhase('/api/v1/integrations', 'Phase 2 data ingestion'))
-v1.use('/metrics/*',      deferredPhase('/api/v1/metrics',      'Phase 2 data ingestion'))
+// Phase 2 (data ingestion) — UNLOCKED 2026-05-07. Migration
+// 20260507120000_phase2_data_ingestion.sql is deployed; 4 canonical
+// tables (integrations, ad_accounts, campaign_metrics, sync_logs) live.
+// /integrations/* and /metrics/* gates lifted; routes serve real data.
+//
+// Envelope note: integrations.ts / connect.ts / metrics.ts pre-date the
+// canonical fail()/ok() envelope hardening and emit legacy shapes
+// (bare arrays, `{ error: '...' }`). The wired frontend (api-client +
+// integrations/dashboard pages) consumes the legacy shape directly.
+// Migrating these routes onto the canonical envelope is a future
+// Phase-1-cross-cutting patch that requires coordinated frontend
+// changes; deferred so Phase 2 ships without breaking the frontend.
 v1.use('/decisions/*',    deferredPhase('/api/v1/decisions',    'Phase 3 anomaly engine (legacy decisions table malformed; decision_runs not deployed)'))
 v1.use('/alerts/*',       deferredPhase('/api/v1/alerts',       'Phase 3 anomaly engine'))
 v1.use('/automation/*',   deferredPhase('/api/v1/automation',   'Phase 4 automation engine'))
