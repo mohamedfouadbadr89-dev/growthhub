@@ -191,11 +191,33 @@ Return ONLY a JSON object (no markdown, no code fences) with this exact structur
 
   const suggestions = validateSuggestions(parsed)
 
-  await supabaseAdmin
+  // Capture the UPDATE error explicitly. Pre-fix this call discarded the
+  // result entirely, which made every infra failure (RLS denial, schema
+  // drift, connection failure, pool exhaustion) silent: the OpenRouter
+  // call had ALREADY consumed the user's credits / BYOK budget, the
+  // function returned the validated suggestions, the route emitted a 200
+  // — but `campaigns.ai_suggestions` was never updated in the DB. On the
+  // next page load the suggestions disappeared and the user regenerated,
+  // burning a second AI call. CONSTITUTION §3 "Fail Loudly" + CLAUDE.md
+  // §11 cost-protection both demand this be surfaced.
+  //
+  // The UPDATE writes a known-existing JSONB column on the live
+  // `campaigns` table — NOT subject to `EXPECTED_SCHEMA_DRIFT` (which is
+  // a READ-side tolerance for Phase 2 deferred / legacy decisions
+  // tables). Throw → route catch (campaigns.ts POST /:id/ai-suggestions)
+  // re-throws untyped errors → errorHandler emits canonical envelope +
+  // request_id body + Sentry tag + `[err] request_id=...` stdout line.
+  const { error: updateErr } = await supabaseAdmin
     .from('campaigns')
     .update({ ai_suggestions: suggestions })
     .eq('org_id', orgId)
     .eq('id', campaignId)
+
+  if (updateErr) {
+    throw new Error(
+      `campaigns ai_suggestions persistence failed: ${updateErr.message}`,
+    )
+  }
 
   return suggestions
 }

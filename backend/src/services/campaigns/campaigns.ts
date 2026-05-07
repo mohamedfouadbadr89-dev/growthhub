@@ -428,7 +428,27 @@ export async function pushCampaign(
     .eq('id', campaignId)
     .single()
 
-  if (error || !campaign) {
+  // Discriminate "campaign genuinely absent" from "DB layer failed".
+  //
+  // Pre-fix this branch was `if (error || !campaign)` → 404 'Campaign not
+  // found'. Pattern-identical to the anti-patterns closed in
+  // getCampaignById (line 219) and updateCampaign (line 374) above —
+  // every non-PGRST116 PostgrestError (network failure, RLS denial,
+  // schema drift, connection pool exhaustion) was silently rebranded as
+  // resource absence and surfaced as 404. CONSTITUTION §3 "Fail Loudly"
+  // — DB infrastructure failures must surface as 5xx with full
+  // request_id/Sentry correlator, not 4xx that misleads operators.
+  //
+  // Push is a write-path mutation (queues a real platform create), so
+  // a misclassified 404 is doubly misleading: callers may retry against
+  // a different :id ("maybe wrong campaign?") when the real cause is
+  // transient infra. PGRST116 → 404 preserves the genuine not-found
+  // mapping; everything else throws → route catch → errorHandler →
+  // sanitized 500 + request_id correlator chain.
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`campaigns lookup failed: ${error.message}`)
+  }
+  if (!campaign) {
     throw Object.assign(new Error('Campaign not found'), { code: 'NOT_FOUND' })
   }
 

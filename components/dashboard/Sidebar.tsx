@@ -30,7 +30,6 @@ import {
   Cpu as AutomationIcon,
   List,
   Plus,
-  BarChart2,
   Network,
   Link2,
   UserCircle,
@@ -103,7 +102,10 @@ const INTEGRATIONS_CHILDREN: NavItem[] = [
 const CAMPAIGNS_CHILDREN: NavItem[] = [
   { label: 'All Campaigns',   href: '/campaigns',        icon: List },
   { label: 'Create Campaign', href: '/campaigns/create', icon: Plus },
-  { label: 'Campaign Detail', href: '/campaigns/1',      icon: BarChart2 },
+  // Campaign Detail entry intentionally absent: detail routes are
+  // /campaigns/<uuid> resolved per-row from the list. A static placeholder
+  // (e.g. /campaigns/1) was a Stitch-template residue that 404'd in
+  // production.
 ];
 
 const DECISIONS_CHILDREN: NavItem[] = [

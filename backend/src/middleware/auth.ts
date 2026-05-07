@@ -17,8 +17,20 @@ interface ClerkSessionPayload {
 }
 
 export const authMiddleware = createMiddleware<{
-  Variables: { userId: string; orgId: string }
+  // requestId is populated by tracingMiddleware (mounted at app level in
+  // index.ts) and is in scope before authMiddleware runs. Declaring it
+  // in Variables makes c.get('requestId') type-safe so the [auth] stdout
+  // emissions below can join the established `request_id=` correlator
+  // chain ([req] / [err] / [exec] / [AI] / [clerk-webhook]) without an
+  // `as never` cast at every call site.
+  Variables: { userId: string; orgId: string; requestId: string }
 }>(async (c, next) => {
+  // Capture request_id once for the entire middleware lifecycle. Threading
+  // it through every stdout emission below brings the [auth] surface in
+  // line with the [req] / [err] / [exec] / [AI] / [clerk-webhook] envelopes
+  // (all hardened in prior turns) — single grep on a request_id pivots
+  // across every log line that an authenticated request produced.
+  const request_id = c.get('requestId')
   const authHeader = c.req.header('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     // Phase 1 envelope (utils/response.ts): canonical { success:false,
@@ -78,7 +90,7 @@ export const authMiddleware = createMiddleware<{
           { onConflict: 'org_id', ignoreDuplicates: true }
         )
       if (orgErr) {
-        console.error(`[auth] JIT org upsert failed: ${orgErr.message}`)
+        console.error(`[auth] request_id=${request_id} JIT org upsert failed: ${orgErr.message}`)
         return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
       }
 
@@ -88,7 +100,7 @@ export const authMiddleware = createMiddleware<{
         .eq('clerk_id', userId)
         .maybeSingle()
       if (lookupErr) {
-        console.error(`[auth] JIT user lookup failed: ${lookupErr.message}`)
+        console.error(`[auth] request_id=${request_id} JIT user lookup failed: ${lookupErr.message}`)
         return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
       }
 
@@ -126,11 +138,18 @@ export const authMiddleware = createMiddleware<{
           // violation as success and continue.
           const code = (insertErr as { code?: string }).code
           if (code !== '23505') {
-            console.error(`[auth] JIT user insert failed: ${insertErr.message}`)
-            return c.json(
-              { error: 'Internal', message: 'auth provision failed' },
-              500
-            )
+            console.error(`[auth] request_id=${request_id} JIT user insert failed: ${insertErr.message}`)
+            // Canonical Phase 1 envelope (utils/response.ts). Pre-fix this
+            // path emitted the legacy `{ error: 'Internal', message }` shape
+            // — the only same-function asymmetry left after the org-upsert
+            // and user-lookup branches above were migrated to fail() in
+            // prior turns. Aligning the four auth-provision-failure paths
+            // to a single envelope restores body-level request_id and
+            // exposes `error.code === 'AUTH_PROVISION_FAILED'` uniformly,
+            // so the discriminator is coherent for all auth-provision
+            // failure modes (CONSTITUTION §3 "Fail Loudly" + the
+            // request_id correlator-chain invariant).
+            return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
           }
         }
       } else if (existingUser.org_id !== orgId) {
@@ -143,11 +162,10 @@ export const authMiddleware = createMiddleware<{
           .update({ org_id: orgId, updated_by: userId })
           .eq('clerk_id', userId)
         if (updateErr) {
-          console.error(`[auth] JIT user org update failed: ${updateErr.message}`)
-          return c.json(
-            { error: 'Internal', message: 'auth provision failed' },
-            500
-          )
+          console.error(`[auth] request_id=${request_id} JIT user org update failed: ${updateErr.message}`)
+          // Same canonical-envelope rationale as the JIT user insert
+          // failure branch above — see comment there for full context.
+          return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
         }
       }
       // else: user exists with matching org_id — no DB write.
@@ -165,7 +183,7 @@ export const authMiddleware = createMiddleware<{
     // CONSTITUTION §3 "Fail Loudly" + Phase 0 patch (centralized logging).
     const e = err as Error
     console.error(
-      `[auth] verifyToken failed: name=${e?.name} message=${e?.message}`,
+      `[auth] request_id=${request_id} verifyToken failed: name=${e?.name} message=${e?.message}`,
     )
     return fail(c, 'Missing or invalid authentication token', 401, { code: 'UNAUTHORIZED' })
   }

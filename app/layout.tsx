@@ -27,11 +27,33 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-
-  title: "Precision Curator Dashboard",
-
-  description: "Executive intelligence layer for scalable growth.",
-
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_BASE_URL ?? "https://growthhub.app",
+  ),
+  title: {
+    default: "GrowthHub — AI-powered Growth Operating System",
+    template: "%s · GrowthHub",
+  },
+  description:
+    "A closed-loop decision engine for ecommerce/DTC brands: detects signals, generates decisions, executes actions, and learns from outcomes — automatically.",
+  applicationName: "GrowthHub",
+  openGraph: {
+    title: "GrowthHub — AI-powered Growth Operating System",
+    description:
+      "Closed-loop growth automation: data → insight → decision → action → result → learning.",
+    type: "website",
+    siteName: "GrowthHub",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "GrowthHub — AI-powered Growth Operating System",
+    description:
+      "Closed-loop growth automation: data → insight → decision → action → result → learning.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
