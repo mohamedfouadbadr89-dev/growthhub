@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { getBrandKit, upsertBrandKit } from '../../services/creatives/brand-kit.js'
 import { uploadLogo, getSignedUrl } from '../../services/creatives/storage.js'
+import { ok, fail } from '../../utils/response.js'
 
 type Variables = { userId: string; orgId: string }
 
@@ -15,7 +16,7 @@ brandKitRouter.get('/', async (c) => {
   try {
     const kit = await getBrandKit(orgId)
     if (!kit) {
-      return c.json({ org_id: orgId, logo_url: null, colors: [], fonts: {}, tone_of_voice: null })
+      return ok(c, { org_id: orgId, logo_url: null, colors: [], fonts: {}, tone_of_voice: null })
     }
 
     // Generate a signed URL for the logo path (1 hour)
@@ -24,9 +25,9 @@ brandKitRouter.get('/', async (c) => {
       logoUrl = await getSignedUrl(logoUrl, 3600).catch(() => null)
     }
 
-    return c.json({ ...kit, logo_url: logoUrl })
+    return ok(c, { ...kit, logo_url: logoUrl })
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 500)
+    return fail(c, (err as Error).message, 500, { code: 'INTERNAL' })
   }
 })
 
@@ -38,13 +39,13 @@ brandKitRouter.put('/', async (c) => {
   try {
     body = await c.req.json()
   } catch {
-    return c.json({ error: 'Invalid JSON body' }, 400)
+    return fail(c, 'Invalid JSON body', 400, { code: 'INVALID_JSON' })
   }
 
   const patch: Parameters<typeof upsertBrandKit>[1] = {}
 
   if (body.colors !== undefined) {
-    if (!Array.isArray(body.colors)) return c.json({ error: 'colors must be an array' }, 400)
+    if (!Array.isArray(body.colors)) return fail(c, 'colors must be an array', 400, { code: 'INVALID_TYPE', field: 'colors' })
     const colors = (body.colors as unknown[])
       .filter((c) => typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c as string))
       .slice(0, 10) as string[]
@@ -53,21 +54,21 @@ brandKitRouter.put('/', async (c) => {
 
   if (body.fonts !== undefined) {
     if (typeof body.fonts !== 'object' || Array.isArray(body.fonts)) {
-      return c.json({ error: 'fonts must be an object' }, 400)
+      return fail(c, 'fonts must be an object', 400, { code: 'INVALID_TYPE', field: 'fonts' })
     }
     patch.fonts = body.fonts as Record<string, string>
   }
 
   if (body.tone_of_voice !== undefined) {
-    if (typeof body.tone_of_voice !== 'string') return c.json({ error: 'tone_of_voice must be a string' }, 400)
+    if (typeof body.tone_of_voice !== 'string') return fail(c, 'tone_of_voice must be a string', 400, { code: 'INVALID_TYPE', field: 'tone_of_voice' })
     patch.tone_of_voice = body.tone_of_voice.slice(0, 1000)
   }
 
   try {
     const kit = await upsertBrandKit(orgId, patch)
-    return c.json(kit)
+    return ok(c, kit)
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 500)
+    return fail(c, (err as Error).message, 500, { code: 'INTERNAL' })
   }
 })
 
@@ -79,22 +80,22 @@ brandKitRouter.post('/logo', async (c) => {
   try {
     formData = await c.req.formData()
   } catch {
-    return c.json({ error: 'Expected multipart/form-data' }, 400)
+    return fail(c, 'Expected multipart/form-data', 400, { code: 'INVALID_BODY' })
   }
 
   const file = formData.get('logo') as File | null
-  if (!file) return c.json({ error: 'Missing logo field in form data' }, 400)
+  if (!file) return fail(c, 'Missing logo field in form data', 400, { code: 'MISSING_PARAMETER', field: 'logo' })
 
   if (!ALLOWED_LOGO_TYPES.has(file.type)) {
-    return c.json({ error: 'Logo must be PNG or JPEG' }, 400)
+    return fail(c, 'Logo must be PNG or JPEG', 400, { code: 'INVALID_TYPE', field: 'logo' })
   }
 
   if (file.size > MAX_LOGO_BYTES) {
-    return c.json({ error: 'Logo must be under 5 MB' }, 400)
+    return fail(c, 'Logo must be under 5 MB', 400, { code: 'PAYLOAD_TOO_LARGE', field: 'logo' })
   }
 
   if (file.size === 0) {
-    return c.json({ error: 'Logo file is empty' }, 400)
+    return fail(c, 'Logo file is empty', 400, { code: 'INVALID_BODY', field: 'logo' })
   }
 
   try {
@@ -109,8 +110,8 @@ brandKitRouter.post('/logo', async (c) => {
     const kit = await upsertBrandKit(orgId, { logo_url: logoPath })
     const signedUrl = await getSignedUrl(logoPath, 3600).catch(() => null)
 
-    return c.json({ logo_url: signedUrl ?? kit.logo_url })
+    return ok(c, { logo_url: signedUrl ?? kit.logo_url })
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 500)
+    return fail(c, (err as Error).message, 500, { code: 'INTERNAL' })
   }
 })

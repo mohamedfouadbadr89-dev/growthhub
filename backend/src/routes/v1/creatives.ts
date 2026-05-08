@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../../lib/supabase.js'
 import { inngest } from '../../jobs/inngest.js'
 import { resolveApiKey, CREDIT_COSTS } from '../../services/creatives/creative-generator.js'
 import { getSignedUrls, getSignedUrl } from '../../services/creatives/storage.js'
+import { ok, fail } from '../../utils/response.js'
 
 type Variables = { userId: string; orgId: string }
 
@@ -49,13 +50,13 @@ creativesRouter.get('/', async (c) => {
   if (rawType === 'copy' || rawType === 'image') query = query.eq('type', rawType)
 
   const { data, error, count } = await query
-  if (error) return c.json({ error: error.message }, 500)
+  if (error) return fail(c, error.message, 500, { code: 'INTERNAL' })
 
   const withUrls = await withSignedUrls(
     (data ?? []) as Array<{ id: string; type: string; content_url: string | null; [key: string]: unknown }>
   )
 
-  return c.json({ creatives: withUrls, total: count ?? 0 })
+  return ok(c, { creatives: withUrls, total: count ?? 0 })
 })
 
 // POST /creatives/generate — billing gate + queue job
@@ -66,13 +67,13 @@ creativesRouter.post('/generate', async (c) => {
   try {
     body = await c.req.json()
   } catch {
-    return c.json({ error: 'Invalid JSON body' }, 400)
+    return fail(c, 'Invalid JSON body', 400, { code: 'INVALID_JSON' })
   }
 
   const { generation_type, ad_account_id, campaign_name } = body
 
   if (generation_type !== 'copy' && generation_type !== 'image') {
-    return c.json({ error: 'generation_type must be "copy" or "image"' }, 400)
+    return fail(c, 'generation_type must be "copy" or "image"', 400, { code: 'INVALID_TYPE', field: 'generation_type' })
   }
 
   // --- Billing gate (synchronous, before Inngest dispatch) ---
@@ -87,16 +88,16 @@ creativesRouter.post('/generate', async (c) => {
         p_amount: cost,
       })
       if ((newBalance as number) < 0) {
-        return c.json({ error: 'Insufficient credits for this generation' }, 402)
+        return fail(c, 'Insufficient credits for this generation', 402, { code: 'INSUFFICIENT_CREDITS' })
       }
       creditsDeducted = cost
     }
   } catch (err) {
     const e = err as Error & { code?: string }
     if (e.code === 'BYOK_REQUIRED') {
-      return c.json({ error: e.message, code: 'BYOK_REQUIRED' }, 402)
+      return fail(c, e.message, 402, { code: 'BYOK_REQUIRED' })
     }
-    return c.json({ error: e.message ?? 'Billing check failed' }, 500)
+    return fail(c, e.message ?? 'Billing check failed', 500, { code: 'INTERNAL' })
   }
 
   // Create the generation job record (records credits deducted for possible refund)
@@ -120,7 +121,7 @@ creativesRouter.post('/generate', async (c) => {
         .rpc('refund_credits', { p_org_id: orgId, p_amount: creditsDeducted })
         .then(() => null, () => null)
     }
-    return c.json({ error: insertErr?.message ?? 'Failed to create generation job' }, 500)
+    return fail(c, insertErr?.message ?? 'Failed to create generation job', 500, { code: 'INTERNAL' })
   }
 
   // Dispatch to Inngest
@@ -147,10 +148,10 @@ creativesRouter.post('/generate', async (c) => {
         .rpc('refund_credits', { p_org_id: orgId, p_amount: creditsDeducted })
         .then(() => null, () => null)
     }
-    return c.json({ error: 'Failed to queue generation job' }, 500)
+    return fail(c, 'Failed to queue generation job', 500, { code: 'INTERNAL' })
   }
 
-  return c.json({ generation_id: job.id }, 202)
+  return ok(c, { generation_id: job.id }, 202)
 })
 
 // GET /creatives/generations/:id — job status (org-scoped)
@@ -165,8 +166,8 @@ creativesRouter.get('/generations/:id', async (c) => {
     .eq('org_id', orgId)
     .single()
 
-  if (error || !data) return c.json({ error: 'Generation not found' }, 404)
-  return c.json(data)
+  if (error || !data) return fail(c, 'Generation not found', 404, { code: 'NOT_FOUND' })
+  return ok(c, data)
 })
 
 // GET /creatives/:id/download-url — short-lived signed URL for downloads (image only)
@@ -181,19 +182,19 @@ creativesRouter.get('/:id/download-url', async (c) => {
     .eq('org_id', orgId)
     .single()
 
-  if (error || !data) return c.json({ error: 'Creative not found' }, 404)
-  if (data.type !== 'image') return c.json({ error: 'Only image creatives have download URLs' }, 400)
-  if (!data.content_url) return c.json({ error: 'No image file associated with this creative' }, 404)
+  if (error || !data) return fail(c, 'Creative not found', 404, { code: 'NOT_FOUND' })
+  if (data.type !== 'image') return fail(c, 'Only image creatives have download URLs', 400, { code: 'INVALID_TYPE' })
+  if (!data.content_url) return fail(c, 'No image file associated with this creative', 404, { code: 'NOT_FOUND' })
 
   const path = data.content_url as string
   // Use a full URL directly if it's already one (legacy records)
-  if (path.startsWith('http')) return c.json({ url: path, expires_in: 0 })
+  if (path.startsWith('http')) return ok(c, { url: path, expires_in: 0 })
 
   try {
     const url = await getSignedUrl(path, 60)  // 60 seconds for download
-    return c.json({ url, expires_in: 60 })
+    return ok(c, { url, expires_in: 60 })
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 500)
+    return fail(c, (err as Error).message, 500, { code: 'INTERNAL' })
   }
 })
 
@@ -209,15 +210,15 @@ creativesRouter.get('/:id', async (c) => {
     .eq('org_id', orgId)
     .single()
 
-  if (error || !data) return c.json({ error: 'Creative not found' }, 404)
+  if (error || !data) return fail(c, 'Creative not found', 404, { code: 'NOT_FOUND' })
 
   // Attach signed URL for image creatives
   if (data.type === 'image' && data.content_url && !String(data.content_url).startsWith('http')) {
     const signedUrl = await getSignedUrl(data.content_url as string, 3600).catch(() => data.content_url)
-    return c.json({ ...data, content_url: signedUrl })
+    return ok(c, { ...data, content_url: signedUrl })
   }
 
-  return c.json(data)
+  return ok(c, data)
 })
 
 // PATCH /creatives/:id — edit copy creative text (copy type only)
@@ -229,11 +230,11 @@ creativesRouter.patch('/:id', async (c) => {
   try {
     body = await c.req.json()
   } catch {
-    return c.json({ error: 'Invalid JSON body' }, 400)
+    return fail(c, 'Invalid JSON body', 400, { code: 'INVALID_JSON' })
   }
 
   if (!body.content_text || typeof body.content_text !== 'object') {
-    return c.json({ error: 'content_text is required' }, 400)
+    return fail(c, 'content_text is required', 400, { code: 'MISSING_PARAMETER', field: 'content_text' })
   }
 
   // Verify ownership and type in a single query
@@ -244,8 +245,8 @@ creativesRouter.patch('/:id', async (c) => {
     .eq('org_id', orgId)
     .single()
 
-  if (fetchErr || !existing) return c.json({ error: 'Creative not found' }, 404)
-  if (existing.type !== 'copy') return c.json({ error: 'Only copy creatives can be edited' }, 400)
+  if (fetchErr || !existing) return fail(c, 'Creative not found', 404, { code: 'NOT_FOUND' })
+  if (existing.type !== 'copy') return fail(c, 'Only copy creatives can be edited', 400, { code: 'INVALID_TYPE' })
 
   // Sanitize — only accept the three expected fields
   const sanitized = {
@@ -262,6 +263,6 @@ creativesRouter.patch('/:id', async (c) => {
     .select('id, type, content_url, content_text, performance_score, generation_id, created_at, updated_at')
     .single()
 
-  if (error) return c.json({ error: error.message }, 500)
-  return c.json(data)
+  if (error) return fail(c, error.message, 500, { code: 'INTERNAL' })
+  return ok(c, data)
 })
