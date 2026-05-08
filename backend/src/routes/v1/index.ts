@@ -96,8 +96,16 @@ v1.use('/alerts/*',       deferredPhase('/api/v1/alerts',       'Phase 3 anomaly
 // execution. Auto-firing on AI decision stream remains GOVERNANCE-BLOCKED
 // (Phase 3 anomaly DEPRECATED; manual-fire path operational via
 // POST /api/v1/automation/rules/:id/execute).
-v1.use('/creatives/*',    deferredPhase('/api/v1/creatives',    'Phase 5 creatives'))
-v1.use('/brand-kit/*',    deferredPhase('/api/v1/brand-kit',    'Phase 5 creatives'))
+// Phase 5 (AI creatives) — UNLOCKED 2026-05-07. Migration
+// `20260507140000_phase5_creatives.sql` deployed; 3 canonical tables
+// (brand_kits, creative_generations, creatives) + 2 organizations
+// columns (plan_type, vault_byok_openrouter_secret_id — Phase 7 BYOK
+// substrate required by Phase 5 FR-011) + 1 private storage bucket
+// (`creatives`) live in production. `/creatives/*` and `/brand-kit/*`
+// gates lifted. Routes (`creatives.ts`, `brand-kit.ts`) currently use
+// legacy envelope shapes; canonicalization tracked as
+// PHASE5_ENVELOPE_FOLLOWUP (frontend pages are mocked-shells with no
+// apiClient coupling, so future canonicalization can land safely).
 
 // ─── Route mounts (handler files unchanged; the gates above short-circuit
 // deferred-phase requests before any handler is invoked) ─────────────────

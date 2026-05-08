@@ -1,7 +1,8 @@
 # Python Creative Runtime — Operator Tooling
 
 **Status:** TOOLING / ENVIRONMENT — not a service, not a phase deliverable.
-**Authority:** `specs/SYSTEM_CONTROL.md` continuation #8 (2026-05-07).
+**Authority (canonical):** [`specs/python-creative-runtime.md`](../../specs/python-creative-runtime.md) — full governance contract for boundaries, allowed/forbidden libraries, future provider preparation, promotion path to canonical Node backend.
+**Authority (execution lock):** [`specs/SYSTEM_CONTROL.md`](../../specs/SYSTEM_CONTROL.md) continuation #8 + #9 (2026-05-07).
 **Scope:** local-only, operator-side substrate for creative media iteration.
 
 ---
@@ -105,14 +106,44 @@ It does NOT touch the database, the backend, or the network.
 
 See `requirements.txt`. Pinned ranges; conservative major versions. All dependencies are operator-tooling-grade — no production runtime expectation.
 
-| Package | Purpose |
-|---|---|
-| `Pillow` | Image manipulation (resize, format convert, watermark) |
-| `imageio` | Multi-format image I/O (gif, webp, etc.) |
-| `numpy` | Numerical array math (Pillow/imageio dependency) |
-| `requests` | HTTP client for ad-hoc local API testing |
-| `python-dotenv` | `.env` loader for local scripts |
-| `ffmpeg-python` | Thin Python wrapper around the SYSTEM ffmpeg binary |
+| Package | Purpose | Spec authority |
+|---|---|---|
+| `Pillow` | Image manipulation (resize, format convert, watermark) | `python-creative-runtime.md` § Pillow |
+| `imageio` | Multi-format image I/O (gif, webp, etc.) | `python-creative-runtime.md` § imageio |
+| `numpy` | Numerical array math (Pillow/imageio dependency; embeddings prep) | `python-creative-runtime.md` § numpy |
+| `requests` | HTTP client for ad-hoc local API testing — operator-side convenience only | `python-creative-runtime.md` § CURRENT INSTALLED LIBRARIES |
+| `python-dotenv` | `.env` loader for local scripts (NOT production secret orchestration) | `python-creative-runtime.md` § python-dotenv |
+| `ffmpeg-python` | Thin Python wrapper around the SYSTEM ffmpeg binary | `python-creative-runtime.md` § ffmpeg-python |
+| `dspy` | LLM orchestration experimentation, prompt optimization, reasoning pipelines, evaluation. **NOT authorized for production orchestration ownership, autonomous execution, or production routing.** Outputs translate manually to canonical TypeScript in `backend/src/utils/aiValidator.ts` + `backend/src/services/ai/*.ts` + `backend/src/routes/v1/ai.ts`. | `python-creative-runtime.md` § DSPy |
+
+---
+
+## Verification scripts
+
+This directory ships with TWO read-only verification scripts. Both are operator-side, perform zero network/DB/filesystem-write side effects, and exit with a clear pass/fail signal.
+
+### `verify_runtime.py` — full environment verifier
+
+The canonical verifier. Confirms:
+- Python ≥ 3.9
+- Every entry in `REQUIRED_IMPORTS` is importable (Pillow, imageio, numpy, requests, python-dotenv, ffmpeg-python, **dspy**)
+- The SYSTEM `ffmpeg` binary is on PATH and executable
+
+Run after `pip install -r requirements.txt` to confirm the environment is ready.
+
+```bash
+python verify_runtime.py
+```
+
+### `test_dspy.py` — quick DSPy-only sanity check
+
+A 3-line operator convenience script that imports DSPy and prints its version. Use it when you want to confirm DSPy specifically is working without running the full `verify_runtime.py` battery (e.g., debugging a fresh `pip install dspy` upgrade in isolation).
+
+```bash
+python test_dspy.py
+```
+
+`test_dspy.py` is **complementary** to `verify_runtime.py`, not a replacement. The canonical verifier (`verify_runtime.py`) already covers DSPy via its REQUIRED_IMPORTS list.
 
 ---
 
