@@ -42,3 +42,17 @@ python-dotenv>=1.0,<2.0
 # ffmpeg separately (see README). This package is just thin Python
 # bindings — it does NOT bundle ffmpeg.
 ffmpeg-python>=0.2,<1.0
+
+# DSPy — LLM orchestration experimentation framework. Per
+# specs/python-creative-runtime.md § DSPy:
+#   - Authorized for: LLM orchestration experimentation, prompt
+#     optimization, reasoning pipelines, structured AI workflows,
+#     evaluation pipelines.
+#   - NOT authorized for: production orchestration ownership,
+#     autonomous execution, production routing.
+# DSPy outputs (signatures, modules, optimized prompts) are translated
+# manually by the operator into canonical TypeScript code in
+# backend/src/utils/aiValidator.ts + backend/src/services/ai/*.ts +
+# backend/src/routes/v1/ai.ts. DSPy itself never runs on the request
+# path; it is operator-tooling only.
+dspy>=2.6,<3.0

@@ -502,6 +502,28 @@ NOT production secret orchestration.
 
 
 
+## requests
+
+
+
+Purpose:
+
+- operator-side HTTP convenience for ad-hoc local API testing
+
+- creative experimentation against external endpoints from operator scripts
+
+
+
+NEVER imported by production backend.
+
+Backend uses native fetch in services/creatives/*.ts.
+
+
+
+---
+
+
+
 # FUTURE GOVERNED CANDIDATE LIBRARIES
 
 

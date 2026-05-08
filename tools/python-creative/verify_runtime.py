@@ -43,6 +43,14 @@ MIN_PYTHON: Tuple[int, int] = (3, 9)
 # Modules that requirements.txt is expected to install. Listed by their
 # IMPORT name (not their pip name). Kept manually in sync with
 # requirements.txt — small enough that a sync slip is obvious.
+#
+# Authoritative list per specs/python-creative-runtime.md § CURRENT
+# INSTALLED LIBRARIES + § CURRENT AUTHORIZED SCOPE:
+#   - DSPy (orchestration experimentation; operator-tooling only)
+#   - ffmpeg-python (wraps system ffmpeg binary)
+#   - Pillow, numpy, imageio (creative/media tooling)
+#   - python-dotenv (local-script env convenience)
+#   - requests (HTTP-test convenience; operator-side only)
 REQUIRED_IMPORTS: List[str] = [
     "PIL",          # Pillow
     "imageio",
@@ -50,6 +58,7 @@ REQUIRED_IMPORTS: List[str] = [
     "requests",
     "dotenv",       # python-dotenv
     "ffmpeg",       # ffmpeg-python
+    "dspy",
 ]
 
 
