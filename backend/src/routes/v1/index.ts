@@ -88,7 +88,14 @@ const deferredPhase = (routerPath: string, phaseLabel: string) =>
 // changes; deferred so Phase 2 ships without breaking the frontend.
 v1.use('/decisions/*',    deferredPhase('/api/v1/decisions',    'Phase 3 anomaly engine (legacy decisions table malformed; decision_runs not deployed)'))
 v1.use('/alerts/*',       deferredPhase('/api/v1/alerts',       'Phase 3 anomaly engine'))
-v1.use('/automation/*',   deferredPhase('/api/v1/automation',   'Phase 4 automation engine'))
+// Phase 4 Part 2 (automation engine) — UNLOCKED 2026-05-07. Migration
+// `20260507130000_phase4_part2_automation.sql` deployed; 2 canonical
+// tables (automation_rules, automation_runs) + 2 nullable decision_history
+// columns (automation_rule_id, automation_run_id) live in production.
+// `/automation/*` gate lifted; routes serve real CRUD + manual rule
+// execution. Auto-firing on AI decision stream remains GOVERNANCE-BLOCKED
+// (Phase 3 anomaly DEPRECATED; manual-fire path operational via
+// POST /api/v1/automation/rules/:id/execute).
 v1.use('/creatives/*',    deferredPhase('/api/v1/creatives',    'Phase 5 creatives'))
 v1.use('/brand-kit/*',    deferredPhase('/api/v1/brand-kit',    'Phase 5 creatives'))
 
