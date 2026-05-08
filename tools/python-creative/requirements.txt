@@ -1,0 +1,44 @@
+# =====================================================================
+# Phase 5 Python Creative Runtime — operator/local tooling ONLY
+# =====================================================================
+# Authority: SYSTEM_CONTROL.md continuation #8 (2026-05-07) authorizes a
+# governance-safe local Python creative runtime substrate. Phase 5
+# (AI Creatives) is CLOSED on the production runtime (TypeScript/Hono);
+# this Python environment is OPERATOR-SIDE TOOLING for local creative
+# media iteration, prompt testing, and ffmpeg-adjacent utilities. It is
+# NOT imported by the production backend, NOT a service, NOT a worker,
+# NOT a parallel orchestration layer, NOT a queue.
+#
+# Per TOOLING / EXECUTION CONSTRAINT:
+#   - operates inside existing repository architecture (tools/ subdir) ✅
+#   - supports current system control flow (does not replace it)         ✅
+#   - does not create architectural drift                                 ✅
+#   - does not bypass canonical migrations/runtime/logging/validation    ✅
+#   - aligned with current phase (Phase 5 closed)                         ✅
+#
+# Pinned to conservative major versions; pure-Python where possible to
+# minimize platform variance. ffmpeg-python wraps the SYSTEM ffmpeg
+# binary — operator must install ffmpeg separately (see README.md).
+# =====================================================================
+
+# Image manipulation (resize, format conversion, watermark composition)
+Pillow>=10.0,<12.0
+
+# Multi-format image I/O (gifs, webp, etc. that Pillow handles via plugins)
+imageio>=2.34,<3.0
+
+# Numerical array operations (image-buffer math; Pillow/imageio dep)
+numpy>=1.26,<3.0
+
+# HTTP client for ad-hoc local testing of OpenRouter / SiliconFlow APIs
+# (NEVER import this from the production backend; backend uses native
+# fetch in services/creatives/*.ts)
+requests>=2.31,<3.0
+
+# .env loader for local-script convenience (operator-side .env files)
+python-dotenv>=1.0,<2.0
+
+# Python wrapper around the SYSTEM ffmpeg binary. Operator must install
+# ffmpeg separately (see README). This package is just thin Python
+# bindings — it does NOT bundle ffmpeg.
+ffmpeg-python>=0.2,<1.0
