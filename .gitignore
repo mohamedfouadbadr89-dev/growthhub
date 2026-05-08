@@ -51,3 +51,15 @@ backend/dist/
 # clerk configuration (can include secrets)
 /.clerk/
 .claude/
+
+# Python creative runtime (operator-side tooling only — see
+# tools/python-creative/README.md). Virtual environments + bytecode +
+# packaging artifacts MUST NEVER be committed; the requirements.txt and
+# verification script ARE committed.
+tools/python-creative/.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
