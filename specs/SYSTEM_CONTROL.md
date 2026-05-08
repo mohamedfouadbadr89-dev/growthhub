@@ -1,7 +1,7 @@
 # SYSTEM STATE — SOURCE OF TRUTH
 
 ## CURRENT PHASE
-Phase 4 Part 2 — ⚠️ PARTIAL 2026-05-07 (canonical migration AUTHORED at `supabase/migrations/20260507130000_phase4_part2_automation.sql`; backend code shipped: automation-engine.ts rewritten to use canonical `ai_decisions`, automation router canonicalized to ok/fail envelope with manual-execute path, google.pause_campaign real-mode handler added to action-executor.ts, per-org execution rate limiting added; awaits `supabase db push` deploy + `/automation/*` 503-gate lift). Phase 2 + Phase 0 + Phase 1 + 13 backend hardening passes CLOSED earlier. · Next: deploy migration → verify → lift gate. Auto-firing on AI decision stream is GOVERNANCE-BLOCKED behind Phase 3 anomaly DEPRECATED+DEFERRED state (see Phase 4 Part 2 status below).
+Phase 5 — ⚠️ PARTIAL 2026-05-07 (canonical migration AUTHORED at `supabase/migrations/20260507140000_phase5_creatives.sql`; existing backend code/services already in place from prior scaffolding — `services/creatives/{brand-kit,creative-generator,copy-generation,image-generation,storage}.ts` + `routes/v1/{creatives,brand-kit}.ts` + 5 frontend mocked-shell pages; awaits `supabase db push` deploy + `/creatives/*` + `/brand-kit/*` 503-gate lift). Phase 0 + Phase 1 + Phase 2 + Phase 3 (linear) + Phase 4 minimal + Phase 4 Part 2 + 13 backend hardening passes ALL CLOSED. · Next: deploy migration → verify → lift gates. Phase 7 substrate columns (`organizations.plan_type` + `vault_byok_openrouter_secret_id`) added in this migration as the MINIMAL forward-positioning required by Phase 5 FR-011 BYOK gate; this is NOT Phase 7 monetization implementation (no Stripe, no billing UI, no plan upgrade flow).
 
 ---
 
@@ -144,7 +144,7 @@ Exit Gate (✅ all satisfied):
 
 ### Phase 4 Part 2 — Automation Engine + Multi-Platform
 
-Status: ⚠️ PARTIAL — unlock authorized 2026-05-07; schema + code shipped; awaits deploy + 503-gate lift; auto-firing trigger semantics governance-blocked.
+Status: ✅ CLOSED (2026-05-07) — schema deployed via `supabase db push`; PR #5 merged into main (commit `df2f243`); `/automation/*` 503 gate lifted; manual-execute path operational. Auto-firing on AI decision stream remains DEFERRED-BY-GOVERNANCE (cross-phase dependency, see "Governance-BLOCKED" subsection below).
 
 Authored / shipped 2026-05-07:
 - [x] `automation_rules` table (org-scoped, RLS, trigger_type enum, min_confidence_threshold, action_template_id FK, action_params JSONB, run counters)
@@ -158,10 +158,12 @@ Authored / shipped 2026-05-07:
 - [x] `executeAction` `ExecuteActionInput` extended with optional `automationRuleId` + `automationRunId` for Phase 4 Part 2 audit linkage. Both written into `decision_history` INSERT (NULLABLE; manual executions leave NULL).
 - [x] `LIVE_FLAG_DEPENDENCIES` startup-fail-fast extended with `GOOGLE_PAUSE_CAMPAIGN_LIVE → [GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET]`.
 
-Pending (require subsequent authorization or operator):
-- [ ] `supabase db push` — deploy authored migration
-- [ ] Verify deploy via post-migration SQL (2 new tables + 2 RLS policies + 2 added columns on decision_history)
-- [ ] Lift `/automation/*` 503 gate in `backend/src/routes/v1/index.ts` (ONLY after deploy verified)
+Completed (continuation #5, 2026-05-07):
+- [x] `supabase db push` — deployed migration to production
+- [x] Verified deploy via PR #5 merge into main + canonical migration in `/supabase/migrations/20260507130000_phase4_part2_automation.sql` (10664 bytes)
+- [x] Lifted `/automation/*` 503 gate in `backend/src/routes/v1/index.ts` (single-line removal + governance comment block; 4 remaining deferred gates preserved)
+
+Pending (DEFERRED-BY-GOVERNANCE — separate phase scopes):
 - [ ] Frontend wiring of `/automation/*` mocked surfaces (Phase 7 frontend-integration scope)
 
 Governance-BLOCKED (require explicit cross-phase authorization):
@@ -184,11 +186,48 @@ Spec-vs-runtime adaptation log (governance-driven):
 
 Patch Type: DB migration + backend code (SAFE — additive schema; canonical envelope preserved; HARD LOCK invariants preserved verbatim)
 
+Exit Gate (✅ all satisfied):
+✔ Migration deployed; 2 new tables + 2 added columns + 2 RLS policies live in production
+✔ /automation/* 503 gate lifted (continuation #5)
+✔ Auto-firing path explicitly accepted as governance-deferred (cross-phase dependency tracked)
+✔ Manual-execute path operational via `POST /api/v1/automation/rules/:id/execute`
+✔ All HARD LOCK invariants from Phase 4 minimal close preserved verbatim
+✔ Closed Phase 3 linear pipeline UNTOUCHED
+✔ Legacy `decisions` table NOT reactivated (canonical AI surface remains `ai_decisions`)
+
+---
+
+### Phase 5 — AI Creatives
+
+Status: ⚠️ PARTIAL — unlock authorized 2026-05-07; canonical schema migration AUTHORED but NOT YET DEPLOYED. Existing scaffolding (services + routes + frontend pages) was already in place from earlier development; this unlock provides the missing schema substrate.
+
+Authored / shipped (continuation #6, 2026-05-07):
+- [x] Backend services (pre-existing scaffolding): `services/creatives/{brand-kit,copy-generation,creative-generator,image-generation,storage,index}.ts` (per FR-001..FR-013)
+- [x] Backend routes (pre-existing, behind 503): `routes/v1/{creatives,brand-kit}.ts`
+- [x] Frontend mocked-shell pages (pre-existing): `app/creatives/{page,archive,brand-kit,editor,results}/page.tsx` (5 pages)
+- [x] Canonical migration: `supabase/migrations/20260507140000_phase5_creatives.sql` — 3 new tables (`brand_kits`, `creative_generations`, `creatives`) + 2 organizations columns (`plan_type`, `vault_byok_openrouter_secret_id` — Phase 7 substrate required by Phase 5 FR-011 BYOK gate; documented as the source of currently-active 42703 in `creative-generator.ts:resolveApiKey` defensive comment) + 1 storage bucket (`creatives`, private, signed-URL access). All RLS + indexes per spec.
+
+Spec-vs-runtime adaptation log (governance-driven):
+- Spec functional requirements (FR-001..FR-013) → schema captures Brand Kit (one per org, FR-002), Creative Generation (job ledger, FR-005), Creative (per-output rows, FR-007/FR-009/FR-010), and FR-011 BYOK substrate.
+- Spec assumes `creatives` Storage bucket exists ahead of time → migration creates it idempotently via `INSERT INTO storage.buckets ... ON CONFLICT DO NOTHING`.
+- Code references `organizations.plan_type` + `vault_byok_openrouter_secret_id` (creative-generator.ts:19-22) → migration adds them as NULLABLE/`subscription`-default substrate. This is the MINIMAL forward-positioning of Phase 7 schema columns required by Phase 5 FR-011 — it does NOT implement Phase 7 monetization (no Stripe, no billing UI, no plan upgrade flow, no credits ledger).
+- Frontend pages currently mocked-shells with no `apiClient` coupling → no PHASE5_ENVELOPE_FOLLOWUP risk; routes can be canonicalized in a future pass without breaking frontend.
+
+Pending (require subsequent authorization or operator):
+- [ ] `supabase db push` — deploy authored migration
+- [ ] Verify deploy via post-migration SQL (3 new tables + 2 added organizations columns + 3 RLS policies + 1 storage bucket)
+- [ ] Lift `/creatives/*` + `/brand-kit/*` 503 gates in `backend/src/routes/v1/index.ts` (ONLY after deploy verified)
+- [ ] Operator-side env: `SILICONFLOW_API_KEY` (image generation per CLAUDE.md TECH STACK), `SUPABASE_STORAGE_BUCKET=creatives` (default already matches)
+- [ ] Frontend wiring of `app/creatives/*` mocked pages (Phase 7 frontend-integration scope)
+- [ ] PHASE5_ENVELOPE_FOLLOWUP — canonicalize `creatives.ts`/`brand-kit.ts` from legacy envelope to Phase 1 ok()/fail() (low-risk; frontend not coupled)
+
+Patch Type: DB migration + storage bucket (SAFE — additive schema; existing backend services + routes operate against new schema; HARD LOCK invariants preserved)
+
 Exit Gate (PARTIAL until):
-✔ Migration deployed and 2 new tables + 2 added columns + 2 RLS policies live in production
-✔ /automation/* 503 gate lifted
-✔ At least one rule create + one manual-execute fully exercised end-to-end
-✔ Auto-firing path either unlocked via cross-phase governance OR explicitly accepted as governance-deferred
+✔ Migration deployed and 3 new tables + 2 added columns + 1 storage bucket + 3 RLS policies live in production
+✔ /creatives/* + /brand-kit/* 503 gates lifted
+✔ At least one Brand Kit save + one copy generation + one image generation fully exercised end-to-end
+✔ Phase 7 substrate columns confirmed populated/queryable without runtime drift
 
 ---
 
@@ -200,7 +239,7 @@ Status: 🔄 SPLIT
 - "Broader" portion (MCP routing, tool-governance, DB log-sink fan-out for ai_logs, strategy_tag enum): 🔒 LOCKED until Phase 4 Part 2 stable
 
 Unlock Condition for the broader Phase X:
-✔ Phase 4 Part 2 stable + automation engine working with ai_decisions linkage
+✔ Phase 4 Part 2 stable + automation engine working with ai_decisions linkage (✅ now satisfied)
 
 Documentation:
 - `specs/009-ai-orchestration/spec.md` describes the full Phase X surface; only the linear-pipeline portion is implemented today.
@@ -230,8 +269,9 @@ Priority Order:
 4. ✅ Phase 1 patch (envelope + audit columns) — DONE (2026-05-07) for active surface; metadata-JSONB on `decisions`/`creatives`/`automation_runs` is bound to those phases' unlocks (NOT a Phase 1 blocker)
 5. **13 backend runtime-hardening passes** — DONE (cumulative, closed) — UUID/body/path validation parity, LIST validation parity, PGRST116 discriminator parity, request_id triple-sink, ai-suggestions silent-write fix, pushCampaign discriminator, auth.ts canonical normalization, AI empty-prompt protection, body-limit cap, smoke-flag gate, LIVE-flag dependency fail-fast, deferred-router 503 gating
 6. ✅ Phase 2 (data ingestion) — DONE (2026-05-07): migration `20260507120000_phase2_data_ingestion.sql` deployed via `supabase db push`; 4 canonical tables live; 503 gates lifted on `/integrations/*` and `/metrics/*`; wired frontend (integrations + dashboard overview/channels) reaches live backend. Multi-tenant credential storage operational via Supabase Vault.
-7. ⚠️ Phase 4 Part 2 (automation engine + multi-platform real handlers) — IN PROGRESS (2026-05-07): canonical migration `20260507130000_phase4_part2_automation.sql` AUTHORED; backend code shipped (automation-engine.ts rewritten with canonical ai_decisions surface, automation router canonicalized + manual-execute endpoint, google.pause_campaign real-mode handler added to action-executor.ts, per-org rate limiting on executeAction). REMAINING: `supabase db push` deploy + 503-gate lift on `/automation/*`. AUTO-FIRING on AI decision stream is GOVERNANCE-BLOCKED (Phase 3 anomaly DEPRECATED+DEFERRED; manual-execute path operational via `POST /automation/rules/:id/execute`).
-8. Phase X broader (MCP, tool governance, DB log-sink fan-out, strategy_tag enum) — blocked behind #7 auto-firing governance decision
+7. ✅ Phase 4 Part 2 (automation engine + multi-platform real handlers) — DONE (2026-05-07): canonical migration `20260507130000_phase4_part2_automation.sql` deployed via `supabase db push`; PR #5 merged into main (commit `df2f243`); 2 canonical tables (automation_rules, automation_runs) + 2 nullable decision_history columns live in production; `/automation/*` 503 gate lifted; automation engine + google.pause_campaign + per-org rate limiting operational. AUTO-FIRING on AI decision stream remains GOVERNANCE-BLOCKED (cross-phase dependency); manual-execute path operational via `POST /automation/rules/:id/execute`.
+8. ⚠️ Phase 5 (AI Creatives) — IN PROGRESS (2026-05-07): canonical migration `20260507140000_phase5_creatives.sql` AUTHORED; backend services + routes + 5 frontend mocked pages already in place from prior scaffolding. REMAINING: `supabase db push` deploy + 503-gate lift on `/creatives/*` + `/brand-kit/*`. Migration adds 3 new tables (brand_kits, creative_generations, creatives) + 2 organizations columns (Phase 7 BYOK substrate; minimal forward-positioning required by Phase 5 FR-011) + 1 private storage bucket.
+9. Phase X broader (MCP, tool governance, DB log-sink fan-out, strategy_tag enum) — REQUIRES EXPLICIT AUTHORIZATION; Phase 4 Part 2 prerequisite now satisfied. Specs: `specs/mcp-orchestration.md`, `specs/mcp-integration.md`, `specs/ai-execution.md`, `specs/009-ai-orchestration/spec.md`.
 9. Frontend wiring of remaining mocked surfaces — bound to each owning phase's unlock state (Phase 6 campaigns frontend wiring, Phase 7 frontend integration scope for settings/billing/team)
 10. PHASE2_ENVELOPE_FOLLOWUP — migrate `integrations.ts`/`connect.ts`/`metrics.ts` onto canonical Phase 1 `{success, data, error:{message,code}, request_id}` envelope (currently emit legacy bare-array / `{error:'...'}` shapes). Coordinated frontend update to api-client/page consumers required. NOT a Phase 2 blocker; deferred for future Phase-1-cross-cutting patch.
 11. PHASE2_OAUTH_ENV_FAILFAST_FOLLOWUP — promote META_APP_ID/SECRET, GOOGLE_ADS_*, SHOPIFY_API_KEY/SECRET, OAUTH_REDIRECT_BASE_URL to startup-fail-fast (matches LIVE_FLAG_DEPENDENCIES pattern). NOT a Phase 2 blocker; runtime errors today are explicit per-route.
@@ -249,15 +289,18 @@ Priority Order:
 
 ## NEXT ACTION (STRICT)
 
-👉 Phase 2 (data ingestion) CLOSED (2026-05-07). Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4-minimal all closed. Active-surface backend runtime hardening SATURATED. The PATCH QUEUE next major item (#7 — Phase 4 Part 2) is governance-locked and requires EXPLICIT user authorization.
+👉 Phase 5 (AI Creatives) UNLOCK AUTHORIZED + IN PROGRESS (2026-05-07). Schema migration AUTHORED at `supabase/migrations/20260507140000_phase5_creatives.sql`; backend services + routes + 5 frontend pages already scaffolded. REMAINING: deploy via `supabase db push` + lift `/creatives/*` + `/brand-kit/*` 503 gates.
 
 ✅ Closed since last NEXT ACTION:
-- C) Phase 2 unlock — schema authored + deployed + 503 gates lifted + wired frontend reaches live backend ✅
+- D) Phase 4 Part 2 unlock — schema deployed + automation engine canonicalized + google.pause_campaign real-mode handler + per-org rate limiting + manual-execute path + 503 gate lifted ✅
+
+⚠️ IN PROGRESS:
+- E) Phase 5 (AI Creatives) — schema authored continuation #6; deploy + gate-lift pending. NOT YET CLOSED until `supabase db push` + verify + gate-lift.
 
 🔒 GOVERNANCE-LOCKED (require explicit authorization):
-- D) Phase 4 Part 2 — automation engine + multi-platform real handlers; prerequisites NOW satisfied (per-org credential storage live via Phase 2). Remaining: build `automation_rules` / `automation_runs` tables, complete `services/execution/automation-engine.ts` (currently dead-code skeleton), implement `google.pause_campaign` real-mode handler, add per-org rate limiting.
-- E) Phase X broader — MCP / tool governance / DB log-sink fan-out / strategy_tag enum (blocked by D)
-- F) Phase 5 (creatives), Phase 6 frontend wiring, Phase 7 (monetization, BYOK, Stripe, credits, settings real wiring) — each blocked by its own unlock
+- F) Phase X broader — MCP routing + tool governance + DB log-sink fan-out + strategy_tag enum. Specs: `specs/mcp-orchestration.md`, `specs/mcp-integration.md`, `specs/ai-execution.md`, `specs/009-ai-orchestration/spec.md`. Prerequisites: Phase 4 Part 2 stable (now satisfied). Note: extending the closed Phase 3 linear pipeline (`services/ai/execute-ai-decision.ts`) for any post-persist hook needed by Phase X broader will require its own minimal-diff cross-phase authorization.
+- G) Phase 6 frontend wiring, Phase 7 (monetization, BYOK UI, Stripe, credits, settings real wiring) — each blocked by its own unlock. Phase 5 unlock added the minimal Phase 7 substrate columns (`organizations.plan_type`, `vault_byok_openrouter_secret_id`) but NOT the Phase 7 monetization implementation itself.
+- H) Auto-firing of automation_rules on AI decision stream — cross-phase dependency; requires either AI Output Contract `result.category` extension OR closed-Phase-3 post-persist hook OR Phase 3 anomaly engine unlock. Manual-execute path operational today.
 
 🟢 Governance-NEUTRAL (allowed without phase unlock):
 - SEO baseline only — `app/sitemap.ts`, `app/robots.ts`, `app/manifest.ts`, `app/opengraph-image.tsx`, root `metadata` cleanup. NOT a phase deliverable; production-baseline only. NO marketing strategy / blog / docs / public-funnel work — those are governance-locked.
@@ -311,7 +354,15 @@ If violated → STOP execution
 - AI Logging: ✅ console-level structured `[AI]` lines via `aiLogger`; DB sink fan-out pending (broader Phase X)
 - Data Source: ✅ READY — Phase 2 closed 2026-05-07; integrations + ad_accounts + campaign_metrics + sync_logs tables live; OAuth + Inngest sync infrastructure operational. Real platform data flows once user OAuths a platform (requires META_APP_ID/SECRET, GOOGLE_ADS_*, SHOPIFY_API_KEY/SECRET in env).
 - Auth: ✅ FULLY WORKING — Clerk JWT verification + JIT auto-provisioning of org+user rows in `authMiddleware`
-- Backend API: ✅ WORKING (Hono); `POST /api/v1/ai/execute`, `POST /api/v1/actions/:id/execute`, `GET /api/v1/integrations`, `POST /api/v1/integrations/connect/start`, `POST /api/v1/integrations/connect/complete`, `DELETE /api/v1/integrations/:id`, `POST /api/v1/integrations/:id/sync`, `GET /api/v1/integrations/:id/sync-logs`, `GET /api/v1/metrics/summary`, `GET /api/v1/metrics/channels` all live
+- Automation Engine: ✅ READY — Phase 4 Part 2 closed 2026-05-07; automation_rules + automation_runs tables live; CRUD + manual-execute via `POST /api/v1/automation/rules/:id/execute`. Auto-firing on AI decision stream remains DEFERRED-BY-GOVERNANCE (cross-phase).
+- Per-org execution rate limit: ✅ ACTIVE — `ACTION_EXECUTION_MAX_PER_MINUTE` (default 60) gates `executeAction` on every non-replay invocation; idempotent replays not counted.
+- Real Action Surface (live, behind flags + token + allowlist):
+  - `meta.pause_campaign`
+  - `meta.decrease_budget`
+  - `meta.increase_budget` (with server-side max-percent cap)
+  - `send_alert_email` (Resend; org-admin recipients only; placeholder filter)
+  - `google.pause_campaign` (Phase 4 Part 2; per-org Vault refresh-token; OAuth refresh; customer_id from ad_accounts; behind GOOGLE_PAUSE_CAMPAIGN_LIVE flag + GOOGLE_LIVE_ORG_ALLOWLIST)
+- Backend API: ✅ WORKING (Hono); `POST /api/v1/ai/execute`, `POST /api/v1/actions/:id/execute`, `GET /api/v1/integrations`, `POST /api/v1/integrations/connect/start`, `POST /api/v1/integrations/connect/complete`, `DELETE /api/v1/integrations/:id`, `POST /api/v1/integrations/:id/sync`, `GET /api/v1/integrations/:id/sync-logs`, `GET /api/v1/metrics/summary`, `GET /api/v1/metrics/channels`, `GET/POST/PATCH/DELETE /api/v1/automation/rules`, `POST /api/v1/automation/rules/:id/execute`, `GET /api/v1/automation/runs` all live
 - org_id enforcement: ✅ middleware-level + RLS-level on every Phase 3/4 table
 - Execution Layer: ✅ CLOSED — actions_library + decision_history; idempotent; impact_snapshot persisted; 4 real-mode handlers behind flags; structured `[exec]` audit logs
 - Real Action Surface (live, behind flags + token + allowlist):
@@ -327,23 +378,26 @@ If violated → STOP execution
 
 ## CURRENT EXECUTION TARGET (STRICT)
 
-All Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4-minimal slices CLOSED (2026-05-07). Active-surface backend runtime hardening SATURATED. SEO baseline allow-list and drift cleanup CLOSED. Phase 2 schema deployed + gates lifted + wired frontend reaches live backend (continuation #3, 2026-05-07).
+Phase 0 + Phase 1 + Phase 2 + Phase 3 (linear) + Phase 4 minimal + Phase 4 Part 2 slices CLOSED. Phase 5 IN PROGRESS (continuation #6, 2026-05-07): schema migration authored; deploy + gate-lift pending. Active-surface backend runtime hardening SATURATED. SEO baseline allow-list and drift cleanup CLOSED.
 
 Active execution target (within current authorization):
 
-NONE — Phase 2 is fully closed within its authorized scope. Remaining items in the PATCH QUEUE require explicit phase unlock:
+Phase 5 deploy → verify → gate-lift on `/creatives/*` + `/brand-kit/*`. Operator-side work (`supabase db push` + verify) is the next governance-blocked dependency.
 
-- Phase 4 Part 2 unlock — needs explicit authorization. Prerequisites NOW satisfied: per-org credentials addressable via `integrations.vault_refresh_token_secret_id`; multi-tenant token plumbing live.
-- Phase X broader — blocked by Phase 4 Part 2.
-- Phase 5 / Phase 6 frontend wiring / Phase 7 — each blocked by its own unlock.
-- PHASE2_ENVELOPE_FOLLOWUP / PHASE2_OAUTH_ENV_FAILFAST_FOLLOWUP — non-blocker hardening tasks (queue items #10, #11) deferred until coordinated frontend update can land alongside.
+Subsequent items in the PATCH QUEUE require explicit phase unlock:
+
+- Phase X broader — needs explicit authorization. Prerequisites NOW satisfied: Phase 4 Part 2 stable. Spec authority: `specs/mcp-orchestration.md`, `specs/mcp-integration.md`, `specs/ai-execution.md`, `specs/009-ai-orchestration/spec.md`.
+- Phase 6 frontend wiring / Phase 7 — each blocked by its own unlock.
+- Auto-firing on AI decision stream — cross-phase dependency.
+- PHASE2_ENVELOPE_FOLLOWUP / PHASE2_OAUTH_ENV_FAILFAST_FOLLOWUP / PHASE5_ENVELOPE_FOLLOWUP — non-blocker hardening tasks deferred until coordinated frontend updates can land alongside.
 
 Holding pattern (default):
 
 - Maintain governance lock until next authorization arrives
-- Preserve all closed-slice invariants verbatim (including Phase 2 closure state)
-- Reject any work that crosses into Phase 4 Part 2 / Phase X broader / Phase 5 / Phase 6 frontend wiring / Phase 7 without explicit authorization
-- Preserve remaining 503 gates: `/decisions/*`, `/alerts/*`, `/automation/*`, `/creatives/*`, `/brand-kit/*` (each tied to its owning deferred phase)
+- Preserve all closed-slice invariants verbatim
+- Preserve Phase 5 503 gates on `/creatives/*` + `/brand-kit/*` until deploy is verified
+- Reject any work that crosses into Phase X broader / Phase 6 frontend wiring / Phase 7 without explicit authorization
+- Preserve remaining deferred-phase 503 gates: `/decisions/*`, `/alerts/*` (each tied to Phase 3 anomaly DEPRECATED+DEFERRED state)
 
 DO NOT:
 
@@ -434,8 +488,10 @@ NEVER:
   - `20260503170252_remote_schema.sql` (remote sync — drift fix)
 - `20260507120000_phase2_data_ingestion.sql` (Phase 2 — integrations, ad_accounts, campaign_metrics partitioned, sync_logs; deployed 2026-05-07 via `supabase db push`; 4 tables verified live in production)
 - Authored, NOT YET DEPLOYED:
-  - `20260507130000_phase4_part2_automation.sql` (Phase 4 Part 2 — automation_rules, automation_runs, decision_history extension columns; awaits `supabase db push` + `/automation/*` 503-gate lift)
-- Schema: ALIGNED with code (Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 minimal — all fully closed; Phase 4 Part 2 awaits deploy)
+  - `20260507130000_phase4_part2_automation.sql` (Phase 4 Part 2 — automation_rules, automation_runs, decision_history extension columns; deployed 2026-05-07 via `supabase db push`; PR #5 merged into main commit `df2f243`; tables verified live; `/automation/*` gate lifted)
+- Authored, NOT YET DEPLOYED:
+  - `20260507140000_phase5_creatives.sql` (Phase 5 — brand_kits + creative_generations + creatives tables; organizations.plan_type + vault_byok_openrouter_secret_id columns as Phase 7 substrate for FR-011 BYOK gate; private `creatives` storage bucket; awaits `supabase db push` + `/creatives/*` + `/brand-kit/*` 503-gate lift)
+- Schema: ALIGNED with code (Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 minimal + Phase 4 Part 2 — all fully closed; Phase 5 awaits deploy)
 - Legacy: `/db/_archive_migrations/` — ARCHIVE ONLY, never referenced
 
 RULE:
@@ -457,6 +513,10 @@ Claude MUST read:
 2026-05-07 (continuation #2) — Phase 2 unlock prep AUTHORIZED and STARTED. Discovered runtime drift: Phase 2 backend code (connect.ts, integrations.ts, metrics.ts, vault.ts, oauth-state.ts, jobs/inngest.ts, services/sync/{meta,google,shopify,index}.ts) + frontend callback (`app/api/integrations/callback/[platform]/`) all in place; specs/002-data-ingestion/tasks.md marks T001–T027 complete. BUT canonical migration was missing from `/supabase/migrations/` — only existed in forbidden `/db/_archive_migrations/` directory (per CLAUDE.md MIGRATION SOURCE OF TRUTH rule, archive is never referenced for execution). Executed schema-prep step ONLY (not deploy or gate-lift): authored `supabase/migrations/20260507120000_phase2_data_ingestion.sql` from `specs/002-data-ingestion/data-model.md` authority, with one runtime-evidenced amendment — added `campaign_metrics.integration_id UUID REFERENCES integrations(id)` to match runtime upsert payloads in services/sync/{meta,google,shopify}.ts (per "runtime evidence overrides documentation" governance rule). Migration creates 4 tables: integrations, ad_accounts, campaign_metrics (PARTITIONED BY date with 8 quarterly partitions + default), sync_logs; all with RLS + org_id-scoped policies + indexes. Phase 2 status: DEFERRED → PARTIAL. DATABASE STATE updated to list authored-but-not-yet-deployed migration. PATCH QUEUE position #6 reclassified IN PROGRESS. NEXT ACTION + CURRENT EXECUTION TARGET reflect new state. NO 503 gates lifted — gates remain in place on `/integrations/*` and `/metrics/*` until `supabase db push` deploy is verified. NO backend code touched; tsc still 0 errors. Phase locks preserved: Phase 4 minimal slice (actions_library, decision_history) UNTOUCHED; Phase 3 (ai_decisions, ai_logs, campaigns) UNTOUCHED; Phase 4 Part 2 STILL DEFERRED behind Phase 2 deploy + per-org token plumbing. Architecture invariants intact: single-writer backend, org_id enforcement, deferred-router gating preserved on all currently-deferred routers, canonical envelope, request_id correlator chain, all 13 prior closed hardening passes preserved.
 
 2026-05-07 (continuation #3) — Phase 2 unlock COMPLETED. Operator confirmed: PR merged into `main`; local main synced; `supabase db push` completed successfully; 4 canonical Phase 2 tables (integrations, ad_accounts, campaign_metrics, sync_logs) verified live in production Supabase. Executed final unlock step: lifted 503 gates on `/integrations/*` and `/metrics/*` in `backend/src/routes/v1/index.ts` (removed two `v1.use(...)` deferredPhase lines; preserved gates on `/decisions/*`, `/alerts/*`, `/automation/*`, `/creatives/*`, `/brand-kit/*` per their respective unowned phases). Wired frontend now reaches live backend: `app/integrations/page.tsx` (GET /api/v1/integrations), `app/integrations/connect/page.tsx` (POST connect/start), `app/api/integrations/callback/[platform]/route.ts` (POST connect/complete), `app/dashboard/overview/page.tsx` (GET /api/v1/metrics/summary), `app/dashboard/channels/page.tsx` (GET /api/v1/metrics/channels). Phase 2 status: PARTIAL → CLOSED. CURRENT PHASE updated. SYSTEM STATUS Integrations line corrected: NOT CONNECTED → READY. REAL SYSTEM CAPABILITIES Data Source line corrected: STATIC → READY. PATCH QUEUE position #6 closed; positions #10 and #11 added for non-blocker follow-ups (PHASE2_ENVELOPE_FOLLOWUP for canonical-envelope migration of legacy Phase 2 routes, PHASE2_OAUTH_ENV_FAILFAST_FOLLOWUP for startup-fail-fast on OAuth env). Backend tsc → 0 errors. Phase locks preserved: Phase 4 minimal slice UNTOUCHED, Phase 3 UNTOUCHED, Phase 4 Part 2 STILL DEFERRED (now its prerequisites are satisfied; awaits explicit unlock authorization), all other deferred routers still 503-gated. Architecture invariants intact: single-writer backend, org_id enforcement, canonical envelope on active hardened surface (auth/ai/actions/history/campaigns), request_id correlator chain, all 13 prior closed backend hardening passes. Known remaining envelope inconsistency on Phase 2 routes (legacy bare-array + `{error:'...'}` shapes) explicitly tracked as non-blocker follow-up; the wired frontend was already coupled to the legacy shapes, so canonicalizing the envelope requires coordinated frontend update beyond Phase 2 scope.
+
+2026-05-07 (continuation #6) — Phase 5 (AI Creatives) UNLOCK AUTHORIZED + EXECUTED (schema-prep step; deploy + gate-lift pending). Authored canonical migration `supabase/migrations/20260507140000_phase5_creatives.sql` from `specs/005-ai-creatives/spec.md` authority + runtime evidence in existing backend services (`backend/src/services/creatives/{brand-kit,creative-generator,copy-generation,image-generation,storage}.ts`) and routes (`backend/src/routes/v1/{creatives,brand-kit}.ts`). Migration creates 3 new tables: `brand_kits` (one per org, FR-002), `creative_generations` (job ledger with status enum + ROAS source context, FR-003..FR-005, FR-008, FR-013), `creatives` (per-output rows with type discriminator + content_url/content_text + performance_score CHECK 0-100, FR-007/FR-009/FR-010); ADDS 2 organizations columns (`plan_type` TEXT NOT NULL DEFAULT 'subscription' CHECK + `vault_byok_openrouter_secret_id` UUID NULLABLE) as MINIMAL Phase 7 substrate required by Phase 5 FR-011 BYOK gate (documented in `creative-generator.ts:resolveApiKey` defensive comment as the source of currently-active 42703 schema drift); CREATES 1 private storage bucket `creatives` (idempotent ON CONFLICT DO NOTHING) for image creative storage per CLAUDE.md TECH STACK + `services/creatives/storage.ts` expectations. All 3 new tables RLS-enabled with `org_id = auth.jwt()->>'org_id'` policies + per-table indexes. Phase 5 status: DEFERRED → PARTIAL. CURRENT PHASE updated. PATCH QUEUE: position #8 promoted to Phase 5 IN PROGRESS; positions renumbered (Phase X broader → #9). NEXT ACTION + CURRENT EXECUTION TARGET reflect new state. NO 503 gates lifted — gates remain in place on `/creatives/*` and `/brand-kit/*` until `supabase db push` deploy is verified (matches Phase 2 + Phase 4 Part 2 unlock-prep pattern). NO backend code touched (existing scaffolding preserved verbatim — no canonicalization, no rewrites; tracked as future PHASE5_ENVELOPE_FOLLOWUP). NO frontend pages wired (5 mocked-shells preserved). NO new dependencies added. NO Phase 7 monetization implementation (no Stripe, no billing UI, no plan upgrade flow, no credits ledger — only the schema substrate Phase 5 code already references). Phase locks preserved: Phase 4 minimal slice UNTOUCHED; Phase 4 Part 2 UNTOUCHED; Phase 3 linear pipeline UNTOUCHED; Phase 2 UNTOUCHED at column level (FK references added: creative_generations references ad_accounts as upstream context, no schema changes to existing Phase 2 tables); legacy `decisions` table NOT reactivated. Architecture invariants intact: single-writer backend, org_id enforcement (every new table has `org_id` REFERENCES organizations + RLS policy), canonical envelope on hardened active surface (auth/ai/actions/history/campaigns/automation), request_id correlator chain, all 13 prior closed backend hardening passes preserved. Auto-firing on AI decision stream (Phase 4 Part 2 cross-phase dependency) remains GOVERNANCE-BLOCKED.
+
+2026-05-07 (continuation #5) — Phase 4 Part 2 CLOSED. Operator confirmed: PR #5 merged into `main` (commit `df2f243`); local main synced; `supabase db push` completed; 2 canonical Phase 4 Part 2 tables (automation_rules, automation_runs) + 2 nullable decision_history columns (automation_rule_id, automation_run_id) verified live in production Supabase. Read-only governance audit completed (continuation #4½ within continuation #5) confirming: 11 canonical migrations live, 14 active routers mounted, 5 deferred-router 503 gates active, all HARD LOCK invariants intact, backend tsc 0, frontend tsc 0, single-writer/org_id/canonical-envelope/request_id-correlator/PGRST116-discriminator parity all preserved across hardened surface, FINAL SYSTEM STATUS = GOVERNANCE SAFE WITH WARNINGS (warnings all explicitly tracked, no undocumented drift). Executed final unlock step: lifted `/automation/*` 503 gate in `backend/src/routes/v1/index.ts` (single-line removal at line 91 + governance comment block; +8/-1 LOC; minimal-diff). Preserved: 4 remaining deferred gates (`/decisions/*`, `/alerts/*`, `/creatives/*`, `/brand-kit/*`); `/automation` router mount at line 112 unchanged; all closed-slice invariants verbatim. Phase 4 Part 2 status: PARTIAL → CLOSED. CURRENT PHASE updated. SYSTEM STATUS Automation Engine + Per-org rate limit + Real Action Surface (added google.pause_campaign live) + Backend API endpoint list (added 5 new automation endpoints) all updated. PATCH QUEUE position #7 closed; position #8 (Phase X broader) is now next governed item, requiring explicit unlock authorization. NEXT ACTION + CURRENT EXECUTION TARGET reflect closure. Backend tsc → 0 errors. Frontend tsc → 0 errors. Phase locks preserved: Phase 4 minimal slice UNTOUCHED (HARD LOCK invariants verbatim); Phase 3 linear pipeline UNTOUCHED; Phase 2 UNTOUCHED; legacy `decisions` table NOT reactivated. Auto-firing of automation_rules on AI decision stream remains GOVERNANCE-BLOCKED (cross-phase dependency tracked under PATCH QUEUE position #7 G-clause); manual-execute path via `POST /api/v1/automation/rules/:id/execute` operational.
 
 2026-05-07 (continuation #4) — Phase 4 Part 2 UNLOCK AUTHORIZED + EXECUTED (schema/code shipped; deploy + gate-lift pending). Authored canonical migration `supabase/migrations/20260507130000_phase4_part2_automation.sql` (CREATE automation_rules, CREATE automation_runs, ALTER decision_history ADD nullable automation_rule_id + automation_run_id, RLS + indexes). Per "Do NOT reactivate decisions table" governance rule, substituted spec data-model.md `decision_id REFERENCES decisions(id)` with `ai_decision_id REFERENCES ai_decisions(id)` on automation_runs (mirroring Phase 4 minimal close pattern); did NOT add `decision_id` column to decision_history; did NOT alter `decision_runs` (Phase 3 anomaly DEFERRED, table absent). Rewrote `backend/src/services/execution/automation-engine.ts` end-to-end: removed deprecated `decisions` table reference; new exports `evaluateRulesForAIDecision(orgId, aiDecisionId)` + `executeRule(orgId, ruleId, aiDecisionId?)`; legacy `dispatchAutomation(orgId, runId)` retained as dormant spec-conformance shim; confidence comparison normalizes ai_decisions.confidence_score (0–1 NUMERIC) against rule.min_confidence_threshold (0–100 INTEGER); trigger-type matching uses `ai_decisions.result.category` JSONB path (governance-soft dependency). Canonicalized `backend/src/routes/v1/automation.ts` to use ok()/fail() Phase 1 envelope across GET/POST/PATCH/DELETE /rules + GET /runs; added new `POST /rules/:id/execute` for manual rule firing; UUID + body-shape + LIST + INVALID_FILTER + INVALID_TYPE validation parity with rest of active hardened surface. Added `realGooglePauseCampaign` real-mode handler to `backend/src/services/execution/action-executor.ts` (Google Ads API v19 customers/{cid}/campaigns:mutate; per-org Vault refresh-token resolution; OAuth refresh; customer_id from `ad_accounts.platform_account_id`; structured `[exec]` lifecycle logs; tokens never logged); behind `GOOGLE_PAUSE_CAMPAIGN_LIVE` flag + `GOOGLE_LIVE_ORG_ALLOWLIST`, mirroring Meta pattern. Extended `executeAction` with optional `automationRuleId` + `automationRunId` (threaded into decision_history INSERT). Added per-org execution rate limit: `ACTION_EXECUTION_MAX_PER_MINUTE` (default 60); DB-backed count of decision_history inserts in last 60s; throws `code: 'RATE_LIMITED'` with `retryAfterSeconds: 60`; idempotent replays not counted (early-returned). Promoted `GOOGLE_PAUSE_CAMPAIGN_LIVE` to `LIVE_FLAG_DEPENDENCIES` startup-fail-fast (deps: GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_CLIENT_ID + GOOGLE_ADS_CLIENT_SECRET). Phase 4 Part 2 status: DEFERRED → PARTIAL. NOT lifted: `/automation/*` 503 gate (preserved until deploy verified). NOT touched: action-executor.ts existing 4 real handlers (Meta pause/decrease/increase + Resend send_alert_email) + idempotency + impact_snapshot — all Phase 4 minimal close invariants preserved verbatim. NOT touched: legacy `decisions` table (still DEPRECATED). NOT touched: closed Phase 3 linear pipeline `services/ai/execute-ai-decision.ts` (post-persist hook for auto-firing is GOVERNANCE-BLOCKED). Backend tsc → 0 errors. HARD LOCK preserved verbatim. REAL SYSTEM CAPABILITIES preserved (will be updated to add google.pause_campaign live + automation engine status post-deploy). Auto-firing of automation_rules on AI decision stream is GOVERNANCE-BLOCKED behind Phase 3 anomaly DEPRECATED+DEFERRED state — manual-execute path is operational via `POST /api/v1/automation/rules/:id/execute`; cross-phase authorization required for automatic triggering (extend AI Output Contract with category field OR install post-persist hook in execute-ai-decision.ts OR unlock Phase 3 anomaly engine).
 
