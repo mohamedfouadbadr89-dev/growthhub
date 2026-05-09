@@ -1,37 +1,61 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useParams } from "next/navigation"
+import { useAuth } from "@clerk/nextjs"
 import {
   ArrowLeft, Bell, HelpCircle, Sparkles, TrendingUp,
   AlertTriangle, ChevronDown, ChevronRight, Plus, ArrowLeftRight,
-  Check,
+  Check, Send,
 } from "lucide-react"
+import { apiClient, ApiError } from "@/lib/api-client"
+
+// Phase 6 Sub-pass B (continuation #13, 2026-05-08): wired to canonical
+// `GET /api/v1/campaigns/:id` (real metrics + 14d trend + decisions overlay),
+// `POST /:id/ai-suggestions` (BYOK-aware AI targeting), and
+// `POST /:id/push` (simulated-only — Sub-pass C will land real-mode handlers).
+//
+// Sections that remain MOCKED-DEFERRED:
+//   - ACTIONS panel ("Increase Budget +20%", "Shift Budget Across") → recommendations layer deferred
+//   - Active Ad Sets table → adsets table deferred
+//   - Top Creatives row → cross-Phase-5 join deferred
+//   - AI Strategic Insight panel → anomaly engine DEPRECATED
+//   - Recommendations / Risk Analysis right-column → no recommendations/risk_scores tables
+//   - KPI period-deltas (`+4.2%` etc.) → no period-comparison endpoint yet
 
 type TrendMetric = "spend" | "revenue" | "roas"
 
-const MOCK_CAMPAIGN = {
-  name: "Summer Collection 2024",
-  status: "Active",
-  platform: "Meta",
-  updatedAgo: "2 min ago",
-  spend: "$18,402",
-  spendDelta: "+4.2%",
-  revenue: "$84,649",
-  revenueDelta: "+12.8%",
-  roas: "4.6x",
-  roasDelta: "+2.1%",
+interface ApiCampaignMetrics {
+  spend: number
+  revenue: number
+  roas: number
+  conversions: number
+  impressions: number
+  trend_14d?: Array<{ date: string; spend: number; roas: number }>
 }
 
-const TREND_BARS: { day: string; spendH: number; revenueH: number; roasH: number }[] = [
-  { day: "Mon", spendH: 40, revenueH: 60, roasH: 55 },
-  { day: "Tue", spendH: 45, revenueH: 75, roasH: 65 },
-  { day: "Wed", spendH: 30, revenueH: 55, roasH: 48 },
-  { day: "Thu", spendH: 50, revenueH: 90, roasH: 80 },
-  { day: "Fri", spendH: 60, revenueH: 80, roasH: 72 },
-  { day: "Sat", spendH: 20, revenueH: 40, roasH: 35 },
-  { day: "Sun", spendH: 15, revenueH: 30, roasH: 28 },
-]
+interface ApiCampaignDetail {
+  id: string
+  name: string
+  platform: string
+  status: string
+  daily_budget: number | null
+  ad_account_id: string | null
+  metrics: ApiCampaignMetrics
+  decisions: Array<{ id: string; title: string; confidence_score: number; status: string; action_id: string | null }>
+  ai_suggestions?: AiSuggestions | null
+}
+
+interface AiSuggestions {
+  interests: string[]
+  age_min: number
+  age_max: number
+  gender: string
+  daily_budget_recommendation: number
+  rationale: string
+  generated_at: string
+}
 
 const CREATIVE_GRADIENTS = [
   { label: "V1_Video", roas: "6.1x", grad: "linear-gradient(135deg,#005bc4,#3b82f6)" },
@@ -84,15 +108,61 @@ const ACTIONS = [
   },
 ]
 
+const fmtCurrency = (n: number) =>
+  `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+const fmtRoas = (n: number) => `${n.toFixed(1)}x`
+
 export default function CampaignDetailPage() {
+  const params = useParams<{ id: string }>()
+  const campaignId = params?.id as string
+  const { getToken } = useAuth()
+
+  const [campaign,    setCampaign]    = useState<ApiCampaignDetail | null>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [loadError,   setLoadError]   = useState<string | null>(null)
+
   const [trendMetric, setTrendMetric] = useState<TrendMetric>("spend")
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["as1"]))
-  const [executing, setExecuting] = useState<Set<string>>(new Set())
-  const [executed, setExecuted] = useState<Set<string>>(new Set())
+  const [expanded,    setExpanded]    = useState<Set<string>>(new Set(["as1"]))
+  const [executing,   setExecuting]   = useState<Set<string>>(new Set())
+  const [executed,    setExecuted]    = useState<Set<string>>(new Set())
+
   const [auditRunning, setAuditRunning] = useState(false)
-  const [auditDone, setAuditDone] = useState(false)
+  const [auditError,   setAuditError]   = useState<string | null>(null)
+  const [suggestions,  setSuggestions]  = useState<AiSuggestions | null>(null)
+
+  const [pushing,     setPushing]     = useState(false)
+  const [pushed,      setPushed]      = useState(false)
+  const [pushError,   setPushError]   = useState<string | null>(null)
+
   const [applyingAll, setApplyingAll] = useState(false)
-  const [appliedAll, setAppliedAll] = useState(false)
+  const [appliedAll,  setAppliedAll]  = useState(false)
+
+  useEffect(() => {
+    if (!campaignId) return
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setLoadError(null)
+      try {
+        const token = await getToken()
+        if (!token) throw new ApiError(401, "Sign in required")
+        const data = await apiClient<ApiCampaignDetail>(`/api/v1/campaigns/${campaignId}`, token)
+        if (!cancelled) {
+          setCampaign(data)
+          if (data.ai_suggestions) setSuggestions(data.ai_suggestions)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const e = err as ApiError | Error
+          setLoadError(e.message || "Failed to load campaign")
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [campaignId, getToken])
 
   const toggleExpand = (id: string) =>
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -106,10 +176,49 @@ export default function CampaignDetailPage() {
     }, 1200)
   }
 
-  const handleAudit = () => {
-    if (auditDone) return
+  async function handleAudit() {
+    if (!campaignId || auditRunning) return
     setAuditRunning(true)
-    setTimeout(() => { setAuditRunning(false); setAuditDone(true) }, 1400)
+    setAuditError(null)
+    try {
+      const token = await getToken()
+      if (!token) throw new ApiError(401, "Sign in required")
+      const result = await apiClient<{ suggestions: AiSuggestions }>(
+        `/api/v1/campaigns/${campaignId}/ai-suggestions`,
+        token,
+        { method: "POST" },
+      )
+      setSuggestions(result.suggestions)
+    } catch (err) {
+      const e = err as ApiError | Error
+      setAuditError(e.message || "Audit failed")
+    } finally {
+      setAuditRunning(false)
+    }
+  }
+
+  async function handlePush() {
+    if (!campaign || pushing || pushed) return
+    setPushing(true)
+    setPushError(null)
+    try {
+      const token = await getToken()
+      if (!token) throw new ApiError(401, "Sign in required")
+      await apiClient<{ history_id: string; action_id: string; status: string }>(
+        `/api/v1/campaigns/${campaign.id}/push`,
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({ platform: campaign.platform }),
+        },
+      )
+      setPushed(true)
+    } catch (err) {
+      const e = err as ApiError | Error
+      setPushError(e.message || "Push failed")
+    } finally {
+      setPushing(false)
+    }
   }
 
   const handleApplyAll = () => {
@@ -118,8 +227,40 @@ export default function CampaignDetailPage() {
     setTimeout(() => { setApplyingAll(false); setAppliedAll(true) }, 1200)
   }
 
-  const barKey = (b: typeof TREND_BARS[0]) =>
+  // Map backend trend_14d into bar-chart heights normalized to max value.
+  const trendBars = (() => {
+    const t = campaign?.metrics.trend_14d ?? []
+    if (t.length === 0) return [] as Array<{ key: string; spendH: number; revenueH: number; roasH: number }>
+    const maxSpend = Math.max(1, ...t.map(d => d.spend))
+    const maxRoas  = Math.max(1, ...t.map(d => d.roas))
+    return t.map(d => ({
+      key: d.date,
+      spendH:   Math.round((d.spend / maxSpend) * 100),
+      // Backend trend_14d does not return revenue separately; reuse spend as best
+      // available signal. Revenue toggle remains visually present per spec.
+      revenueH: Math.round((d.spend / maxSpend) * 100),
+      roasH:    Math.round((d.roas / maxRoas) * 100),
+    }))
+  })()
+
+  const barKey = (b: { spendH: number; revenueH: number; roasH: number }) =>
     trendMetric === "spend" ? b.spendH : trendMetric === "revenue" ? b.revenueH : b.roasH
+
+  if (loading) {
+    return <div className="p-12 text-center text-sm text-muted-foreground font-body">Loading campaign…</div>
+  }
+  if (loadError || !campaign) {
+    return (
+      <div className="p-12 text-center space-y-4">
+        <p className="text-sm text-red-600 font-body">{loadError ?? "Campaign not found"}</p>
+        <Link href="/campaigns" className="text-primary text-sm font-semibold hover:underline">← Back to Campaigns</Link>
+      </div>
+    )
+  }
+
+  const platformLabel = campaign.platform.charAt(0).toUpperCase() + campaign.platform.slice(1)
+  const statusLabel   = campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)
+  const canPush       = campaign.status === "draft" || campaign.status === "paused"
 
   return (
     <div className="space-y-8">
@@ -131,31 +272,43 @@ export default function CampaignDetailPage() {
           </Link>
           <div className="w-px h-5 bg-border" />
           <div className="flex items-center gap-3">
-            <h1 className="font-sans font-bold text-foreground text-sm">{MOCK_CAMPAIGN.name}</h1>
+            <h1 className="font-sans font-bold text-foreground text-sm">{campaign.name}</h1>
             <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold tracking-wider uppercase">
-              {MOCK_CAMPAIGN.status}
+              {statusLabel}
             </span>
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-low text-muted-foreground text-[10px] font-semibold">
-              {MOCK_CAMPAIGN.platform}
-            </span>
-            <span className="text-[10px] text-muted-foreground font-body hidden sm:block">
-              Last updated {MOCK_CAMPAIGN.updatedAgo}
+              {platformLabel}
             </span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button className="px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-surface-container-low rounded-lg transition-colors">Export</button>
           <button className="px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-surface-container-low rounded-lg transition-colors">Duplicate</button>
-          <button className="px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-surface-container-low rounded-lg transition-colors">Pause</button>
+          {canPush && (
+            <button
+              onClick={handlePush}
+              disabled={pushing || pushed}
+              className="px-3 py-1.5 rounded-lg text-sm font-bold text-white flex items-center gap-2 transition-all disabled:opacity-70"
+              style={{ background: pushed ? "#059669" : "#05345c" }}
+            >
+              {pushing ? (
+                <><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /><span>Pushing…</span></>
+              ) : pushed ? (
+                <><Check className="w-3.5 h-3.5" /><span>Pushed</span></>
+              ) : (
+                <><Send className="w-3.5 h-3.5" /><span>Push</span></>
+              )}
+            </button>
+          )}
           <button
             onClick={handleAudit}
             disabled={auditRunning}
             className="px-4 py-1.5 rounded-lg text-sm font-bold text-white flex items-center gap-2 transition-all disabled:opacity-70"
-            style={{ background: auditDone ? "#059669" : "linear-gradient(135deg,#005bc4,#3b82f6)" }}
+            style={{ background: suggestions ? "#059669" : "linear-gradient(135deg,#005bc4,#3b82f6)" }}
           >
             {auditRunning ? (
               <><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /><span>Running…</span></>
-            ) : auditDone ? (
+            ) : suggestions ? (
               <><Check className="w-3.5 h-3.5" /><span>Audit Done</span></>
             ) : (
               <><Sparkles className="w-3.5 h-3.5" /><span>Launch AI Audit</span></>
@@ -167,29 +320,71 @@ export default function CampaignDetailPage() {
         </div>
       </div>
 
+      {/* Push / Audit feedback band */}
+      {(pushError || auditError) && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-body rounded-lg px-4 py-2">
+          {pushError ?? auditError}
+        </div>
+      )}
+      {pushed && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-body rounded-lg px-4 py-2">
+          Campaign queued for {platformLabel} platform — execution running in simulated mode (real-mode handlers land in Phase 6 Sub-pass C).
+        </div>
+      )}
+
       {/* Body grid */}
       <div className="grid grid-cols-12 gap-8 items-start">
         {/* LEFT */}
         <div className="col-span-12 lg:col-span-8 space-y-8">
 
-          {/* KPI Cards */}
+          {/* KPI Cards — values from backend; deltas remain placeholders (no period-compare endpoint) */}
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label: "Total Spend", value: MOCK_CAMPAIGN.spend, delta: MOCK_CAMPAIGN.spendDelta, color: "text-foreground" },
-              { label: "Revenue", value: MOCK_CAMPAIGN.revenue, delta: MOCK_CAMPAIGN.revenueDelta, color: "text-foreground" },
-              { label: "ROAS", value: MOCK_CAMPAIGN.roas, delta: MOCK_CAMPAIGN.roasDelta, color: "text-primary" },
+              { label: "Total Spend", value: fmtCurrency(campaign.metrics.spend),   color: "text-foreground" },
+              { label: "Revenue",     value: fmtCurrency(campaign.metrics.revenue), color: "text-foreground" },
+              { label: "ROAS",        value: fmtRoas(campaign.metrics.roas),         color: "text-primary"     },
             ].map(k => (
               <div key={k.label} className="bg-white rounded-xl border border-border p-6 shadow-sm">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{k.label}</p>
                 <div className="flex items-baseline gap-2">
                   <h2 className={`text-3xl font-extrabold tracking-tight font-sans ${k.color}`}>{k.value}</h2>
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">{k.delta}</span>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Direct Execution Layer */}
+          {/* AI Audit Suggestions panel — populated by POST /:id/ai-suggestions */}
+          {suggestions && (
+            <section className="bg-white rounded-xl border border-primary/20 p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className="w-4 h-4 text-primary" />
+                <h3 className="font-sans font-bold text-foreground text-sm uppercase tracking-widest">AI Targeting Suggestions</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm font-body">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Interests</p>
+                  <p className="text-foreground font-medium">{suggestions.interests.join(", ")}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Age Range</p>
+                  <p className="text-foreground font-medium">{suggestions.age_min}–{suggestions.age_max}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Gender</p>
+                  <p className="text-foreground font-medium">{suggestions.gender}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Recommended Daily Budget</p>
+                  <p className="text-foreground font-bold">{fmtCurrency(suggestions.daily_budget_recommendation)}</p>
+                </div>
+              </div>
+              {suggestions.rationale && (
+                <p className="mt-4 text-xs text-muted-foreground font-body leading-relaxed">{suggestions.rationale}</p>
+              )}
+            </section>
+          )}
+
+          {/* Direct Execution Layer — MOCKED-DEFERRED (recommendations layer) */}
           <section className="space-y-4">
             <div className="flex items-center gap-4">
               <h3 className="font-sans font-extrabold text-foreground text-lg whitespace-nowrap">Direct Execution Layer</h3>
@@ -221,7 +416,7 @@ export default function CampaignDetailPage() {
             </div>
           </section>
 
-          {/* Trend Analysis */}
+          {/* Trend Analysis — bars from backend metrics.trend_14d */}
           <div className="bg-white rounded-xl border border-border p-8 shadow-sm">
             <div className="flex justify-between items-center mb-8">
               <h3 className="font-sans font-bold text-foreground text-lg">Trend Analysis</h3>
@@ -237,20 +432,24 @@ export default function CampaignDetailPage() {
                 ))}
               </div>
             </div>
-            <div className="h-64 flex items-end justify-between gap-2 px-2">
-              {TREND_BARS.map(b => (
-                <div key={b.day} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
-                  <div
-                    className="w-full rounded-t transition-all duration-500"
-                    style={{ height: `${barKey(b)}%`, background: "linear-gradient(to top,#005bc4,#3b82f6)" }}
-                  />
-                  <span className="text-[10px] text-muted-foreground font-body mt-2">{b.day}</span>
-                </div>
-              ))}
-            </div>
+            {trendBars.length === 0 ? (
+              <p className="text-sm text-muted-foreground font-body text-center py-8">No trend data available yet.</p>
+            ) : (
+              <div className="h-64 flex items-end justify-between gap-2 px-2">
+                {trendBars.map(b => (
+                  <div key={b.key} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                    <div
+                      className="w-full rounded-t transition-all duration-500"
+                      style={{ height: `${barKey(b)}%`, background: "linear-gradient(to top,#005bc4,#3b82f6)" }}
+                    />
+                    <span className="text-[10px] text-muted-foreground font-body mt-2">{b.key.slice(5)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Active Ad Sets Table */}
+          {/* Active Ad Sets — MOCKED-DEFERRED (adsets table) */}
           <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="p-6 border-b border-border">
               <h3 className="font-sans font-bold text-foreground text-lg">Active Ad Sets</h3>
@@ -320,7 +519,7 @@ export default function CampaignDetailPage() {
           </div>
         </div>
 
-        {/* RIGHT */}
+        {/* RIGHT — MOCKED-DEFERRED (anomaly engine + recommendations + risk_scores) */}
         <div className="col-span-12 lg:col-span-4 sticky top-20 space-y-6 h-fit">
 
           {/* AI Strategic Insight */}

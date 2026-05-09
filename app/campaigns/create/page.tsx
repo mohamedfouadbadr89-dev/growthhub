@@ -2,10 +2,28 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useAuth } from "@clerk/nextjs"
 import {
   ArrowLeft, Bell, HelpCircle, ShoppingCart, TrendingUp, Eye,
   Sparkles, CheckCircle2, Zap, Settings2, Check, X, Search, Cloud,
 } from "lucide-react"
+import { apiClient, ApiError } from "@/lib/api-client"
+
+// Phase 6 Sub-pass B (continuation #13, 2026-05-08): wires "Save Draft" to
+// `POST /api/v1/campaigns` (canonical envelope). "Launch" remains UNWIRED —
+// real-mode Meta/Google CREATE handlers are deferred to Sub-pass C, and
+// firing the simulated-only handler from a "Launch" button would mislead
+// users about whether a real platform campaign was created.
+//
+// Sections that remain UI-state only (deferred):
+//   - Objective selector       → no `campaigns.objective` column in spec
+//   - Bidding strategy          → ad-platform layer, not stored on campaigns row
+//   - Creative selector         → cross-Phase-5 surface deferred
+//   - TikTok / Snapchat platform → backend VALID_PLATFORMS = ['meta','google']
+//                                  (selectable but ignored on save with warning)
+//   - AI Boost / preview KPIs    → no preview-estimation endpoint
+//   - Summary checklist           → presentational
 
 type Objective = "conversion" | "traffic" | "awareness"
 type Platform = "Meta" | "Google" | "TikTok" | "Snapchat"
@@ -41,6 +59,10 @@ const CREATIVE_GRADIENTS = [
 const CREATIVE_LABELS = ["Summer Flash Sale", "Brand Awareness Reel", "New Arrivals Showcase"]
 
 export default function CreateCampaignPage() {
+  const router = useRouter()
+  const { getToken } = useAuth()
+
+  const [campaignName, setCampaignName] = useState("")
   const [objective, setObjective] = useState<Objective>("conversion")
   const [platforms, setPlatforms] = useState<Set<Platform>>(new Set(["Meta", "Google"]))
   const [budgetType, setBudgetType] = useState<BudgetType>("daily")
@@ -56,6 +78,7 @@ export default function CreateCampaignPage() {
   const [launched, setLaunched] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [draftSaved, setDraftSaved] = useState(false)
+  const [draftError, setDraftError] = useState<string | null>(null)
   const [applyingBoost, setApplyingBoost] = useState(false)
   const [boostApplied, setBoostApplied] = useState(false)
 
@@ -77,10 +100,65 @@ export default function CreateCampaignPage() {
     setTimeout(() => { setLaunching(false); setLaunched(true) }, 1400)
   }
 
-  const handleSaveDraft = () => {
-    if (draftSaved) return
+  async function handleSaveDraft() {
+    if (savingDraft || draftSaved) return
+    setDraftError(null)
+
+    const trimmedName = campaignName.trim()
+    if (!trimmedName) {
+      setDraftError("Campaign name is required")
+      return
+    }
+
+    // Backend VALID_PLATFORMS = ['meta', 'google']. TikTok/Snapchat are
+    // selectable in the UI (deferred for forward-compat) but skipped here.
+    // Pick the first selected platform that maps to a backend-supported one.
+    const supportedPlatform = (() => {
+      if (platforms.has("Meta")) return "meta"
+      if (platforms.has("Google")) return "google"
+      return null
+    })()
+
+    if (!supportedPlatform) {
+      setDraftError("Select Meta or Google as a platform (TikTok / Snapchat support is coming soon)")
+      return
+    }
+
     setSavingDraft(true)
-    setTimeout(() => { setSavingDraft(false); setDraftSaved(true) }, 900)
+    try {
+      const token = await getToken()
+      if (!token) throw new ApiError(401, "Sign in required")
+
+      const created = await apiClient<{ id: string; name: string; platform: string }>(
+        "/api/v1/campaigns",
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: trimmedName,
+            platform: supportedPlatform,
+            daily_budget: budgetType === "daily" ? budgetAmount : undefined,
+            targeting: {
+              objective,
+              locations,
+              age_min: ageMin,
+              age_max: ageMax,
+              interests,
+              budget_type: budgetType,
+              bidding_strategy: biddingStrategy,
+            },
+          }),
+        },
+      )
+      setDraftSaved(true)
+      // Brief success affordance before navigating to the new campaign's detail page.
+      setTimeout(() => { router.push(`/campaigns/${created.id}`) }, 700)
+    } catch (err) {
+      const e = err as ApiError | Error
+      setDraftError(e.message || "Failed to save draft")
+    } finally {
+      setSavingDraft(false)
+    }
   }
 
   const handleApplyBoost = () => {
@@ -123,6 +201,19 @@ export default function CreateCampaignPage() {
         {/* Left scrollable */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
           <div className="max-w-3xl mx-auto space-y-6">
+
+            {/* Step 0 — Campaign Details (required by POST /api/v1/campaigns) */}
+            <div className="bg-white rounded-2xl border border-border p-6">
+              <StepHeader num={0} label="Campaign Details" />
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">Campaign Name</label>
+              <input
+                type="text"
+                value={campaignName}
+                onChange={e => setCampaignName(e.target.value)}
+                placeholder="e.g. Summer Collection Launch 2026"
+                className="w-full px-3 py-2.5 rounded-lg border border-border bg-surface-container-low text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
 
             {/* Step 1 — Objective */}
             <div className="bg-white rounded-2xl border border-border p-6">
@@ -401,10 +492,17 @@ export default function CreateCampaignPage() {
 
       {/* Footer */}
       <div className="shrink-0 h-14 border-t border-border bg-white flex items-center gap-3 px-6">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground font-body">
-          <Cloud className="w-3.5 h-3.5" />
-          Changes saved automatically
-        </div>
+        {draftError ? (
+          <div className="flex items-center gap-2 text-xs text-red-600 font-body">
+            <X className="w-3.5 h-3.5" />
+            {draftError}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground font-body">
+            <Cloud className="w-3.5 h-3.5" />
+            Changes saved automatically
+          </div>
+        )}
         <div className="flex-1" />
         <button
           onClick={handleSaveDraft}

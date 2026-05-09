@@ -365,6 +365,13 @@ campaignsRouter.post('/:id/push', async (c) => {
     const e = err as Error & { code?: string; platform?: string }
     if (e.code === 'NOT_FOUND') return fail(c, 'Campaign not found', 404, { code: 'NOT_FOUND' })
     if (e.code === 'INVALID_STATUS') return fail(c, e.message, 400, { code: 'INVALID_STATUS' })
+    // Phase 6 NEW invariant (continuation #11): cross-account ownership
+    // rejection. campaign.ad_account_id resolved to an ad_accounts row not
+    // owned by the calling org → 403. Mirrors the FORBIDDEN mapping pattern
+    // used in PATCH /:id (admin-only archive transition).
+    if (e.code === 'CROSS_ACCOUNT_FORBIDDEN') {
+      return fail(c, e.message, 403, { code: 'CROSS_ACCOUNT_FORBIDDEN' })
+    }
     if (e.code === 'INTEGRATION_NOT_CONNECTED') {
       return fail(
         c,

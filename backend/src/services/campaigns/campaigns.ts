@@ -53,8 +53,16 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   archived:  [],
 }
 
-const META_CREATE_ACTION_ID  = '00000000-0000-0000-0000-000000000009'
-const GOOGLE_CREATE_ACTION_ID = '00000000-0000-0000-0000-000000000010'
+// Phase 6 Sub-pass A (continuation #11, 2026-05-08): the prior hardcoded
+// META_CREATE_ACTION_ID / GOOGLE_CREATE_ACTION_ID UUIDs
+// ('...000000009' / '...000000010') were never seeded into actions_library
+// — only 5 templates exist (meta.{pause,inc,dec}_campaign,
+// google.pause_campaign, send_alert_email per
+// 20260503130000_phase4_minimal_execution_layer.sql:51). Every push attempt
+// 404'd on template lookup. Replaced with a natural-key
+// (platform, action_type='create_campaign') resolver against the additive
+// seed migration 20260508120000_phase6_create_campaign_templates.sql.
+const CREATE_CAMPAIGN_ACTION_TYPE = 'create_campaign'
 
 // ─── Schema-drift-tolerant DB error guard ─────────────────────────────
 //
@@ -459,7 +467,63 @@ export async function pushCampaign(
     )
   }
 
-  const actionTemplateId = platform === 'meta' ? META_CREATE_ACTION_ID : GOOGLE_CREATE_ACTION_ID
+  // Phase 6 NEW invariant (per Phases.md PHASE 6 — Campaigns): "Validate ad
+  // account ownership / Prevent cross-account execution / Validate org_id +
+  // ad_account_id mapping". When campaign.ad_account_id is set, verify it
+  // resolves to an ad_accounts row owned by the calling org. RLS on
+  // ad_accounts (org_id-scoped) already prevents reading rows from a foreign
+  // org, but campaigns.ad_account_id is a bare UUID column (NOT a FK to
+  // ad_accounts(id) per 20260503100000_phase3_close_campaigns_schema.sql:36),
+  // so a stale or stitched value can slip into a campaign row. This guard
+  // closes the gap at the application layer with a single org-scoped SELECT.
+  // (Promoting to a FK is deferred — schema change is out of minimal-diff
+  // scope for this sub-pass.)
+  if (campaign.ad_account_id) {
+    const { data: adAccount, error: adErr } = await supabaseAdmin
+      .from('ad_accounts')
+      .select('id')
+      .eq('id', campaign.ad_account_id as string)
+      .eq('org_id', orgId)
+      .maybeSingle()
+
+    // Discriminate "ad_account genuinely absent for this org" from "DB
+    // layer failed". Pattern-identical to the PGRST116 discriminators in
+    // getCampaignById / updateCampaign / pushCampaign:campaigns lookup
+    // above. maybeSingle() returns null on no-row rather than PGRST116;
+    // any other error throws → route catch → errorHandler.
+    if (adErr) {
+      throw new Error(`ad_accounts lookup failed: ${adErr.message}`)
+    }
+    if (!adAccount) {
+      throw Object.assign(
+        new Error('Campaign references an ad_account not owned by this organization'),
+        { code: 'CROSS_ACCOUNT_FORBIDDEN' }
+      )
+    }
+  }
+
+  // Phase 6 Sub-pass A (continuation #11): natural-key template lookup.
+  // actions_library is system-global (RLS authenticated-read), so no org
+  // filter applies; the (platform, action_type) UNIQUE guarantees a single
+  // row. NOT_FOUND here would mean the seed migration
+  // 20260508120000_phase6_create_campaign_templates.sql was never deployed
+  // — surface as INTERNAL/throw rather than as a per-campaign 404.
+  const { data: tmpl, error: tmplErr } = await supabaseAdmin
+    .from('actions_library')
+    .select('id')
+    .eq('platform', platform)
+    .eq('action_type', CREATE_CAMPAIGN_ACTION_TYPE)
+    .maybeSingle()
+
+  if (tmplErr) {
+    throw new Error(`actions_library lookup failed: ${tmplErr.message}`)
+  }
+  if (!tmpl) {
+    throw new Error(
+      `actions_library missing template (platform=${platform}, action_type=${CREATE_CAMPAIGN_ACTION_TYPE}) — verify Phase 6 seed migration is deployed`,
+    )
+  }
+  const actionTemplateId = tmpl.id as string
 
   const { historyId } = await executeAction({
     templateId: actionTemplateId,

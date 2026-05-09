@@ -409,6 +409,28 @@ const ACTION_HANDLERS: Record<string, ActionHandler> = {
       },
     }
   },
+
+  // Phase 6 Sub-pass A (continuation #11, 2026-05-08) — simulated-only.
+  // Real-mode Meta Ads CREATE + Google Ads CREATE handlers are explicitly
+  // DEFERRED per operator-authorized criteria (external-write risk,
+  // provider complexity, startup-env coupling, surface expansion). When
+  // pushCampaign chains here, the handler returns clean success with
+  // simulated:true so decision_history reflects result='success' rather
+  // than the alternative (no-handler graceful-fail with result='failed').
+  // A later sub-pass will introduce the LIVE_FLAG_DEPENDENCIES-gated
+  // realMetaCreateCampaign / realGoogleCreateCampaign branches mirroring
+  // the pause_campaign pattern.
+  create_campaign: async (params, ctx) => {
+    return {
+      success: true,
+      result_data: {
+        simulated: true,
+        action_type: ctx.actionType,
+        platform: ctx.platform,
+        ...params,
+      },
+    }
+  },
 }
 
 // ─── Real Meta pause_campaign ─────────────────────────────────────────
