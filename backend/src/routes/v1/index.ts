@@ -14,6 +14,7 @@ import { brandKitRouter } from './brand-kit.js'
 import { creativesRouter } from './creatives.js'
 import { campaignsRouter } from './campaigns.js'
 import { aiRouter } from './ai.js'
+import { billingRouter } from './billing.js'
 
 type Variables = { userId: string; orgId: string }
 
@@ -122,5 +123,6 @@ v1.route('/brand-kit', brandKitRouter)
 v1.route('/creatives', creativesRouter)
 v1.route('/campaigns', campaignsRouter)
 v1.route('/ai', aiRouter)
+v1.route('/billing', billingRouter)
 
 export { v1 }

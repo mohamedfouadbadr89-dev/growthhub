@@ -54,6 +54,7 @@
 import { validateAIResponse, AIValidationError, type AIResponse } from '../../utils/aiValidator.js'
 import { logAIInteraction, newTraceId } from '../../utils/aiLogger.js'
 import { persistAIDecision } from './persistence.js'
+import { supabaseAdmin } from '../../lib/supabase.js'
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -267,6 +268,38 @@ export async function executeAIDecision(
       model: input.model,
       user_id: input.user_id,
     })
+
+    // ── 7. usage observability (Phase 7 Sub-pass A1a, continuation #16) ──
+    // Fire-and-forget log_ai_usage row. Observability ONLY — p_cost_credits=0
+    // (no enforcement; deduct_credits gating is Sub-pass A1b scope per
+    // operator authorization). Tokens passed as 0/0 because providerCall is
+    // a provider-agnostic thunk returning `unknown`; extracting OpenRouter-
+    // specific `usage.prompt_tokens` / `usage.completion_tokens` would couple
+    // this orchestration to a specific provider (architecture invariant
+    // documented at ExecuteAIDecisionInput.providerCall). Real token
+    // extraction is deferred to Sub-pass A1b alongside cost-derivation.
+    //
+    // Failure handling: .then(noop, noop) swallows both success and DB
+    // failure; the AI flow has already completed successfully and returned
+    // its decision — observability writes never fail the user-facing path.
+    // CONSTITUTION §3 "Fail Loudly" is preserved upstream by persistAIDecision
+    // which throws on its own failure before this fire-and-forget runs.
+    void supabaseAdmin
+      .rpc('log_ai_usage', {
+        p_org_id: input.org_id,
+        p_user_id: input.user_id ?? null,
+        p_model: input.model,
+        p_tokens_in: 0,
+        p_tokens_out: 0,
+        p_cost_credits: 0,
+        p_request_id: input.request_id ?? null,
+        p_trace_id: trace_id,
+        p_ai_decision_id: decision_id,
+      })
+      .then(
+        () => null,
+        () => null,
+      )
     return { trace_id, decision_id, response: validated }
   } catch (err) {
     const e = err as Error

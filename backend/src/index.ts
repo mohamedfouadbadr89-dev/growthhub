@@ -13,6 +13,7 @@ import { requestLoggerMiddleware } from './middleware/request-logger.js'
 import { authMiddleware } from './middleware/auth.js'
 import { inngest, functions } from './jobs/inngest.js'
 import { clerkWebhook } from './routes/webhooks/clerk.js'
+import { stripeWebhook } from './routes/webhooks/stripe.js'
 import { fail } from './utils/response.js'
 import { setAILogSink, type AILogEntry } from './utils/aiLogger.js'
 import { persistAILog } from './services/ai/persistence.js'
@@ -57,6 +58,13 @@ const requiredEnvVars = [
   // Same fail-fast pattern as INNGEST_SIGNING_KEY above; webhooks/clerk.ts
   // keeps its runtime check as defense-in-depth.
   'CLERK_WEBHOOK_SECRET',
+  // Phase 7 Sub-pass A1c: STRIPE_WEBHOOK_SECRET is the HMAC secret Stripe
+  // uses to sign webhook deliveries at /api/webhooks/stripe. Without it,
+  // every webhook returns 500 and Stripe will retry — failing customer
+  // subscription state sync + payment-grant credits. Same fail-fast pattern
+  // as CLERK_WEBHOOK_SECRET; webhooks/stripe.ts keeps its runtime check as
+  // defense-in-depth.
+  'STRIPE_WEBHOOK_SECRET',
 ]
 
 const missingVars = requiredEnvVars.filter((key) => !process.env[key])
@@ -242,6 +250,7 @@ app.use('*', cors({
 
 // ─── Webhooks ─────────────────────────────────────────────────
 app.route('/api/webhooks/clerk', clerkWebhook)
+app.route('/api/webhooks/stripe', stripeWebhook)
 
 // ─── Health ───────────────────────────────────────────────────
 app.route('/health', health)
