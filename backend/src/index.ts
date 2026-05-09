@@ -14,6 +14,8 @@ import { authMiddleware } from './middleware/auth.js'
 import { inngest, functions } from './jobs/inngest.js'
 import { clerkWebhook } from './routes/webhooks/clerk.js'
 import { fail } from './utils/response.js'
+import { setAILogSink, type AILogEntry } from './utils/aiLogger.js'
+import { persistAILog } from './services/ai/persistence.js'
 
 // ─── Process-level error handlers ─────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -162,6 +164,66 @@ type Variables = { userId: string; orgId: string; requestId: string }
 // 404 → cost vector closed. The /health and /api/v1/health probes remain
 // unconditionally registered (load balancers / k8s liveness need them).
 const SMOKE_ENDPOINTS_ENABLED = process.env.ENABLE_SMOKE_ENDPOINTS === 'true'
+
+// ─── AI log DB sink installation (Phase 7 Sub-pass A0.5, continuation #15) ──
+// Phase 3 close documented `ai_logs` schema + `persistAILog` writer but
+// intentionally left the runtime sink as console-only ("DB sink fan-out
+// pending broader Phase X" — SYSTEM_CONTROL.md). Sub-pass A0.5 activates
+// the documented capability via the existing `setAILogSink(...)` hook
+// (utils/aiLogger.ts:99). NO new logging system; NO parallel observability
+// layer; uses the canonical hook only.
+//
+// Behavior:
+//   1. Console output PRESERVED — every entry still emits a `[AI]` line at
+//      its level. Operator surface unchanged.
+//   2. DB persistence ADDED — entries with `org_id` are fire-and-forget
+//      written to `ai_logs` via `persistAILog`. Entries without `org_id`
+//      (system-level events without org context) are skipped at this layer
+//      to avoid `persistAILog`'s loud throw on missing org_id (which is
+//      itself a CONSTITUTION §3 invariant).
+//   3. Sink type is synchronous `void`; the Promise from `persistAILog` is
+//      explicitly discarded with `void`. `persistAILog` carries its own
+//      console.error fallback for DB failures, so a sink-side write error
+//      never crashes the AI flow.
+//
+// Phase contamination: NONE. `aiLogger.ts` and `persistence.ts` unchanged
+// (closed Phase 3 surfaces preserved verbatim). Only the install hook is
+// invoked from this file (Phase 0/1 architectural surface — entry point).
+setAILogSink((entry: AILogEntry) => {
+  // 1. Console — preserves the prior `[AI]` operator surface verbatim.
+  const line = `[AI] ${safeStringifyForSink(entry)}`
+  if (entry.level === 'error') console.error(line)
+  else if (entry.level === 'warn') console.warn(line)
+  else console.log(line)
+
+  // 2. DB persistence — only when org_id is present. Fire-and-forget.
+  if (entry.org_id) {
+    void persistAILog({ org_id: entry.org_id, entry }).catch(() => {
+      // persistAILog already emits its own console.error on failure (per
+      // services/ai/persistence.ts:217-219); the .catch here is purely to
+      // satisfy the unhandled-rejection process handler in this file.
+    })
+  }
+})
+
+function safeStringifyForSink(value: unknown): string {
+  // Mirrors the safeStringify helper inside aiLogger.ts (which is module-
+  // private). Duplicated rather than exported to avoid modifying a closed
+  // Phase 3 surface — minimal-diff principle.
+  const seen = new WeakSet<object>()
+  try {
+    return JSON.stringify(value, (_k, v) => {
+      if (typeof v === 'bigint') return `${v.toString()}n`
+      if (typeof v === 'object' && v !== null) {
+        if (seen.has(v as object)) return '[Circular]'
+        seen.add(v as object)
+      }
+      return v
+    })
+  } catch (err) {
+    return `[unserializable: ${(err as Error)?.message ?? 'unknown'}]`
+  }
+}
 
 const app = new Hono<{ Variables: Variables }>()
 
