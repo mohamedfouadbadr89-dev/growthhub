@@ -122,6 +122,13 @@ const LIVE_FLAG_DEPENDENCIES: Array<{ flag: string; deps: readonly string[] }> =
   // resolved per-request via Supabase Vault (integrations.vault_refresh_token_secret_id);
   // those are NOT in this static check by design.
   { flag: 'GOOGLE_PAUSE_CAMPAIGN_LIVE', deps: ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET'] },
+  // Phase 6 Sub-pass C (continuation #20): real-mode CREATE handlers.
+  // Same dep shapes as the matching pause/budget LIVE flags above —
+  // Meta CREATE reuses the META_TEST_ACCESS_TOKEN single-tenant
+  // convention; Google CREATE reuses the per-org Vault refresh-token
+  // flow plus the same 3 OAuth client envs at startup.
+  { flag: 'META_CREATE_CAMPAIGN_LIVE',   deps: ['META_TEST_ACCESS_TOKEN'] },
+  { flag: 'GOOGLE_CREATE_CAMPAIGN_LIVE', deps: ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET'] },
 ]
 
 const liveMisconfig: string[] = []

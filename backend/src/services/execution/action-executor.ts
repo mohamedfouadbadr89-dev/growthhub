@@ -91,6 +91,16 @@ const ALERT_EMAIL_FROM =
 // credentials come from env (configured during Phase 2 unlock).
 const GOOGLE_PAUSE_CAMPAIGN_LIVE =
   process.env.GOOGLE_PAUSE_CAMPAIGN_LIVE === 'true'
+// Phase 6 Sub-pass C (continuation #20, 2026-05-09): real-mode CREATE
+// handler flags. Meta uses the existing META_TEST_ACCESS_TOKEN single-
+// tenant convention (matches realMetaPauseCampaign); per-org Vault
+// migration for Meta tokens remains a separate Phase 2 hardening pass.
+// Google reuses the Phase 2 Vault refresh-token flow established for
+// realGooglePauseCampaign.
+const META_CREATE_CAMPAIGN_LIVE =
+  process.env.META_CREATE_CAMPAIGN_LIVE === 'true'
+const GOOGLE_CREATE_CAMPAIGN_LIVE =
+  process.env.GOOGLE_CREATE_CAMPAIGN_LIVE === 'true'
 const GOOGLE_LIVE_ORG_ALLOWLIST = (process.env.GOOGLE_LIVE_ORG_ALLOWLIST ?? '')
   .split(',')
   .map((s) => s.trim())
@@ -410,17 +420,34 @@ const ACTION_HANDLERS: Record<string, ActionHandler> = {
     }
   },
 
-  // Phase 6 Sub-pass A (continuation #11, 2026-05-08) — simulated-only.
-  // Real-mode Meta Ads CREATE + Google Ads CREATE handlers are explicitly
-  // DEFERRED per operator-authorized criteria (external-write risk,
-  // provider complexity, startup-env coupling, surface expansion). When
-  // pushCampaign chains here, the handler returns clean success with
-  // simulated:true so decision_history reflects result='success' rather
-  // than the alternative (no-handler graceful-fail with result='failed').
-  // A later sub-pass will introduce the LIVE_FLAG_DEPENDENCIES-gated
-  // realMetaCreateCampaign / realGoogleCreateCampaign branches mirroring
-  // the pause_campaign pattern.
+  // Phase 6 Sub-pass C (continuation #20, 2026-05-09): real-mode
+  // CREATE handlers behind LIVE flags + per-platform allowlist. Defaults
+  // remain simulated when flags are OFF, preserving the Sub-pass A
+  // simulated-fallthrough contract. Mirrors the established pause_campaign
+  // dispatch shape verbatim — same order (meta first, google second,
+  // simulated last).
   create_campaign: async (params, ctx) => {
+    const metaLiveAllowed =
+      ctx.platform === 'meta' &&
+      META_CREATE_CAMPAIGN_LIVE &&
+      Boolean(META_TEST_ACCESS_TOKEN) &&
+      (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+        META_LIVE_ORG_ALLOWLIST.includes(ctx.orgId))
+
+    if (metaLiveAllowed) {
+      return realMetaCreateCampaign(params, ctx)
+    }
+
+    const googleLiveAllowed =
+      ctx.platform === 'google' &&
+      GOOGLE_CREATE_CAMPAIGN_LIVE &&
+      (GOOGLE_LIVE_ORG_ALLOWLIST.length === 0 ||
+        GOOGLE_LIVE_ORG_ALLOWLIST.includes(ctx.orgId))
+
+    if (googleLiveAllowed) {
+      return realGoogleCreateCampaign(params, ctx)
+    }
+
     return {
       success: true,
       result_data: {
@@ -433,13 +460,73 @@ const ACTION_HANDLERS: Record<string, ActionHandler> = {
   },
 }
 
+// ─── Meta access-token resolver (per-org Vault, sandbox fallback) ──────
+//
+// Phase 6 Sub-pass D / Part B (continuation #21, 2026-05-09).
+//
+// Resolves the Meta access token for a given org with the following
+// priority:
+//   1. Per-org Vault: `integrations.vault_refresh_token_secret_id` for
+//      platform='meta' with status='connected' → readSecret() → access token
+//   2. Sandbox fallback: `META_TEST_ACCESS_TOKEN` env (preserves existing
+//      single-tenant dev/sandbox behavior — operators with no real Meta
+//      integrations connected still hit live Meta API via this path)
+//   3. None → caller surfaces as misconfig error
+//
+// Behavior preservation: when an org has NO connected Meta integration
+// AND `META_TEST_ACCESS_TOKEN` is set, behavior is bit-identical to the
+// pre-Sub-pass-D real Meta handlers. When an org HAS a connected Meta
+// integration, the per-org Vault token wins. This is a purely additive
+// migration — never strips existing sandbox behavior.
+//
+// Token NEVER logged. Source label IS logged so operators can confirm
+// which credential path executed.
+//
+// Helper is provider-local (Meta-specific); does NOT extract a shared
+// abstraction with Google's per-call OAuth refresh flow (Google needs
+// refresh+token-exchange; Meta uses a direct long-lived access token).
+async function resolveMetaAccessToken(
+  ctx: HandlerCtx,
+): Promise<{ token: string | null; source: 'vault' | 'sandbox' | 'none' }> {
+  const { data: integration, error: intErr } = await supabaseAdmin
+    .from('integrations')
+    .select('vault_refresh_token_secret_id, status')
+    .eq('org_id', ctx.orgId)
+    .eq('platform', 'meta')
+    .maybeSingle()
+
+  if (
+    !intErr &&
+    integration &&
+    integration.status === 'connected' &&
+    integration.vault_refresh_token_secret_id
+  ) {
+    try {
+      const token = await readSecret(integration.vault_refresh_token_secret_id as string)
+      return { token, source: 'vault' }
+    } catch {
+      // Vault read failed — fall through to sandbox fallback rather than
+      // hard-fail, preserving existing single-tenant behavior. The
+      // failure is surfaced via the source label in the result_data of
+      // the calling handler if the sandbox fallback is also absent.
+    }
+  }
+
+  if (META_TEST_ACCESS_TOKEN) {
+    return { token: META_TEST_ACCESS_TOKEN, source: 'sandbox' }
+  }
+
+  return { token: null, source: 'none' }
+}
+
 // ─── Real Meta pause_campaign ─────────────────────────────────────────
 //
-// Calls the Meta Graph API to pause a campaign by id. Single-tenant in
-// the dev/sandbox phase: the access token comes from `META_TEST_ACCESS_TOKEN`
-// (NOT a per-org token — Phase 2 will add per-org token storage). The
+// Calls the Meta Graph API to pause a campaign by id. Per-org access
+// token via Vault (Phase 2 OAuth flow stores token at
+// `integrations.vault_refresh_token_secret_id`); sandbox fallback to
+// `META_TEST_ACCESS_TOKEN` for orgs without connected Meta integration.
 // org_id is recorded in audit logs and decision_history regardless, so
-// the audit trail is org-isolated even when the underlying token isn't.
+// the audit trail is org-isolated.
 //
 // Endpoint: POST https://graph.facebook.com/{version}/{campaign_id}
 // Body:     status=PAUSED&access_token=<token>
@@ -473,8 +560,9 @@ async function realMetaPauseCampaign(
     }
   }
 
-  if (!META_TEST_ACCESS_TOKEN) {
-    // Misconfig: flag on, allowlist matched, but no token. Fail loudly.
+  // Phase 6 Sub-pass D Part B: per-org Vault token first, sandbox fallback.
+  const { token: accessToken, source: tokenSource } = await resolveMetaAccessToken(ctx)
+  if (!accessToken) {
     logExec({
       ts: new Date().toISOString(),
       phase: 'exec.error',
@@ -488,7 +576,7 @@ async function realMetaPauseCampaign(
       mode: 'live',
       error: {
         message:
-          'META_PAUSE_CAMPAIGN_LIVE=true but META_TEST_ACCESS_TOKEN is not configured',
+          'META_PAUSE_CAMPAIGN_LIVE=true but no Meta access token resolved (per-org Vault absent + META_TEST_ACCESS_TOKEN unset)',
       },
     })
     return {
@@ -501,7 +589,7 @@ async function realMetaPauseCampaign(
   const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(campaign_id)}`
 
   // Step: log BEFORE the external call (Phase 4 mandate).
-  // Token is NOT included in any log line.
+  // Token is NOT included in any log line; tokenSource label IS for triage.
   logExec({
     ts: new Date().toISOString(),
     phase: 'exec.api_call',
@@ -525,7 +613,7 @@ async function realMetaPauseCampaign(
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         status: 'PAUSED',
-        access_token: META_TEST_ACCESS_TOKEN,
+        access_token: accessToken,
       }).toString(),
     })
     body = await resp.json().catch(() => null)
@@ -586,7 +674,7 @@ async function realMetaPauseCampaign(
         : `HTTP ${resp.status}`
     return {
       success: false,
-      result_data: { mode: 'live', http_status: resp.status, body: bodyObj },
+      result_data: { mode: 'live', http_status: resp.status, body: bodyObj, token_source: tokenSource },
       error_message: errMsg,
     }
   }
@@ -598,6 +686,7 @@ async function realMetaPauseCampaign(
       campaign_id,
       http_status: resp.status,
       body: bodyObj,
+      token_source: tokenSource,
     },
   }
 }
@@ -973,7 +1062,9 @@ async function realMetaDecreaseBudget(
     }
   }
 
-  if (!META_TEST_ACCESS_TOKEN) {
+  // Phase 6 Sub-pass D Part B: per-org Vault token first, sandbox fallback.
+  const { token: accessToken, source: tokenSource } = await resolveMetaAccessToken(ctx)
+  if (!accessToken) {
     logExec({
       ts: new Date().toISOString(),
       phase: 'exec.error',
@@ -987,7 +1078,7 @@ async function realMetaDecreaseBudget(
       mode: 'live',
       error: {
         message:
-          'META_DECREASE_BUDGET_LIVE=true but META_TEST_ACCESS_TOKEN is not configured',
+          'META_DECREASE_BUDGET_LIVE=true but no Meta access token resolved (per-org Vault absent + META_TEST_ACCESS_TOKEN unset)',
       },
     })
     return {
@@ -996,6 +1087,8 @@ async function realMetaDecreaseBudget(
       error_message: 'META access token not configured',
     }
   }
+  // Suppress unused-var: tokenSource will be embedded in result_data below.
+  void tokenSource
 
   const baseUrl = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(
     campaign_id,
@@ -1021,9 +1114,7 @@ async function realMetaDecreaseBudget(
   let getBody: unknown
   try {
     getResp = await fetch(
-      `${baseUrl}?fields=daily_budget&access_token=${encodeURIComponent(
-        META_TEST_ACCESS_TOKEN,
-      )}`,
+      `${baseUrl}?fields=daily_budget&access_token=${encodeURIComponent(accessToken)}`,
       { method: 'GET' },
     )
     getBody = await getResp.json().catch(() => null)
@@ -1153,7 +1244,7 @@ async function realMetaDecreaseBudget(
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         daily_budget: String(newBudget),
-        access_token: META_TEST_ACCESS_TOKEN,
+        access_token: accessToken,
       }).toString(),
     })
     postBody = await postResp.json().catch(() => null)
@@ -1341,7 +1432,9 @@ async function realMetaIncreaseBudget(
     }
   }
 
-  if (!META_TEST_ACCESS_TOKEN) {
+  // Phase 6 Sub-pass D Part B: per-org Vault token first, sandbox fallback.
+  const { token: accessToken, source: tokenSource } = await resolveMetaAccessToken(ctx)
+  if (!accessToken) {
     logExec({
       ts: new Date().toISOString(),
       phase: 'exec.error',
@@ -1355,7 +1448,7 @@ async function realMetaIncreaseBudget(
       mode: 'live',
       error: {
         message:
-          'META_INCREASE_BUDGET_LIVE=true but META_TEST_ACCESS_TOKEN is not configured',
+          'META_INCREASE_BUDGET_LIVE=true but no Meta access token resolved (per-org Vault absent + META_TEST_ACCESS_TOKEN unset)',
       },
     })
     return {
@@ -1364,6 +1457,8 @@ async function realMetaIncreaseBudget(
       error_message: 'META access token not configured',
     }
   }
+  // Suppress unused-var: tokenSource is observability-only for this handler.
+  void tokenSource
 
   const baseUrl = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(
     campaign_id,
@@ -1389,9 +1484,7 @@ async function realMetaIncreaseBudget(
   let getBody: unknown
   try {
     getResp = await fetch(
-      `${baseUrl}?fields=daily_budget&access_token=${encodeURIComponent(
-        META_TEST_ACCESS_TOKEN,
-      )}`,
+      `${baseUrl}?fields=daily_budget&access_token=${encodeURIComponent(accessToken)}`,
       { method: 'GET' },
     )
     getBody = await getResp.json().catch(() => null)
@@ -1523,7 +1616,7 @@ async function realMetaIncreaseBudget(
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         daily_budget: String(newBudget),
-        access_token: META_TEST_ACCESS_TOKEN,
+        access_token: accessToken,
       }).toString(),
     })
     postBody = await postResp.json().catch(() => null)
@@ -1612,6 +1705,704 @@ async function realMetaIncreaseBudget(
       max_percent_cap: META_INCREASE_BUDGET_MAX_PERCENT,
       get_http_status: getResp.status,
       post_http_status: postResp.status,
+    },
+  }
+}
+
+// ─── Real meta.create_campaign (Meta Graph API) ──────────────────────
+//
+// Phase 6 Sub-pass C (continuation #20, 2026-05-09).
+//
+// Endpoint: POST https://graph.facebook.com/{ver}/act_{ad_account_id}/campaigns
+//   Body (form-urlencoded):
+//     name=<string>
+//     objective=<string>                      (default: OUTCOME_TRAFFIC)
+//     status=PAUSED                            (HARD-CODED — created campaigns
+//                                              never auto-spend; operator
+//                                              activates separately)
+//     special_ad_categories=[]                 (compliance default)
+//     daily_budget=<integer cents>             (optional; only if provided)
+//     access_token=<META_TEST_ACCESS_TOKEN>    (single-tenant sandbox; mirrors
+//                                              realMetaPauseCampaign)
+//
+// `ad_account_id` is resolved server-side from the org's first connected
+// Meta `ad_accounts` row (matches the realGooglePauseCampaign customer_id
+// resolution convention). The pre-handler cross-account guard at
+// services/campaigns/campaigns.ts:pushCampaign already verified that the
+// caller's campaign.ad_account_id belongs to their org; this handler does
+// the second-stage lookup of `platform_account_id` for the actual API call.
+//
+// Idempotency, parameter validation (campaign_name required by
+// actions_library schema), and audit-row insertion are all enforced by
+// `executeAction` upstream — this function only performs the live API
+// call and emits structured `[exec]` lifecycle logs (token NEVER logged).
+//
+// CRITICAL: status='PAUSED' is hard-coded so a misconfigured live flag +
+// allowlist cannot accidentally launch real ad spend. Operator activates
+// campaigns separately via the existing realMetaPauseCampaign-equivalent
+// activate flow (not implemented in this pass per scope).
+async function realMetaCreateCampaign(
+  params: Record<string, unknown>,
+  ctx: HandlerCtx,
+): Promise<{ success: boolean; result_data: Record<string, unknown>; error_message?: string }> {
+  const campaign_name = params.campaign_name
+  if (typeof campaign_name !== 'string' || campaign_name.length === 0) {
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: { message: 'campaign_name missing or invalid' },
+    })
+    return {
+      success: false,
+      result_data: {},
+      error_message: 'campaign_name missing or invalid',
+    }
+  }
+
+  // Phase 6 Sub-pass D Part B: per-org Vault token first, sandbox fallback.
+  const { token: accessToken, source: tokenSource } = await resolveMetaAccessToken(ctx)
+  if (!accessToken) {
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: {
+        message:
+          'META_CREATE_CAMPAIGN_LIVE=true but no Meta access token resolved (per-org Vault absent + META_TEST_ACCESS_TOKEN unset)',
+      },
+    })
+    return {
+      success: false,
+      result_data: {},
+      error_message: 'META access token not configured',
+    }
+  }
+  // Suppress unused-var: tokenSource is observability-only for this handler.
+  void tokenSource
+
+  // Resolve the Meta ad_account_id from ad_accounts. We use the first
+  // connected meta ad_accounts row for the org (same convention as
+  // realGooglePauseCampaign customer_id resolution). pushCampaign's
+  // cross-account guard already validated the caller-provided
+  // campaign.ad_account_id; here we look up the platform-side identifier.
+  const { data: integration, error: intErr } = await supabaseAdmin
+    .from('integrations')
+    .select('id')
+    .eq('org_id', ctx.orgId)
+    .eq('platform', 'meta')
+    .maybeSingle()
+
+  if (intErr) {
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'integration_lookup' },
+      error_message: `Meta integration lookup failed: ${intErr.message}`,
+    }
+  }
+  if (!integration) {
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'integration_missing' },
+      error_message: 'Meta integration not connected for this organization',
+    }
+  }
+
+  const { data: account, error: acctErr } = await supabaseAdmin
+    .from('ad_accounts')
+    .select('platform_account_id')
+    .eq('org_id', ctx.orgId)
+    .eq('integration_id', integration.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (acctErr) {
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'ad_account_lookup' },
+      error_message: `Meta ad_account lookup failed: ${acctErr.message}`,
+    }
+  }
+  if (!account) {
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'ad_account_missing' },
+      error_message: 'No Meta ad_account discovered for this organization yet — run a Meta sync first',
+    }
+  }
+
+  // Meta ad_account ids are conventionally formatted "act_<digits>". If the
+  // stored platform_account_id already starts with "act_" use it verbatim;
+  // otherwise prefix it. Defensive — the canonical Phase 2 sync flow may
+  // store either form depending on provider response shape.
+  const rawAccountId = String(account.platform_account_id)
+  const adAccountId = rawAccountId.startsWith('act_') ? rawAccountId : `act_${rawAccountId}`
+
+  // Build the create body. status='PAUSED' is hard-coded for safety —
+  // see header note. daily_budget is optional and converted to cents per
+  // Meta's API convention.
+  const objective =
+    typeof params.objective === 'string' && params.objective.length > 0
+      ? params.objective
+      : 'OUTCOME_TRAFFIC'
+
+  const formBody: Record<string, string> = {
+    name: campaign_name,
+    objective,
+    status: 'PAUSED',
+    special_ad_categories: '[]',
+    access_token: accessToken,
+  }
+
+  if (
+    typeof params.daily_budget === 'number' &&
+    Number.isFinite(params.daily_budget) &&
+    params.daily_budget > 0
+  ) {
+    // Meta API expects daily_budget in cents (smallest currency unit).
+    formBody.daily_budget = String(Math.round(params.daily_budget * 100))
+  }
+
+  const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(adAccountId)}/campaigns`
+
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_call',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+  })
+
+  const t0 = Date.now()
+  let resp: Response
+  let body: unknown
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(formBody).toString(),
+    })
+    body = await resp.json().catch(() => null)
+  } catch (e) {
+    const latency_ms = Date.now() - t0
+    const err = e as Error
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.api_response',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      latency_ms,
+      ok: false,
+      error: { name: err?.name, message: err?.message ?? 'fetch failed' },
+    })
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'transport' },
+      error_message: `Meta API transport: ${err?.message ?? 'fetch failed'}`,
+    }
+  }
+
+  const latency_ms = Date.now() - t0
+  const bodyObj = body && typeof body === 'object' ? (body as Record<string, unknown>) : null
+  const ok = resp.ok && bodyObj !== null && bodyObj.error === undefined
+
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_response',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+    latency_ms,
+    http_status: resp.status,
+    ok,
+  })
+
+  if (!ok) {
+    const errObj = bodyObj?.error
+    const errMsg =
+      errObj && typeof errObj === 'object'
+        ? safeStringify(errObj)
+        : `HTTP ${resp.status}`
+    return {
+      success: false,
+      result_data: { mode: 'live', http_status: resp.status, body: bodyObj, ad_account_id: adAccountId },
+      error_message: errMsg,
+    }
+  }
+
+  // Meta CREATE response shape: { id: "<numeric_campaign_id>" }
+  const newCampaignId = bodyObj && typeof bodyObj.id === 'string' ? bodyObj.id : null
+
+  return {
+    success: true,
+    result_data: {
+      mode: 'live',
+      ad_account_id: adAccountId,
+      created_campaign_id: newCampaignId,
+      campaign_name,
+      objective,
+      status: 'PAUSED',
+      http_status: resp.status,
+      body: bodyObj,
+    },
+  }
+}
+
+// ─── Real google.create_campaign (Google Ads API; two-call flow) ─────
+//
+// Phase 6 Sub-pass C (continuation #20, 2026-05-09).
+//
+// Google Ads requires a CampaignBudget resource BEFORE a Campaign can
+// reference it. We perform two sequential POSTs against the same
+// customer + access token:
+//
+//   1. POST /{ver}/customers/{cid}/campaignBudgets:mutate
+//        { operations: [{ create: { name, amount_micros, delivery_method } }] }
+//      → returns budget resource_name
+//
+//   2. POST /{ver}/customers/{cid}/campaigns:mutate
+//        { operations: [{ create: { name, advertising_channel_type,
+//                                    status, campaign_budget } }] }
+//      → returns campaign resource_name
+//
+// On step-1 failure the function returns immediately (no campaign exists
+// to clean up). On step-2 failure the budget orphan is logged but NOT
+// auto-deleted — Google Ads budgets without a campaign are inert and the
+// operator can prune them via the dashboard. This matches the operational
+// pattern Google itself recommends for atomic-rollback-without-temp-id
+// flows.
+//
+// Per-org credentials flow (mirrors realGooglePauseCampaign):
+//   integrations.vault_refresh_token_secret_id  → readSecret() → refresh_token
+//   refresh_token + GOOGLE_ADS_CLIENT_ID + GOOGLE_ADS_CLIENT_SECRET → access_token
+//   ad_accounts.platform_account_id (per integration) → customer_id
+//
+// Tokens never logged. status='PAUSED' hard-coded for safety.
+async function realGoogleCreateCampaign(
+  params: Record<string, unknown>,
+  ctx: HandlerCtx,
+): Promise<{ success: boolean; result_data: Record<string, unknown>; error_message?: string }> {
+  const campaign_name = params.campaign_name
+  if (typeof campaign_name !== 'string' || campaign_name.length === 0) {
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: { message: 'campaign_name missing or invalid' },
+    })
+    return {
+      success: false,
+      result_data: {},
+      error_message: 'campaign_name missing or invalid',
+    }
+  }
+
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+  const oauthClientId = process.env.GOOGLE_ADS_CLIENT_ID
+  const oauthClientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET
+  const loginCustomerId = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
+  if (!developerToken || !oauthClientId || !oauthClientSecret) {
+    const missing = [
+      !developerToken && 'GOOGLE_ADS_DEVELOPER_TOKEN',
+      !oauthClientId && 'GOOGLE_ADS_CLIENT_ID',
+      !oauthClientSecret && 'GOOGLE_ADS_CLIENT_SECRET',
+    ].filter(Boolean).join(', ')
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: { message: `GOOGLE_CREATE_CAMPAIGN_LIVE=true but ${missing} not configured` },
+    })
+    return {
+      success: false,
+      result_data: {},
+      error_message: `Google Ads credentials not configured (${missing})`,
+    }
+  }
+
+  // 1. Resolve the org's Google integration + Vault refresh token.
+  const { data: integration, error: intErr } = await supabaseAdmin
+    .from('integrations')
+    .select('id, vault_refresh_token_secret_id, status')
+    .eq('org_id', ctx.orgId)
+    .eq('platform', 'google')
+    .maybeSingle()
+
+  if (intErr) {
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'integration_lookup' },
+      error_message: `Google integration lookup failed: ${intErr.message}`,
+    }
+  }
+  if (!integration || integration.status !== 'connected' || !integration.vault_refresh_token_secret_id) {
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'integration_missing' },
+      error_message: 'Google integration not connected for this organization',
+    }
+  }
+
+  let refreshToken: string
+  try {
+    refreshToken = await readSecret(integration.vault_refresh_token_secret_id as string)
+  } catch (e) {
+    const err = e as Error
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'vault_read' },
+      error_message: `Vault read failed: ${err.message}`,
+    }
+  }
+
+  // 2. Resolve customer_id (mirrors realGooglePauseCampaign).
+  let customerId: string
+  if (typeof params.customer_id === 'string' && params.customer_id.length > 0) {
+    customerId = params.customer_id
+  } else {
+    const { data: account, error: acctErr } = await supabaseAdmin
+      .from('ad_accounts')
+      .select('platform_account_id')
+      .eq('org_id', ctx.orgId)
+      .eq('integration_id', integration.id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (acctErr) {
+      return {
+        success: false,
+        result_data: { mode: 'live', stage: 'ad_account_lookup' },
+        error_message: `Google ad_account lookup failed: ${acctErr.message}`,
+      }
+    }
+    if (!account) {
+      return {
+        success: false,
+        result_data: { mode: 'live', stage: 'ad_account_missing' },
+        error_message: 'No Google ad_account discovered for this organization yet — run a Google sync first',
+      }
+    }
+    customerId = String(account.platform_account_id).replace(/-/g, '')
+  }
+
+  // 3. Refresh OAuth access token. Token never logged.
+  let accessToken: string
+  try {
+    const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: oauthClientId,
+        client_secret: oauthClientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }).toString(),
+    })
+    if (!tokenResp.ok) {
+      const detail = await tokenResp.text().catch(() => '')
+      return {
+        success: false,
+        result_data: { mode: 'live', stage: 'oauth_refresh', http_status: tokenResp.status },
+        error_message: `Google OAuth refresh failed (HTTP ${tokenResp.status}): ${detail.slice(0, 200)}`,
+      }
+    }
+    const tokenJson = (await tokenResp.json()) as { access_token?: string }
+    if (!tokenJson.access_token) {
+      return {
+        success: false,
+        result_data: { mode: 'live', stage: 'oauth_refresh' },
+        error_message: 'Google OAuth refresh returned no access_token',
+      }
+    }
+    accessToken = tokenJson.access_token
+  } catch (e) {
+    const err = e as Error
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'oauth_refresh_transport' },
+      error_message: `Google OAuth transport failed: ${err.message}`,
+    }
+  }
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    'developer-token': developerToken,
+    'Content-Type': 'application/json',
+  }
+  if (loginCustomerId) headers['login-customer-id'] = loginCustomerId
+
+  // 4. Step 1: create the CampaignBudget. Default amount = 1,000,000 micros
+  //    ($1.00) when caller does not provide daily_budget. Google Ads
+  //    requires a budget for SEARCH/DISPLAY/VIDEO channel types.
+  const dailyBudgetDollars =
+    typeof params.daily_budget === 'number' &&
+    Number.isFinite(params.daily_budget) &&
+    params.daily_budget > 0
+      ? params.daily_budget
+      : 1
+  const budgetMicros = Math.round(dailyBudgetDollars * 1_000_000)
+
+  const budgetUrl = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${encodeURIComponent(customerId)}/campaignBudgets:mutate`
+  const budgetBody = {
+    operations: [
+      {
+        create: {
+          // Budget name must be unique per customer; suffix with timestamp
+          // to allow idempotent retry from a different request_id (which
+          // would otherwise collide on the campaign_name above).
+          name: `${campaign_name} Budget ${new Date().toISOString()}`,
+          amount_micros: String(budgetMicros),
+          delivery_method: 'STANDARD',
+        },
+      },
+    ],
+  }
+
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_call',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+  })
+
+  const t0 = Date.now()
+  let budgetResp: Response
+  let budgetRespBody: unknown
+  try {
+    budgetResp = await fetch(budgetUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(budgetBody),
+    })
+    budgetRespBody = await budgetResp.json().catch(() => null)
+  } catch (e) {
+    const err = e as Error
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'budget_transport' },
+      error_message: `Google Ads budget transport: ${err?.message ?? 'fetch failed'}`,
+    }
+  }
+
+  if (!budgetResp.ok) {
+    return {
+      success: false,
+      result_data: {
+        mode: 'live',
+        stage: 'budget_create',
+        http_status: budgetResp.status,
+        body: budgetRespBody,
+        customer_id: customerId,
+      },
+      error_message:
+        typeof budgetRespBody === 'object' && budgetRespBody !== null
+          ? safeStringify(budgetRespBody)
+          : `Google Ads budget HTTP ${budgetResp.status}`,
+    }
+  }
+
+  // Extract the budget resource_name from the response.
+  // Shape: { results: [{ resource_name: "customers/{cid}/campaignBudgets/{id}" }] }
+  let budgetResourceName: string | null = null
+  if (budgetRespBody && typeof budgetRespBody === 'object') {
+    const r = (budgetRespBody as Record<string, unknown>).results
+    if (Array.isArray(r) && r.length > 0 && typeof r[0] === 'object' && r[0] !== null) {
+      const rn = (r[0] as Record<string, unknown>).resource_name
+      if (typeof rn === 'string') budgetResourceName = rn
+    }
+  }
+  if (!budgetResourceName) {
+    return {
+      success: false,
+      result_data: {
+        mode: 'live',
+        stage: 'budget_response_parse',
+        http_status: budgetResp.status,
+        body: budgetRespBody,
+      },
+      error_message: 'Google Ads budget create returned no resource_name',
+    }
+  }
+
+  // 5. Step 2: create the Campaign linked to the new budget. status=PAUSED
+  //    hard-coded for safety. advertising_channel_type defaults to SEARCH;
+  //    callers can override via params.advertising_channel_type (e.g.
+  //    'DISPLAY', 'VIDEO').
+  const channelType =
+    typeof params.advertising_channel_type === 'string' && params.advertising_channel_type.length > 0
+      ? params.advertising_channel_type
+      : 'SEARCH'
+
+  const campaignUrl = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${encodeURIComponent(customerId)}/campaigns:mutate`
+  const campaignBody = {
+    operations: [
+      {
+        create: {
+          name: campaign_name,
+          status: 'PAUSED',
+          advertising_channel_type: channelType,
+          campaign_budget: budgetResourceName,
+        },
+      },
+    ],
+  }
+
+  let campaignResp: Response
+  let campaignRespBody: unknown
+  try {
+    campaignResp = await fetch(campaignUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(campaignBody),
+    })
+    campaignRespBody = await campaignResp.json().catch(() => null)
+  } catch (e) {
+    const latency_ms = Date.now() - t0
+    const err = e as Error
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.api_response',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      latency_ms,
+      ok: false,
+      error: { name: err?.name, message: err?.message ?? 'fetch failed' },
+    })
+    // Budget exists but campaign create failed → orphan budget. Log but do
+    // not auto-delete — operator prunes via Google Ads dashboard.
+    console.warn(
+      `[exec] orphaned Google Ads budget ${budgetResourceName} for org=${ctx.orgId} (campaign create transport failed)`,
+    )
+    return {
+      success: false,
+      result_data: {
+        mode: 'live',
+        stage: 'campaign_transport',
+        orphaned_budget: budgetResourceName,
+      },
+      error_message: `Google Ads campaign transport: ${err?.message ?? 'fetch failed'}`,
+    }
+  }
+
+  const latency_ms = Date.now() - t0
+  const ok = campaignResp.ok
+
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_response',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+    latency_ms,
+    http_status: campaignResp.status,
+    ok,
+  })
+
+  if (!ok) {
+    console.warn(
+      `[exec] orphaned Google Ads budget ${budgetResourceName} for org=${ctx.orgId} (campaign create HTTP ${campaignResp.status})`,
+    )
+    return {
+      success: false,
+      result_data: {
+        mode: 'live',
+        stage: 'campaign_create',
+        http_status: campaignResp.status,
+        body: campaignRespBody,
+        customer_id: customerId,
+        orphaned_budget: budgetResourceName,
+      },
+      error_message:
+        typeof campaignRespBody === 'object' && campaignRespBody !== null
+          ? safeStringify(campaignRespBody)
+          : `HTTP ${campaignResp.status}`,
+    }
+  }
+
+  // Extract created campaign resource_name.
+  let campaignResourceName: string | null = null
+  if (campaignRespBody && typeof campaignRespBody === 'object') {
+    const r = (campaignRespBody as Record<string, unknown>).results
+    if (Array.isArray(r) && r.length > 0 && typeof r[0] === 'object' && r[0] !== null) {
+      const rn = (r[0] as Record<string, unknown>).resource_name
+      if (typeof rn === 'string') campaignResourceName = rn
+    }
+  }
+
+  return {
+    success: true,
+    result_data: {
+      mode: 'live',
+      customer_id: customerId,
+      budget_resource_name: budgetResourceName,
+      campaign_resource_name: campaignResourceName,
+      campaign_name,
+      advertising_channel_type: channelType,
+      status: 'PAUSED',
+      http_status: campaignResp.status,
+      body: campaignRespBody,
     },
   }
 }

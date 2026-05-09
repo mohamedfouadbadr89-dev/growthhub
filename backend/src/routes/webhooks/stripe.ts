@@ -43,10 +43,14 @@ export const stripeWebhook = new Hono<{ Variables: { requestId: string } }>()
 // Verification is HMAC-SHA256 of `<timestamp>.<raw_body>` using the webhook
 // secret, compared with the v1 signature using a timing-safe comparator.
 //
-// We do NOT enforce a tolerance window on the timestamp (Stripe SDK's
-// default is 5 minutes). Adding a tolerance check would be a hardening
-// item; the signature itself binds the body+timestamp tuple cryptographically,
-// so signature validity already prevents trivial replay of stale payloads.
+// Phase 7 webhook hardening (continuation #22, 2026-05-09): timestamp
+// tolerance enforcement matching Stripe SDK's `constructEvent` default
+// (300s / 5 min). Replay protection beyond signature validity — a captured
+// signed payload becomes invalid 5 minutes after Stripe issued it. The
+// signed-payload binding (HMAC of `<t>.<body>`) is preserved verbatim;
+// this hardening adds a clock-window gate before HMAC comparison.
+const STRIPE_SIGNATURE_TOLERANCE_SECONDS = 300
+
 function verifyStripeSignature(
   rawBody: string,
   signatureHeader: string | undefined,
@@ -63,6 +67,16 @@ function verifyStripeSignature(
     if (k === 'v1' && v) v1Signatures.push(v)
   }
   if (!timestamp || v1Signatures.length === 0) return false
+
+  // Timestamp tolerance enforcement. Reject signatures whose `t` is
+  // outside the ±tolerance window from server clock. This blocks:
+  //   - Pure replay of an old captured signed payload (after 5 minutes)
+  //   - Forward-clock-skew payloads (defensive against clock drift abuse)
+  // Stripe always sends UTC unix-seconds; server NODE_ENV uses UTC.
+  const ts = parseInt(timestamp, 10)
+  if (!Number.isFinite(ts)) return false
+  const nowSec = Math.floor(Date.now() / 1000)
+  if (Math.abs(nowSec - ts) > STRIPE_SIGNATURE_TOLERANCE_SECONDS) return false
 
   const signedPayload = `${timestamp}.${rawBody}`
   const expected = crypto
@@ -244,6 +258,43 @@ stripeWebhook.post('/', async (c) => {
   console.log(
     `[stripe-webhook] request_id=${request_id} event_id=${eventId} event_type=${eventType}`,
   )
+
+  // Phase 7 webhook hardening (continuation #22): atomic event_id dedup.
+  // Stripe retries non-2xx for hours; operators can also re-deliver
+  // events from the dashboard. Without dedup, a retry after a previous
+  // successful processing would double-grant credits / double-upsert
+  // subscriptions. INSERT INTO processed_stripe_events (event_id PK) is
+  // the dedup gate: ON CONFLICT (PK) → caller catches 23505 and acks
+  // 200 immediately.
+  //
+  // Failure mode: if the dedup INSERT fails for any reason OTHER than
+  // 23505 (e.g. connection pool exhaustion, RLS misconfiguration), we
+  // log + continue rather than block the webhook. Stripe-side retry on
+  // 500 would re-enter this same path; the next attempt's DB write
+  // either succeeds (dedup gate now active) or fails again (operator
+  // alerted via [stripe-webhook] error log). Best-effort dedup; never
+  // block the webhook on infra failure.
+  if (eventId) {
+    const { error: dedupErr } = await supabaseAdmin
+      .from('processed_stripe_events')
+      .insert({ event_id: eventId, event_type: eventType ?? null })
+
+    if (dedupErr) {
+      const code = (dedupErr as { code?: string }).code
+      if (code === '23505') {
+        console.log(
+          `[stripe-webhook] request_id=${request_id} event_id=${eventId} already processed (dedup) — acking 200`,
+        )
+        return c.json({ received: true, deduped: true })
+      }
+      console.error(
+        `[stripe-webhook] request_id=${request_id} event_id=${eventId} dedup INSERT failed: ${dedupErr.message}`,
+      )
+      // Continue — best-effort dedup; Stripe retry will exercise this
+      // path again and the next attempt's INSERT will either succeed
+      // (closing the dedup gate) or fail again (operator alerted).
+    }
+  }
 
   try {
     if (

@@ -83,15 +83,53 @@ export const authMiddleware = createMiddleware<{
       // above). `ignoreDuplicates: true` means existing rows are not
       // overwritten — so `created_by` only lands on rows the JIT path
       // genuinely creates, never on rows the webhook already provisioned.
-      const { error: orgErr } = await supabaseAdmin
+      //
+      // Phase 7 Sub-pass D Part C (continuation #21, 2026-05-09): the
+      // `.select()` post-upsert returns the inserted row(s) when a NEW
+      // org row was created and an empty array when the org already
+      // existed. This lets us trigger a one-time `grant_credits` RPC
+      // ONLY on first creation — never on every subsequent JIT-bound
+      // login, never on rows already provisioned by the Clerk webhook.
+      const { data: insertedOrgs, error: orgErr } = await supabaseAdmin
         .from('organizations')
         .upsert(
           { org_id: orgId, name: orgName, created_by: userId },
           { onConflict: 'org_id', ignoreDuplicates: true }
         )
+        .select('org_id')
       if (orgErr) {
         console.error(`[auth] request_id=${request_id} JIT org upsert failed: ${orgErr.message}`)
         return fail(c, 'auth provision failed', 500, { code: 'AUTH_PROVISION_FAILED' })
+      }
+
+      // Phase 7 Sub-pass D Part C: one-time initial credits grant.
+      // Fire-and-forget — failure of the grant MUST NOT fail the auth
+      // provision (the org row is already created; the user can still
+      // sign in; operator can grant credits manually if this RPC errors).
+      // Amount is configurable via INITIAL_ORG_CREDITS_GRANT (default 100);
+      // set to '0' to disable. Audit row is appended to credits_ledger
+      // atomically inside the grant_credits RPC (continuation #18 substrate).
+      if ((insertedOrgs ?? []).length > 0) {
+        const initialGrantRaw = process.env.INITIAL_ORG_CREDITS_GRANT ?? '100'
+        const initialGrant = parseInt(initialGrantRaw, 10)
+        if (Number.isFinite(initialGrant) && initialGrant > 0) {
+          await supabaseAdmin
+            .rpc('grant_credits', {
+              p_org_id: orgId,
+              p_amount: initialGrant,
+              p_reason: 'initial_grant',
+              p_ref_type: 'jit_auto_provision',
+              p_ref_id: null,
+            })
+            .then(
+              () => null,
+              (grantErr) => {
+                console.error(
+                  `[auth] request_id=${request_id} JIT initial grant_credits failed for org=${orgId}: ${(grantErr as Error)?.message ?? 'unknown'}`,
+                )
+              },
+            )
+        }
       }
 
       const { data: existingUser, error: lookupErr } = await supabaseAdmin

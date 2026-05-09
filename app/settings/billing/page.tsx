@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import {
   Layers,
   CheckCircle2,
@@ -10,7 +12,29 @@ import {
   Download,
   Wand2,
   ChevronDown,
+  Key,
+  Trash2,
+  Save,
 } from "lucide-react";
+import { apiClient, ApiError } from "@/lib/api-client";
+
+// Phase 7 Sub-pass B (continuation #19, 2026-05-09): wired to canonical
+// `GET /api/v1/billing/plan`, `PATCH /api/v1/billing/plan`,
+// `POST /api/v1/billing/byok`, `DELETE /api/v1/billing/byok`. Frontend
+// consumes the canonical envelope via api-client auto-unwrap (Sub-pass B
+// continuation #13).
+//
+// Sections that remain MOCKED-DEFERRED per holistic governance recommendation:
+//   - PLAN_FEATURES list           → no plan-catalogue endpoint
+//   - Plan price ("$499.00/month") → no pricing catalogue
+//   - "Upgrade Plan" / "View Details" buttons → Stripe checkout-session
+//     creation is forward-positioned for a future pass (no Stripe outbound
+//     API in A1c); wiring this button to PATCH /plan would lie about
+//     behavior (it would only flip plan_type enum, not actually upgrade).
+//   - System Utilization widget   → no monthly-spend aggregation endpoint
+//   - INVOICES table              → no invoices endpoint
+//   - Payment Method card display → no Stripe payment-method API wiring
+//   - Annual billing banner       → no annual-plan logic
 
 const PLAN_FEATURES = ["Unlimited Executions", "Priority API Access", "Dedicated Support"];
 
@@ -21,7 +45,160 @@ const INVOICES = [
   { date: "Jul 12, 2023", id: "INV-2023-6821", amount: "$499.00" },
 ];
 
+interface BillingState {
+  org_id: string;
+  plan_type: string;        // 'subscription' | 'ltd'
+  credits_balance: number;
+  has_byok_key: boolean;
+}
+
+function planLabel(planType: string): string {
+  if (planType === "ltd") return "Lifetime Deal";
+  if (planType === "subscription") return "Subscription Plan";
+  return planType;
+}
+
+function planSubtitle(planType: string): string {
+  if (planType === "ltd") return "Lifetime access — BYOK required for AI features";
+  if (planType === "subscription") return "Active subscription — credits-based AI execution";
+  return "";
+}
+
 export default function BillingPage() {
+  const { getToken } = useAuth();
+
+  const [billing,    setBilling]    = useState<BillingState | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [loadError,  setLoadError]  = useState<string | null>(null);
+
+  const [byokInput,    setByokInput]    = useState("");
+  const [byokSaving,   setByokSaving]   = useState(false);
+  const [byokDeleting, setByokDeleting] = useState(false);
+  const [byokError,    setByokError]    = useState<string | null>(null);
+
+  const [upgrading,    setUpgrading]    = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      const data = await apiClient<BillingState>("/api/v1/billing/plan", token);
+      setBilling(data);
+    } catch (err) {
+      const e = err as ApiError | Error;
+      setLoadError(e.message || "Failed to load billing state");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!cancelled) await load();
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSaveByok() {
+    if (byokSaving) return;
+    setByokError(null);
+    const trimmed = byokInput.trim();
+    if (!trimmed) {
+      setByokError("Enter your OpenRouter API key");
+      return;
+    }
+    setByokSaving(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      await apiClient<{ org_id: string; has_byok_key: boolean }>(
+        "/api/v1/billing/byok",
+        token,
+        { method: "POST", body: JSON.stringify({ openrouter_key: trimmed }) },
+      );
+      setByokInput("");
+      await load();
+    } catch (err) {
+      const e = err as ApiError | Error;
+      setByokError(e.message || "Failed to save BYOK key");
+    } finally {
+      setByokSaving(false);
+    }
+  }
+
+  // Phase 7 Sub-pass D (continuation #21, 2026-05-09) — Stripe Checkout.
+  // Reads the configured Stripe price id from
+  // `NEXT_PUBLIC_STRIPE_DEFAULT_PRICE_ID`. Operators populate this env at
+  // build time with a Stripe Price id (price_xxx) created in the Stripe
+  // Dashboard. If unset, the button shows a helpful error rather than
+  // silently failing. NO pricing logic in code — Stripe Price metadata
+  // (`credits_to_grant`) drives credit allocation server-side via the
+  // existing webhook.
+  async function handleUpgrade() {
+    if (upgrading) return;
+    setUpgradeError(null);
+
+    const priceId = process.env.NEXT_PUBLIC_STRIPE_DEFAULT_PRICE_ID;
+    if (!priceId) {
+      setUpgradeError(
+        "Stripe Price not configured (NEXT_PUBLIC_STRIPE_DEFAULT_PRICE_ID env var). Contact your operator.",
+      );
+      return;
+    }
+
+    setUpgrading(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      const result = await apiClient<{ checkout_url: string; session_id: string }>(
+        "/api/v1/billing/checkout",
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            price_id: priceId,
+            mode: "subscription",
+          }),
+        },
+      );
+      // Redirect to Stripe-hosted Checkout. On success, Stripe redirects
+      // back to /settings/billing?checkout=success and emits webhook
+      // events the inbound handler consumes for subscription state +
+      // optional credit grant.
+      window.location.href = result.checkout_url;
+    } catch (err) {
+      const e = err as ApiError | Error;
+      setUpgradeError(e.message || "Failed to start checkout");
+      setUpgrading(false);
+    }
+  }
+
+  async function handleRemoveByok() {
+    if (byokDeleting) return;
+    setByokError(null);
+    setByokDeleting(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      await apiClient<{ org_id: string; has_byok_key: boolean }>(
+        "/api/v1/billing/byok",
+        token,
+        { method: "DELETE" },
+      );
+      await load();
+    } catch (err) {
+      const e = err as ApiError | Error;
+      setByokError(e.message || "Failed to remove BYOK key");
+    } finally {
+      setByokDeleting(false);
+    }
+  }
+
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
@@ -32,13 +209,19 @@ export default function BillingPage() {
         <h2 className="text-3xl font-bold tracking-tight text-foreground font-sans">Billing &amp; Usage</h2>
       </div>
 
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-body rounded-lg px-4 py-3">
+          {loadError}
+        </div>
+      )}
+
       {/* Bento Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Current Plan */}
+        {/* Current Plan — wired to GET /billing/plan */}
         <div className="lg:col-span-2 bg-white rounded-3xl p-8 relative overflow-hidden flex flex-col border border-border shadow-sm">
           <div className="absolute top-0 right-0 p-8">
             <span className="px-4 py-1.5 bg-primary/10 text-primary rounded-full text-xs font-bold tracking-wider uppercase font-body">
-              Active
+              {loading ? "Loading…" : "Active"}
             </span>
           </div>
           <div className="flex items-start gap-6 mb-8">
@@ -50,13 +233,23 @@ export default function BillingPage() {
                 Current Plan
               </h3>
               <h2 className="text-3xl font-extrabold text-foreground tracking-tighter font-sans">
-                Enterprise AI Core
+                {loading ? "—" : billing ? planLabel(billing.plan_type) : "—"}
               </h2>
               <p className="text-primary font-medium mt-1 font-body">
-                $499.00 <span className="text-muted-foreground text-sm font-normal">/ month</span>
+                {loading
+                  ? "—"
+                  : billing
+                    ? `${billing.credits_balance.toLocaleString()} credits available`
+                    : "—"}
+                {!loading && billing && (
+                  <span className="text-muted-foreground text-sm font-normal block mt-0.5">
+                    {planSubtitle(billing.plan_type)}
+                  </span>
+                )}
               </p>
             </div>
           </div>
+          {/* Plan features — MOCKED-DEFERRED (no plan-catalogue endpoint) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             {PLAN_FEATURES.map((f) => (
               <div
@@ -68,17 +261,32 @@ export default function BillingPage() {
               </div>
             ))}
           </div>
+          {/* Upgrade Plan — wired to POST /billing/checkout (Stripe outbound) */}
           <div className="mt-auto flex items-center gap-4">
-            <button className="px-8 py-3 bg-gradient-to-r from-primary to-[#2563eb] text-white rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-95 font-body">
-              Upgrade Plan
+            <button
+              onClick={handleUpgrade}
+              disabled={upgrading || loading}
+              className="px-8 py-3 bg-gradient-to-r from-primary to-[#2563eb] text-white rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-95 font-body disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {upgrading ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  <span>Redirecting…</span>
+                </>
+              ) : (
+                <span>Upgrade Plan</span>
+              )}
             </button>
             <button className="px-8 py-3 text-foreground font-semibold text-sm hover:bg-surface-container-low rounded-xl transition-all font-body">
               View Details
             </button>
           </div>
+          {upgradeError && (
+            <p className="mt-3 text-xs text-red-600 font-body">{upgradeError}</p>
+          )}
         </div>
 
-        {/* System Utilization */}
+        {/* System Utilization — MOCKED-DEFERRED (no monthly-spend aggregation endpoint) */}
         <div className="bg-white rounded-3xl p-8 flex flex-col border border-border shadow-sm">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-foreground font-bold text-lg font-sans">System Utilization</h3>
@@ -117,9 +325,92 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* Bento Row 1.5 — BYOK section (wired to POST/DELETE /billing/byok) */}
+      <div className="bg-white rounded-3xl p-8 border border-border shadow-sm">
+        <div className="flex items-start gap-6 mb-6">
+          <div className="w-12 h-12 rounded-2xl bg-surface-container-low flex items-center justify-center shrink-0">
+            <Key size={22} className="text-primary" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-foreground font-bold text-lg font-sans">Bring Your Own Key (OpenRouter)</h3>
+            <p className="text-sm text-muted-foreground font-body mt-1">
+              Lifetime Deal users must provide their own OpenRouter API key. Subscription users may optionally connect
+              a key to bypass the platform credits flow. Keys are stored encrypted in Supabase Vault and never returned.
+            </p>
+          </div>
+        </div>
+
+        {byokError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-body rounded-lg px-4 py-2 mb-4">
+            {byokError}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-sm text-muted-foreground font-body">Loading…</div>
+        ) : billing?.has_byok_key ? (
+          <div className="flex items-center justify-between gap-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 size={20} className="text-emerald-600 shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-emerald-900 font-body">OpenRouter key connected</p>
+                <p className="text-xs text-emerald-700 font-body">
+                  AI calls bypass platform credits and bill to your OpenRouter account.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleRemoveByok}
+              disabled={byokDeleting}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-red-200 text-red-700 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors disabled:opacity-60 font-body"
+            >
+              {byokDeleting ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-red-300 border-t-red-700 rounded-full animate-spin" />
+                  <span>Removing…</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 size={14} />
+                  <span>Remove key</span>
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <input
+              type="password"
+              value={byokInput}
+              onChange={(e) => setByokInput(e.target.value)}
+              placeholder="sk-or-v1-…"
+              className="flex-1 px-4 py-3 rounded-xl border border-border bg-surface-container-low text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+              autoComplete="off"
+            />
+            <button
+              onClick={handleSaveByok}
+              disabled={byokSaving || byokInput.trim().length === 0}
+              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary to-[#2563eb] text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all active:scale-95 disabled:opacity-60 font-body"
+            >
+              {byokSaving ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  <span>Saving…</span>
+                </>
+              ) : (
+                <>
+                  <Save size={14} />
+                  <span>Save key</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Bento Row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Payment Method */}
+        {/* Payment Method — MOCKED-DEFERRED (no Stripe payment-method API wiring) */}
         <div className="bg-white rounded-3xl p-8 border border-border shadow-sm">
           <div className="flex justify-between items-center mb-8">
             <h3 className="text-foreground font-bold text-lg font-sans">Payment Method</h3>
@@ -164,7 +455,7 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Billing History */}
+        {/* Billing History — MOCKED-DEFERRED (no invoices endpoint) */}
         <div className="lg:col-span-2 bg-white rounded-3xl p-8 flex flex-col border border-border shadow-sm">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-foreground font-bold text-lg font-sans">Billing History</h3>
@@ -215,7 +506,7 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* Annual Billing Banner */}
+      {/* Annual Billing Banner — MOCKED-DEFERRED (no annual-plan logic) */}
       <div className="bg-gradient-to-r from-[#495c95] to-[#2563eb] rounded-3xl p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-6">
           <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-md shrink-0">

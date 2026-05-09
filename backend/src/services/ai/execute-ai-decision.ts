@@ -55,6 +55,7 @@ import { validateAIResponse, AIValidationError, type AIResponse } from '../../ut
 import { logAIInteraction, newTraceId } from '../../utils/aiLogger.js'
 import { persistAIDecision } from './persistence.js'
 import { supabaseAdmin } from '../../lib/supabase.js'
+import { evaluateRulesForAIDecision } from '../execution/automation-engine.js'
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -300,6 +301,78 @@ export async function executeAIDecision(
         () => null,
         () => null,
       )
+
+    // ── 8. auto-fire automation rules (Phase 4/6 bridge, continuation #23) ──
+    //
+    // Operator-authorized post-persist hook. Closes the Decision → Action
+    // loop per CLAUDE.md §1 ("AI thinks + decides + executes + learns")
+    // and the "AUTO-FIRING on AI decision stream" governance-blocked item
+    // tracked since Phase 4 Part 2 close (continuation #5).
+    //
+    // Path 3 (of the 3 governed paths identified at Phase 4 P2 close):
+    // post-persist hook calling evaluateRulesForAIDecision. Selected over
+    // (a) Phase 3 anomaly engine unlock (DEPRECATED) and
+    // (b) AI Output Contract `result.category` schema extension
+    //     (cross-phase change to closed Phase 3 ai_decisions schema).
+    //
+    // EXECUTION ORDERING GUARANTEE:
+    //   1. AI response validation               (line ~205)
+    //   2. ai_decisions INSERT committed        (line ~263, persistAIDecision)
+    //   3. log_ai_usage fire-and-forget         (line ~287, observability)
+    //   4. evaluateRulesForAIDecision fire-and-forget  ← THIS HOOK (line ~318)
+    //   5. return decision to caller            (line ~325)
+    //
+    // FAILURE-ISOLATION GUARANTEE:
+    //   - This hook runs AFTER decision_id is committed; the AI flow's
+    //     primary-success contract (decision persisted + returned) is
+    //     already met before any rule evaluation begins.
+    //   - .then(noop, errorLog) swallows ALL automation failures —
+    //     malformed rules / handler dispatch errors / external Meta/Google
+    //     API failures / RLS denial / Vault timeouts / etc. — none of
+    //     these can propagate up to the AI caller.
+    //   - evaluateRulesForAIDecision itself catches per-rule errors
+    //     internally (each rule still records an automation_runs row with
+    //     status='failed' + error_message; the loop continues to the next
+    //     rule). Only infrastructure-level errors (DB unreachable on
+    //     ai_decisions / automation_rules SELECT) bubble up — those land
+    //     in the .catch logger here for operator triage.
+    //
+    // IDEMPOTENCY-PRESERVATION:
+    //   - executeAction (the canonical sole executor invoked transitively
+    //     via fireRule) preserves its `(org_id, execution_id)` partial
+    //     unique-index gate. Auto-fire dispatches do NOT supply
+    //     execution_id (they intentionally always-run on every AI decision
+    //     stream event matching their trigger), so the index acts only as
+    //     a per-rule duplicate-protection safety net for retries within
+    //     the same Inngest function attempt.
+    //
+    // ORG-ISOLATION:
+    //   - input.org_id is forwarded directly. evaluateRulesForAIDecision
+    //     scopes both the ai_decisions lookup AND the automation_rules
+    //     query by orgId. RLS policies on both tables (org_id = jwt.org_id
+    //     pattern) provide defense-in-depth — though service-role bypasses
+    //     RLS, the explicit `.eq('org_id', orgId)` filter is the primary
+    //     gate.
+    //
+    // CANONICAL-EXECUTOR INVARIANT:
+    //   - executeAction remains the sole executor surface. This hook does
+    //     NOT call provider APIs directly; it does NOT introduce a parallel
+    //     execution engine; it does NOT bypass the actions_library
+    //     template lookup. evaluateRulesForAIDecision → fireRule →
+    //     executeAction is the established Phase 4 P2 chain.
+    void evaluateRulesForAIDecision(input.org_id, decision_id)
+      .then(
+        () => null,
+        (autoFireErr: unknown) => {
+          // CONSTITUTION §3 "Fail Loudly" — automation infra failures
+          // visible to operators via stdout. Does NOT propagate to caller.
+          // eslint-disable-next-line no-console
+          console.error(
+            `[AI] auto-fire automation rules failed for ai_decision_id=${decision_id} org_id=${input.org_id} trace_id=${trace_id}: ${(autoFireErr as Error)?.message ?? 'unknown'}`,
+          )
+        },
+      )
+
     return { trace_id, decision_id, response: validated }
   } catch (err) {
     const e = err as Error
