@@ -1,65 +1,64 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
+import Link from "next/link";
 import {
   Search, Plus, Calendar, MoreHorizontal, ChevronDown, ChevronRight,
   Pause, Play, Copy, TrendingUp, X, CheckCircle2, AlertCircle, Sparkles,
 } from "lucide-react";
+import { apiClient, ApiError } from "@/lib/api-client";
+
+// Phase 6 Sub-pass B (continuation #13, 2026-05-08): wired to canonical
+// `GET /api/v1/campaigns` (backend/src/routes/v1/campaigns.ts). Backend
+// emits canonical envelope; api-client unwraps to the Campaign payload.
+//
+// Sections that remain MOCKED-DEFERRED per holistic governance recommendation:
+//   - AD_SETS panel             → adsets table (Phase 6 deferred extras)
+//   - CREATIVE_GRADIENTS preview → cross-Phase-5 surface
+//   - AI Insight red card        → Phase 3 anomaly engine DEPRECATED
+//   - Quick Actions buttons       → recommendations layer deferred
+//   - Bulk Actions bar           → bulk endpoint deferred
+//   - Account Snapshot widget    → no aggregate-KPI endpoint
+//   - AI Strategy panel          → no recommendations endpoint
+//   - Platform Allocation widget → no allocation endpoint
 
 type PlatformFilter = "All" | "Meta" | "Google" | "TikTok";
-type StatusFilter  = "All" | "Active" | "Learning" | "Paused";
+type StatusFilter   = "All" | "Active" | "Learning" | "Paused";
 
-interface Campaign {
-  id: string;
-  name: string;
-  platform: PlatformFilter;
-  platformDot: string;
-  status: StatusFilter;
-  budget: string;
-  spend: string;
-  revenue: string;
-  roas: string;
-  roasHighlight: boolean;
+interface ApiCampaignMetrics {
+  spend: number;
+  revenue: number;
+  roas: number;
+  conversions: number;
+  impressions: number;
 }
 
-const MOCK_CAMPAIGNS: Campaign[] = [
-  {
-    id: "c-001",
-    name: "Summer Collection Launch 2024",
-    platform: "Meta",
-    platformDot: "#1877F2",
-    status: "Active",
-    budget: "$25,000",
-    spend: "$18,402",
-    revenue: "$84,649",
-    roas: "4.6x",
-    roasHighlight: true,
-  },
-  {
-    id: "c-002",
-    name: "Black Friday Retargeting",
-    platform: "Google",
-    platformDot: "#4285F4",
-    status: "Learning",
-    budget: "$12,000",
-    spend: "$3,120",
-    revenue: "$9,510",
-    roas: "3.1x",
-    roasHighlight: false,
-  },
-  {
-    id: "c-003",
-    name: "Spring Clearance - EMEA",
-    platform: "TikTok",
-    platformDot: "#FE2C55",
-    status: "Paused",
-    budget: "$50,000",
-    spend: "$48,910",
-    revenue: "$152,001",
-    roas: "3.1x",
-    roasHighlight: false,
-  },
-];
+interface ApiCampaign {
+  id: string;
+  name: string;
+  platform: string;       // 'meta' | 'google' (backend enum)
+  status: string;          // 'draft'|'active'|'paused'|'completed'|'archived'
+  daily_budget: number | null;
+  metrics: ApiCampaignMetrics;
+}
+
+const PLATFORM_DOT: Record<string, string> = {
+  meta:   "#1877F2",
+  google: "#4285F4",
+};
+
+function platformLabel(p: string): string {
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
+function statusStyleKey(s: string): StatusFilter {
+  // Map backend status → existing STATUS_STYLES keys (preserves visual contract)
+  if (s === "active") return "Active";
+  if (s === "paused" || s === "completed" || s === "archived") return "Paused";
+  if (s === "draft") return "Learning";
+  return "All";
+}
 
 const AD_SETS = [
   { name: "Broad Targeting - US",  spend: "$5,201", roas: "5.2x" },
@@ -86,15 +85,61 @@ const ALLOCATION = [
   { label: "TikTok",        pct: 10, barClass: "bg-pink-500" },
 ];
 
+const fmtCurrency = (n: number) =>
+  `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const fmtRoas = (n: number) => `${n.toFixed(1)}x`;
+
 export default function CampaignsPage() {
+  const { getToken } = useAuth();
+
+  const [campaigns,      setCampaigns]      = useState<ApiCampaign[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState<string | null>(null);
+
   const [search,         setSearch]         = useState("");
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("All");
   const [statusFilter,   setStatusFilter]   = useState<StatusFilter>("All");
-  const [expandedId,     setExpandedId]     = useState<string | null>("c-001");
-  const [selected,       setSelected]       = useState<Set<string>>(new Set(["c-001"]));
+  const [expandedId,     setExpandedId]     = useState<string | null>(null);
+  const [selected,       setSelected]       = useState<Set<string>>(new Set());
   const [applying,       setApplying]       = useState(false);
   const [applied,        setApplied]        = useState(false);
   const [quickActions,   setQuickActions]   = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = await getToken();
+        if (!token) throw new ApiError(401, "Sign in required");
+
+        const params = new URLSearchParams();
+        if (platformFilter === "Meta") params.set("platform", "meta");
+        if (platformFilter === "Google") params.set("platform", "google");
+        if (statusFilter === "Active") params.set("status", "active");
+        if (statusFilter === "Paused") params.set("status", "paused");
+        // "Learning" maps to backend 'draft'; "All" sends no filter.
+        if (statusFilter === "Learning") params.set("status", "draft");
+
+        const qs = params.toString();
+        const data = await apiClient<{ campaigns: ApiCampaign[]; total: number }>(
+          `/api/v1/campaigns${qs ? `?${qs}` : ""}`,
+          token,
+        );
+        if (!cancelled) setCampaigns(data.campaigns);
+      } catch (err) {
+        if (!cancelled) {
+          const e = err as ApiError | Error;
+          setError(e.message || "Failed to load campaigns");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [getToken, platformFilter, statusFilter]);
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -129,9 +174,8 @@ export default function CampaignsPage() {
     setTimeout(() => setQuickActions((s) => ({ ...s, [id]: "" })), 1500);
   }
 
-  const filtered = MOCK_CAMPAIGNS.filter((c) => {
-    if (platformFilter !== "All" && c.platform !== platformFilter) return false;
-    if (statusFilter !== "All" && c.status !== statusFilter) return false;
+  // Client-side search; platform/status are server-filtered above.
+  const filtered = campaigns.filter((c) => {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -186,13 +230,16 @@ export default function CampaignsPage() {
           </button>
         </div>
 
-        <button className="flex items-center gap-2 bg-gradient-to-br from-primary to-[#2563eb] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/20 active:scale-95 transition-transform font-body">
+        <Link
+          href="/campaigns/create"
+          className="flex items-center gap-2 bg-gradient-to-br from-primary to-[#2563eb] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-primary/20 active:scale-95 transition-transform font-body"
+        >
           <Plus size={16} />
           Create Campaign
-        </button>
+        </Link>
       </div>
 
-      {/* Bulk Actions Bar */}
+      {/* Bulk Actions Bar — MOCKED-DEFERRED (no bulk endpoint) */}
       {selected.size > 0 && (
         <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-4">
@@ -238,6 +285,18 @@ export default function CampaignsPage() {
         {/* Table */}
         <div className="flex-1 min-w-0">
           <div className="bg-white rounded-xl shadow-sm border border-border/20 overflow-hidden">
+            {loading && (
+              <div className="p-8 text-center text-sm text-muted-foreground font-body">Loading campaigns…</div>
+            )}
+            {!loading && error && (
+              <div className="p-8 text-center text-sm text-red-600 font-body">{error}</div>
+            )}
+            {!loading && !error && filtered.length === 0 && (
+              <div className="p-8 text-center text-sm text-muted-foreground font-body">
+                No campaigns yet. <Link href="/campaigns/create" className="text-primary font-semibold">Create your first campaign</Link>
+              </div>
+            )}
+            {!loading && !error && filtered.length > 0 && (
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-container-low/50">
@@ -260,8 +319,10 @@ export default function CampaignsPage() {
                 {filtered.map((c) => {
                   const isExpanded = expandedId === c.id;
                   const isSelected = selected.has(c.id);
-                  const st = STATUS_STYLES[c.status];
+                  const styleKey = statusStyleKey(c.status);
+                  const st = STATUS_STYLES[styleKey];
                   const qa = quickActions[c.id];
+                  const roasHighlight = c.metrics.roas > 3;
 
                   return (
                     <>
@@ -286,27 +347,35 @@ export default function CampaignsPage() {
                               ? <ChevronDown size={14} className="text-primary shrink-0" />
                               : <ChevronRight size={14} className="text-border shrink-0" />
                             }
-                            <span className="font-bold text-foreground font-body text-sm">{c.name}</span>
+                            <Link
+                              href={`/campaigns/${c.id}`}
+                              className="font-bold text-foreground font-body text-sm hover:text-primary transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {c.name}
+                            </Link>
                           </button>
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-1.5 bg-surface-container-low px-2 py-1 rounded-full w-fit">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.platformDot }} />
-                            <span className="text-xs font-bold text-foreground font-body">{c.platform}</span>
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PLATFORM_DOT[c.platform] ?? "#3d618c" }} />
+                            <span className="text-xs font-bold text-foreground font-body">{platformLabel(c.platform)}</span>
                           </div>
                         </td>
                         <td className="p-4">
                           <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-tight font-body w-fit ${st.badge}`}>
                             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${st.dot}`} />
-                            {c.status}
+                            {styleKey === "All" ? c.status : styleKey}
                           </span>
                         </td>
-                        <td className="p-4 text-sm font-semibold text-foreground font-body whitespace-nowrap">{c.budget}</td>
-                        <td className="p-4 text-sm font-medium text-muted-foreground font-body whitespace-nowrap">{c.spend}</td>
-                        <td className="p-4 text-sm font-bold text-foreground font-body whitespace-nowrap">{c.revenue}</td>
+                        <td className="p-4 text-sm font-semibold text-foreground font-body whitespace-nowrap">
+                          {c.daily_budget !== null ? fmtCurrency(c.daily_budget) : "—"}
+                        </td>
+                        <td className="p-4 text-sm font-medium text-muted-foreground font-body whitespace-nowrap">{fmtCurrency(c.metrics.spend)}</td>
+                        <td className="p-4 text-sm font-bold text-foreground font-body whitespace-nowrap">{fmtCurrency(c.metrics.revenue)}</td>
                         <td className="p-4">
-                          <div className={`px-2 py-1 text-[11px] font-bold rounded-md w-fit font-body ${c.roasHighlight ? "bg-primary text-white" : "bg-surface-container-high text-foreground"}`}>
-                            {c.roas}
+                          <div className={`px-2 py-1 text-[11px] font-bold rounded-md w-fit font-body ${roasHighlight ? "bg-primary text-white" : "bg-surface-container-high text-foreground"}`}>
+                            {fmtRoas(c.metrics.roas)}
                           </div>
                         </td>
                         <td className="p-4">
@@ -320,7 +389,7 @@ export default function CampaignsPage() {
                         <tr key={`${c.id}-detail`} className="bg-blue-50/20">
                           <td colSpan={9} className="p-0">
                             <div className="px-12 py-6 grid grid-cols-12 gap-8 border-t border-blue-100/50">
-                              {/* Top Ad Sets */}
+                              {/* Top Ad Sets — MOCKED-DEFERRED (adsets table) */}
                               <div className="col-span-4 space-y-4">
                                 <h4 className="text-[11px] uppercase font-bold text-muted-foreground font-body">Top Ad Sets</h4>
                                 <div className="space-y-2">
@@ -336,7 +405,7 @@ export default function CampaignsPage() {
                                 </div>
                               </div>
 
-                              {/* Top Creatives */}
+                              {/* Top Creatives — MOCKED-DEFERRED (cross-Phase-5 join) */}
                               <div className="col-span-4 space-y-4">
                                 <h4 className="text-[11px] uppercase font-bold text-muted-foreground font-body">Top Creatives</h4>
                                 <div className="flex gap-3">
@@ -351,7 +420,7 @@ export default function CampaignsPage() {
                                 </div>
                               </div>
 
-                              {/* AI Insight + Quick Actions */}
+                              {/* AI Insight + Quick Actions — MOCKED-DEFERRED (anomaly DEPRECATED + recommendations layer) */}
                               <div className="col-span-4 space-y-4">
                                 <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex gap-3">
                                   <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
@@ -394,10 +463,11 @@ export default function CampaignsPage() {
                 })}
               </tbody>
             </table>
+            )}
           </div>
         </div>
 
-        {/* Right Sidebar */}
+        {/* Right Sidebar — MOCKED-DEFERRED (no aggregate-KPI/recommendations/allocation endpoints) */}
         <div className="w-72 shrink-0 sticky top-6 space-y-6">
 
           {/* Account Snapshot */}

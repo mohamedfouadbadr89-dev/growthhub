@@ -8,6 +8,13 @@ import {
 } from '../../services/campaigns/campaigns.js'
 import { generateAiSuggestions } from '../../services/campaigns/ai-suggestions.js'
 import { ok, fail } from '../../utils/response.js'
+import { supabaseAdmin } from '../../lib/supabase.js'
+
+// Phase 7 Sub-pass A1b (continuation #17): fixed per-call AI credit cost
+// for ai-suggestions. Mirrors the AI_CALL_COST pattern in `routes/v1/ai.ts`
+// and the CREDIT_COSTS pattern in `services/creatives/creative-generator.ts`
+// — fixed integer per call, NOT a pricing-derivation computation.
+const AI_SUGGESTIONS_COST = 1
 
 // requestId is set by tracingMiddleware mounted at app level (index.ts).
 // Declaring it here makes c.get('requestId') type-safe so the campaigns
@@ -313,11 +320,51 @@ campaignsRouter.post('/:id/ai-suggestions', async (c) => {
     return fail(c, 'Invalid campaign id format', 400, { code: 'INVALID_TYPE', field: 'id' })
   }
 
+  // Phase 7 Sub-pass A1b credit gate. Mirrors creatives.ts:80-101 and
+  // ai.ts gate pattern. LTD orgs skip the gate (BYOK semantics — handled
+  // downstream by `generateAiSuggestions` which can throw BYOK_REQUIRED if
+  // the LTD org has no vault key); subscription orgs deduct
+  // AI_SUGGESTIONS_COST atomically and receive 402 INSUFFICIENT_CREDITS on
+  // insufficient balance — no provider call is made when the gate fails.
+  let creditsDeducted = 0
+  {
+    const { data: org, error: orgErr } = await supabaseAdmin
+      .from('organizations')
+      .select('plan_type')
+      .eq('org_id', orgId)
+      .single()
+    if (orgErr) {
+      return fail(c, `Billing check failed: ${orgErr.message}`, 500, { code: 'INTERNAL' })
+    }
+    const isLtd = org?.plan_type === 'ltd'
+    if (!isLtd) {
+      const { data: newBalance, error: deductErr } = await supabaseAdmin.rpc('deduct_credits', {
+        p_org_id: orgId,
+        p_amount: AI_SUGGESTIONS_COST,
+      })
+      if (deductErr) {
+        return fail(c, `Billing check failed: ${deductErr.message}`, 500, { code: 'INTERNAL' })
+      }
+      if ((newBalance as number) < 0) {
+        return fail(c, 'Insufficient credits for AI suggestions', 402, { code: 'INSUFFICIENT_CREDITS' })
+      }
+      creditsDeducted = AI_SUGGESTIONS_COST
+    }
+  }
+
   try {
     const suggestions = await generateAiSuggestions(orgId, id)
     return ok(c, { suggestions })
   } catch (err) {
     const e = err as Error & { code?: string }
+    // Refund on AI flow failure. Successful calls do NOT refund. NOT_FOUND
+    // (campaign absent) is a user-error and ALSO refunds — the user did
+    // not receive a successful AI suggestion for the deducted credit.
+    if (creditsDeducted > 0) {
+      await supabaseAdmin
+        .rpc('refund_credits', { p_org_id: orgId, p_amount: creditsDeducted })
+        .then(() => null, () => null)
+    }
     if (e.code === 'BYOK_REQUIRED') {
       return fail(c, e.message, 402, { code: 'BYOK_REQUIRED' })
     }
@@ -365,6 +412,13 @@ campaignsRouter.post('/:id/push', async (c) => {
     const e = err as Error & { code?: string; platform?: string }
     if (e.code === 'NOT_FOUND') return fail(c, 'Campaign not found', 404, { code: 'NOT_FOUND' })
     if (e.code === 'INVALID_STATUS') return fail(c, e.message, 400, { code: 'INVALID_STATUS' })
+    // Phase 6 NEW invariant (continuation #11): cross-account ownership
+    // rejection. campaign.ad_account_id resolved to an ad_accounts row not
+    // owned by the calling org → 403. Mirrors the FORBIDDEN mapping pattern
+    // used in PATCH /:id (admin-only archive transition).
+    if (e.code === 'CROSS_ACCOUNT_FORBIDDEN') {
+      return fail(c, e.message, 403, { code: 'CROSS_ACCOUNT_FORBIDDEN' })
+    }
     if (e.code === 'INTEGRATION_NOT_CONNECTED') {
       return fail(
         c,

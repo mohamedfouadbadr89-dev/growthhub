@@ -13,7 +13,10 @@ import { requestLoggerMiddleware } from './middleware/request-logger.js'
 import { authMiddleware } from './middleware/auth.js'
 import { inngest, functions } from './jobs/inngest.js'
 import { clerkWebhook } from './routes/webhooks/clerk.js'
+import { stripeWebhook } from './routes/webhooks/stripe.js'
 import { fail } from './utils/response.js'
+import { setAILogSink, type AILogEntry } from './utils/aiLogger.js'
+import { persistAILog } from './services/ai/persistence.js'
 
 // ─── Process-level error handlers ─────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -55,6 +58,13 @@ const requiredEnvVars = [
   // Same fail-fast pattern as INNGEST_SIGNING_KEY above; webhooks/clerk.ts
   // keeps its runtime check as defense-in-depth.
   'CLERK_WEBHOOK_SECRET',
+  // Phase 7 Sub-pass A1c: STRIPE_WEBHOOK_SECRET is the HMAC secret Stripe
+  // uses to sign webhook deliveries at /api/webhooks/stripe. Without it,
+  // every webhook returns 500 and Stripe will retry — failing customer
+  // subscription state sync + payment-grant credits. Same fail-fast pattern
+  // as CLERK_WEBHOOK_SECRET; webhooks/stripe.ts keeps its runtime check as
+  // defense-in-depth.
+  'STRIPE_WEBHOOK_SECRET',
 ]
 
 const missingVars = requiredEnvVars.filter((key) => !process.env[key])
@@ -112,6 +122,13 @@ const LIVE_FLAG_DEPENDENCIES: Array<{ flag: string; deps: readonly string[] }> =
   // resolved per-request via Supabase Vault (integrations.vault_refresh_token_secret_id);
   // those are NOT in this static check by design.
   { flag: 'GOOGLE_PAUSE_CAMPAIGN_LIVE', deps: ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET'] },
+  // Phase 6 Sub-pass C (continuation #20): real-mode CREATE handlers.
+  // Same dep shapes as the matching pause/budget LIVE flags above —
+  // Meta CREATE reuses the META_TEST_ACCESS_TOKEN single-tenant
+  // convention; Google CREATE reuses the per-org Vault refresh-token
+  // flow plus the same 3 OAuth client envs at startup.
+  { flag: 'META_CREATE_CAMPAIGN_LIVE',   deps: ['META_TEST_ACCESS_TOKEN'] },
+  { flag: 'GOOGLE_CREATE_CAMPAIGN_LIVE', deps: ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET'] },
 ]
 
 const liveMisconfig: string[] = []
@@ -163,6 +180,66 @@ type Variables = { userId: string; orgId: string; requestId: string }
 // unconditionally registered (load balancers / k8s liveness need them).
 const SMOKE_ENDPOINTS_ENABLED = process.env.ENABLE_SMOKE_ENDPOINTS === 'true'
 
+// ─── AI log DB sink installation (Phase 7 Sub-pass A0.5, continuation #15) ──
+// Phase 3 close documented `ai_logs` schema + `persistAILog` writer but
+// intentionally left the runtime sink as console-only ("DB sink fan-out
+// pending broader Phase X" — SYSTEM_CONTROL.md). Sub-pass A0.5 activates
+// the documented capability via the existing `setAILogSink(...)` hook
+// (utils/aiLogger.ts:99). NO new logging system; NO parallel observability
+// layer; uses the canonical hook only.
+//
+// Behavior:
+//   1. Console output PRESERVED — every entry still emits a `[AI]` line at
+//      its level. Operator surface unchanged.
+//   2. DB persistence ADDED — entries with `org_id` are fire-and-forget
+//      written to `ai_logs` via `persistAILog`. Entries without `org_id`
+//      (system-level events without org context) are skipped at this layer
+//      to avoid `persistAILog`'s loud throw on missing org_id (which is
+//      itself a CONSTITUTION §3 invariant).
+//   3. Sink type is synchronous `void`; the Promise from `persistAILog` is
+//      explicitly discarded with `void`. `persistAILog` carries its own
+//      console.error fallback for DB failures, so a sink-side write error
+//      never crashes the AI flow.
+//
+// Phase contamination: NONE. `aiLogger.ts` and `persistence.ts` unchanged
+// (closed Phase 3 surfaces preserved verbatim). Only the install hook is
+// invoked from this file (Phase 0/1 architectural surface — entry point).
+setAILogSink((entry: AILogEntry) => {
+  // 1. Console — preserves the prior `[AI]` operator surface verbatim.
+  const line = `[AI] ${safeStringifyForSink(entry)}`
+  if (entry.level === 'error') console.error(line)
+  else if (entry.level === 'warn') console.warn(line)
+  else console.log(line)
+
+  // 2. DB persistence — only when org_id is present. Fire-and-forget.
+  if (entry.org_id) {
+    void persistAILog({ org_id: entry.org_id, entry }).catch(() => {
+      // persistAILog already emits its own console.error on failure (per
+      // services/ai/persistence.ts:217-219); the .catch here is purely to
+      // satisfy the unhandled-rejection process handler in this file.
+    })
+  }
+})
+
+function safeStringifyForSink(value: unknown): string {
+  // Mirrors the safeStringify helper inside aiLogger.ts (which is module-
+  // private). Duplicated rather than exported to avoid modifying a closed
+  // Phase 3 surface — minimal-diff principle.
+  const seen = new WeakSet<object>()
+  try {
+    return JSON.stringify(value, (_k, v) => {
+      if (typeof v === 'bigint') return `${v.toString()}n`
+      if (typeof v === 'object' && v !== null) {
+        if (seen.has(v as object)) return '[Circular]'
+        seen.add(v as object)
+      }
+      return v
+    })
+  } catch (err) {
+    return `[unserializable: ${(err as Error)?.message ?? 'unknown'}]`
+  }
+}
+
 const app = new Hono<{ Variables: Variables }>()
 
 // ─── Middlewares ──────────────────────────────────────────────
@@ -180,6 +257,7 @@ app.use('*', cors({
 
 // ─── Webhooks ─────────────────────────────────────────────────
 app.route('/api/webhooks/clerk', clerkWebhook)
+app.route('/api/webhooks/stripe', stripeWebhook)
 
 // ─── Health ───────────────────────────────────────────────────
 app.route('/health', health)

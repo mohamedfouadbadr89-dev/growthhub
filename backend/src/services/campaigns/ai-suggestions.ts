@@ -178,7 +178,14 @@ Return ONLY a JSON object (no markdown, no code fences) with this exact structur
     throw new Error(`OpenRouter error ${response.status}: ${body}`)
   }
 
-  const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
+  const json = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>
+    // OpenRouter-specific usage block (optional). We opportunistically
+    // extract token counts here for Sub-pass A1a observability — this site
+    // is hard-coupled to OpenRouter (line ~161 fetch URL is hardcoded), so
+    // there is no provider-agnosticism invariant to violate.
+    usage?: { prompt_tokens?: number; completion_tokens?: number }
+  }
   const content = json.choices?.[0]?.message?.content ?? ''
 
   let parsed: unknown
@@ -190,6 +197,36 @@ Return ONLY a JSON object (no markdown, no code fences) with this exact structur
   }
 
   const suggestions = validateSuggestions(parsed)
+
+  // ── usage observability (Phase 7 Sub-pass A1a, continuation #16) ──
+  // Fire-and-forget log_ai_usage row. Observability ONLY — p_cost_credits=0
+  // (no enforcement; deduct_credits gating is Sub-pass A1b scope per
+  // operator authorization). user_id / request_id / trace_id / ai_decision_id
+  // are NULL because this service does not currently receive those
+  // correlators (function signature is `(orgId, campaignId)` only); adding
+  // them would change the public signature and exceed this pass's
+  // observability-only scope. Token counts opportunistically extracted from
+  // OpenRouter's `usage` field when present.
+  //
+  // Failure handling: .then(noop, noop) — observability never fails the
+  // user-facing AI suggestions flow; the suggestions object has already
+  // been validated and is about to be persisted on the campaigns row.
+  void supabaseAdmin
+    .rpc('log_ai_usage', {
+      p_org_id: orgId,
+      p_user_id: null,
+      p_model: 'anthropic/claude-haiku-4-5-20251001',
+      p_tokens_in: json.usage?.prompt_tokens ?? 0,
+      p_tokens_out: json.usage?.completion_tokens ?? 0,
+      p_cost_credits: 0,
+      p_request_id: null,
+      p_trace_id: null,
+      p_ai_decision_id: null,
+    })
+    .then(
+      () => null,
+      () => null,
+    )
 
   // Capture the UPDATE error explicitly. Pre-fix this call discarded the
   // result entirely, which made every infra failure (RLS denial, schema

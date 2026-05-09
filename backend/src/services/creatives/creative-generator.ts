@@ -133,6 +133,14 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
       performance_score: number
     }> = []
 
+    // ── usage observability model resolution (Phase 7 Sub-pass A1a,
+    //    continuation #16) — captured up-front so the log_ai_usage call at
+    //    the end of each branch can stamp the correct model identifier.
+    //    NOT a behavior change: same effective model strings as the prior
+    //    inline UPDATE values; just hoisted into local vars.
+    const copyModel  = process.env.OPENROUTER_DEFAULT_MODEL ?? 'google/gemini-2.0-flash-001'
+    const imageModel = 'Kwai-Kolors/Kolors'
+
     if (generationType === 'copy') {
       const variations = await generateAdCopy(apiKey, {
         campaignName: campaignName ?? 'Campaign',
@@ -155,10 +163,31 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
       await supabaseAdmin
         .from('creative_generations')
         .update({
-          model: process.env.OPENROUTER_DEFAULT_MODEL ?? 'google/gemini-2.0-flash-001',
+          model: copyModel,
           source_roas: sourceRoas,
         })
         .eq('id', generationId)
+
+      // Fire-and-forget log_ai_usage row. Observability ONLY — p_cost_credits=0.
+      // Inngest job context: no HTTP request_id / trace_id / user_id; no
+      // ai_decisions row (creative generation writes to creative_generations,
+      // not ai_decisions). Token counts not surfaced from generateAdCopy.
+      void supabaseAdmin
+        .rpc('log_ai_usage', {
+          p_org_id: orgId,
+          p_user_id: null,
+          p_model: copyModel,
+          p_tokens_in: 0,
+          p_tokens_out: 0,
+          p_cost_credits: 0,
+          p_request_id: null,
+          p_trace_id: null,
+          p_ai_decision_id: null,
+        })
+        .then(
+          () => null,
+          () => null,
+        )
 
     } else {
       const images = await generateAdImages({
@@ -182,8 +211,29 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
 
       await supabaseAdmin
         .from('creative_generations')
-        .update({ model: 'Kwai-Kolors/Kolors', source_roas: sourceRoas })
+        .update({ model: imageModel, source_roas: sourceRoas })
         .eq('id', generationId)
+
+      // Fire-and-forget log_ai_usage row. Same observability-only contract
+      // as the copy branch above. Image-generation provider (SiliconFlow/
+      // Kolors) tokens not extracted; usage data accrues in ai_usage_logs
+      // for future cost-derivation in Sub-pass A1b.
+      void supabaseAdmin
+        .rpc('log_ai_usage', {
+          p_org_id: orgId,
+          p_user_id: null,
+          p_model: imageModel,
+          p_tokens_in: 0,
+          p_tokens_out: 0,
+          p_cost_credits: 0,
+          p_request_id: null,
+          p_trace_id: null,
+          p_ai_decision_id: null,
+        })
+        .then(
+          () => null,
+          () => null,
+        )
     }
 
     if (creativesToInsert.length === 0) {

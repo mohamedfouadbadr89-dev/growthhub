@@ -1,13 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import {
   TrendingUp, PauseCircle, AlertTriangle, Bell, Database,
   CheckCircle2, SkipForward, XCircle, ChevronUp, ChevronDown,
   Sparkles, Lightbulb, Download, Search,
 } from "lucide-react";
+import { apiClient, ApiError } from "@/lib/api-client";
+
+// Phase 7 webhook hardening + Phase 6 frontend completion (continuation
+// #22, 2026-05-09): wired to canonical `GET /api/v1/automation/runs`.
+// Backend joins automation_runs ↔ automation_rules.name; this page maps
+// the run's status (pending/success/failed/skipped) onto the existing
+// UI Success/Failed/Skipped category.
+//
+// Sections that remain MOCKED-DEFERRED:
+//   - AI Decision Insights aside (no per-run AI explanation endpoint;
+//     CONSTITUTION §AI Output Contract is per-decision, not per-run)
+//   - Quick Stats aside (no monthly aggregation endpoint)
+//   - Confidence Score per entry (per-run confidence not on automation_runs;
+//     would require ai_decisions JOIN — separate hardening pass)
+//   - Detailed Explanation panel
+//   - Trend bar chart in Quick Stats
 
 type ResultFilter = "All" | "Success" | "Failed" | "Skipped";
+
+interface ApiAutomationRun {
+  id: string;
+  org_id: string;
+  automation_rule_id: string | null;
+  ai_decision_id: string | null;
+  action_template_id: string | null;
+  status: "pending" | "success" | "failed" | "skipped";
+  result_data: Record<string, unknown> | null;
+  error_message: string | null;
+  executed_at: string | null;
+  // Joined: { name } via PostgREST nested-select on automation_rules
+  automation_rules?: { name: string } | null;
+}
 
 interface HistoryEntry {
   id: string;
@@ -25,80 +56,76 @@ interface HistoryEntry {
   confidence: number;
 }
 
-const MOCK_HISTORY: HistoryEntry[] = [
-  {
-    id: "h-001",
-    icon: TrendingUp,
-    iconBg: "bg-primary/10",
-    iconColor: "text-primary",
-    decision: "Scale FB Lookalike 1%",
-    timestamp: "Oct 24, 2023 · 14:32:05",
-    actionTaken: "Budget increased by 20%",
-    actionTag: "+$400/day",
-    result: "Success",
-    trigger: "ROAS > 3.5 over 72h",
-    dataUsed: "Calculated ROAS = 3.8",
-    resultDetail: "Action Executed",
-    confidence: 94,
-  },
-  {
-    id: "h-002",
-    icon: PauseCircle,
-    iconBg: "bg-surface-container-high",
-    iconColor: "text-muted-foreground",
-    decision: "Sunset Low-Perf Adset",
-    timestamp: "Oct 24, 2023 · 12:15:42",
-    actionTaken: "No action taken",
-    result: "Skipped",
-    trigger: "CPA > $18 for 48h",
-    dataUsed: "CPA = $15.20 (below threshold)",
-    resultDetail: "Condition not met",
-    confidence: 76,
-  },
-  {
-    id: "h-003",
-    icon: AlertTriangle,
-    iconBg: "bg-red-100",
-    iconColor: "text-red-500",
-    decision: "Creative Rotation — Fall Pack",
-    timestamp: "Oct 24, 2023 · 09:10:00",
-    actionTaken: "API Connection Error",
-    result: "Failed",
-    trigger: "Frequency > 3.5 (7 days)",
-    dataUsed: "Frequency = 4.1",
-    resultDetail: "Meta API 503 — retry queued",
-    confidence: 88,
-  },
-  {
-    id: "h-004",
-    icon: Bell,
-    iconBg: "bg-primary/10",
-    iconColor: "text-primary",
-    decision: "Bid Cap Adjustment",
-    timestamp: "Oct 23, 2023 · 23:55:12",
-    actionTaken: "Bid lowered to $12.50",
-    result: "Success",
-    trigger: "CPM > $45 for 24h",
-    dataUsed: "CPM = $49.80",
-    resultDetail: "Action Executed",
-    confidence: 91,
-  },
-  {
-    id: "h-005",
-    icon: TrendingUp,
-    iconBg: "bg-primary/10",
-    iconColor: "text-primary",
-    decision: "Budget Scale — Google Branded",
-    timestamp: "Oct 23, 2023 · 18:05:00",
-    actionTaken: "Daily budget +15%",
-    actionTag: "+$120/day",
-    result: "Success",
-    trigger: "ROAS > 4.0 for 5 consecutive days",
-    dataUsed: "7-day ROAS = 4.6x",
-    resultDetail: "Action Executed",
-    confidence: 97,
-  },
-];
+// Map backend automation_run → display HistoryEntry. Pending status maps
+// to "Skipped" badge (run hasn't completed; visually similar to "no
+// action taken").
+function mapRunToEntry(run: ApiAutomationRun): HistoryEntry {
+  const decision = run.automation_rules?.name ?? "Automation rule";
+  const ts = run.executed_at
+    ? new Date(run.executed_at).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : "—";
+
+  let result: "Success" | "Failed" | "Skipped";
+  let icon: React.ComponentType<{ size?: number; className?: string }>;
+  let iconBg: string;
+  let iconColor: string;
+  let actionTaken: string;
+  let resultDetail: string;
+
+  if (run.status === "success") {
+    result = "Success";
+    icon = TrendingUp;
+    iconBg = "bg-primary/10";
+    iconColor = "text-primary";
+    actionTaken = "Action executed";
+    resultDetail = "Action Executed";
+  } else if (run.status === "failed") {
+    result = "Failed";
+    icon = AlertTriangle;
+    iconBg = "bg-red-100";
+    iconColor = "text-red-500";
+    actionTaken = "Execution failed";
+    resultDetail = run.error_message ?? "Run failed";
+  } else if (run.status === "pending") {
+    result = "Skipped";
+    icon = Bell;
+    iconBg = "bg-surface-container-high";
+    iconColor = "text-muted-foreground";
+    actionTaken = "Pending";
+    resultDetail = "Run pending";
+  } else {
+    result = "Skipped";
+    icon = PauseCircle;
+    iconBg = "bg-surface-container-high";
+    iconColor = "text-muted-foreground";
+    actionTaken = "No action taken";
+    resultDetail = run.error_message ?? "Skipped";
+  }
+
+  return {
+    id: run.id,
+    icon,
+    iconBg,
+    iconColor,
+    decision,
+    timestamp: ts,
+    actionTaken,
+    result,
+    trigger: run.automation_rule_id ? `Rule ${run.automation_rule_id.slice(0, 8)}…` : "Manual run",
+    dataUsed: run.ai_decision_id ? `AI decision ${run.ai_decision_id.slice(0, 8)}…` : "—",
+    resultDetail,
+    // Confidence not on automation_runs; placeholder display (mocked-deferred
+    // until ai_decisions JOIN lands in a future pass).
+    confidence: 0,
+  };
+}
 
 const RESULT_BADGES: Record<string, { label: string; class: string; Icon: React.ComponentType<{ size?: number; className?: string }> }> = {
   Success: { label: "Success", class: "bg-emerald-100 text-emerald-700", Icon: CheckCircle2 },
@@ -109,9 +136,42 @@ const RESULT_BADGES: Record<string, { label: string; class: string; Icon: React.
 const RESULT_FILTERS: ResultFilter[] = ["All", "Success", "Failed", "Skipped"];
 
 export default function DecisionHistoryPage() {
+  const { getToken } = useAuth();
+
+  const [entries,    setEntries]    = useState<HistoryEntry[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [loadError,  setLoadError]  = useState<string | null>(null);
+
   const [resultFilter, setResultFilter] = useState<ResultFilter>("All");
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["h-001"]));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const token = await getToken();
+        if (!token) throw new ApiError(401, "Sign in required");
+        const data = await apiClient<{ runs: ApiAutomationRun[]; total: number }>(
+          "/api/v1/automation/runs",
+          token,
+        );
+        if (!cancelled) {
+          setEntries(data.runs.map(mapRunToEntry));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const e = err as ApiError | Error;
+          setLoadError(e.message || "Failed to load automation history");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [getToken]);
 
   function toggleExpand(id: string) {
     setExpanded((prev) => {
@@ -121,13 +181,17 @@ export default function DecisionHistoryPage() {
     });
   }
 
-  const filtered = MOCK_HISTORY.filter((h) => {
+  const filtered = entries.filter((h) => {
     if (resultFilter !== "All" && h.result !== resultFilter) return false;
     if (search && !h.decision.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  const activeEntry = MOCK_HISTORY.find((h) => expanded.has(h.id)) ?? MOCK_HISTORY[0];
+  // Active entry for the right-aside MOCKED-DEFERRED panels (Confidence/AI
+  // Insights). When entries[] is empty, fall back to a zero-confidence stub
+  // so the aside doesn't crash; aside content is mocked anyway.
+  const activeEntry: Pick<HistoryEntry, "confidence"> =
+    entries.find((h) => expanded.has(h.id)) ?? entries[0] ?? { confidence: 0 };
 
   return (
     <div className="space-y-8 pb-12">

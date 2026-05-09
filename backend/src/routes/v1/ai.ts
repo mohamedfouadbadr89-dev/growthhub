@@ -4,8 +4,15 @@
  * Each route here is a thin HTTP wrapper around the Phase 3 service
  * layer (executeAIDecision). The route does NOT:
  *   - call validateAIResponse / persistAIDecision / logAIInteraction directly
- *   - touch supabaseAdmin
  *   - read org_id from request body
+ *
+ * Carve-out (Phase 7 Sub-pass A1b, continuation #17): routes here DO touch
+ * supabaseAdmin for the credit gate (`deduct_credits` before AI execution
+ * and `refund_credits` on failure). This mirrors the canonical pattern
+ * established at `routes/v1/creatives.ts:POST /generate` (lines 80-101 +
+ * 117-152) — credit RPCs are the only DB write authority granted to AI
+ * route handlers. The AI lifecycle (validate/persist/log) remains owned
+ * by the service layer.
  *
  * Auth / org_id injection: routes/v1/index.ts mounts authMiddleware on
  * all /api/v1/* paths BEFORE registering /ai, so c.get('orgId') and
@@ -24,6 +31,14 @@ import {
   AIPipelineError,
 } from '../../services/ai/execute-ai-decision.js'
 import { ok, fail } from '../../utils/response.js'
+import { supabaseAdmin } from '../../lib/supabase.js'
+
+// Phase 7 Sub-pass A1b (continuation #17): fixed per-call AI credit cost.
+// Mirrors the `CREDIT_COSTS` pattern in services/creatives/creative-generator.ts
+// (`copy: 2, image: 10`) — fixed integer per call, NOT a pricing-derivation
+// computation. Token-aware cost derivation is explicitly out of scope per
+// operator authorization ("NO pricing logic / NO rate derivation").
+const AI_CALL_COST = 1
 
 // requestId is set by tracingMiddleware mounted at app level (index.ts:53);
 // guaranteed present before any v1 handler runs. Declaring it here makes
@@ -129,6 +144,40 @@ aiRouter.post('/decisions/generate', async (c) => {
     }
   }
 
+  // Phase 7 Sub-pass A1b credit gate. Mirrors creatives.ts:80-101.
+  // LTD orgs (plan_type='ltd') skip the gate (BYOK semantics per CLAUDE.md
+  // §11). Subscription orgs deduct AI_CALL_COST atomically; insufficient
+  // balance → 402 INSUFFICIENT_CREDITS without any provider call. The
+  // inline plan_type query intentionally avoids importing creatives'
+  // `resolveApiKey` which would also enforce BYOK_REQUIRED for LTD-without-
+  // vault — out of scope per "preserve existing AI behavior verbatim
+  // except insufficient-credit gating".
+  let creditsDeducted = 0
+  {
+    const { data: org, error: orgErr } = await supabaseAdmin
+      .from('organizations')
+      .select('plan_type')
+      .eq('org_id', org_id)
+      .single()
+    if (orgErr) {
+      return fail(c, `Billing check failed: ${orgErr.message}`, 500, { phase: 'unknown' })
+    }
+    const isLtd = org?.plan_type === 'ltd'
+    if (!isLtd) {
+      const { data: newBalance, error: deductErr } = await supabaseAdmin.rpc('deduct_credits', {
+        p_org_id: org_id,
+        p_amount: AI_CALL_COST,
+      })
+      if (deductErr) {
+        return fail(c, `Billing check failed: ${deductErr.message}`, 500, { phase: 'unknown' })
+      }
+      if ((newBalance as number) < 0) {
+        return fail(c, 'Insufficient credits for this AI call', 402, { code: 'INSUFFICIENT_CREDITS', phase: 'request' })
+      }
+      creditsDeducted = AI_CALL_COST
+    }
+  }
+
   try {
     const result = await executeAIDecision({
       org_id,
@@ -153,6 +202,13 @@ aiRouter.post('/decisions/generate', async (c) => {
       trace_id: result.trace_id,
     })
   } catch (err) {
+    // Refund on AI flow failure. Successful AI calls do NOT refund per
+    // operator authorization ("successful AI calls MUST NOT auto-refund").
+    if (creditsDeducted > 0) {
+      await supabaseAdmin
+        .rpc('refund_credits', { p_org_id: org_id, p_amount: creditsDeducted })
+        .then(() => null, () => null)
+    }
     if (err instanceof AIPipelineError) {
       const status =
         err.phase === 'transport' ? 502 :
@@ -270,7 +326,37 @@ aiRouter.post('/execute', async (c) => {
     }
   }
 
-  // 4. Run the unified Phase 3 flow.
+  // 4. Phase 7 Sub-pass A1b credit gate (mirrors /decisions/generate above).
+  //    LTD orgs skip the gate; subscription orgs deduct AI_CALL_COST and
+  //    receive 402 INSUFFICIENT_CREDITS on insufficient balance — no
+  //    provider call is made when the gate fails.
+  let creditsDeducted = 0
+  {
+    const { data: org, error: orgErr } = await supabaseAdmin
+      .from('organizations')
+      .select('plan_type')
+      .eq('org_id', org_id)
+      .single()
+    if (orgErr) {
+      return fail(c, `Billing check failed: ${orgErr.message}`, 500, { phase: 'unknown' })
+    }
+    const isLtd = org?.plan_type === 'ltd'
+    if (!isLtd) {
+      const { data: newBalance, error: deductErr } = await supabaseAdmin.rpc('deduct_credits', {
+        p_org_id: org_id,
+        p_amount: AI_CALL_COST,
+      })
+      if (deductErr) {
+        return fail(c, `Billing check failed: ${deductErr.message}`, 500, { phase: 'unknown' })
+      }
+      if ((newBalance as number) < 0) {
+        return fail(c, 'Insufficient credits for this AI call', 402, { code: 'INSUFFICIENT_CREDITS', phase: 'request' })
+      }
+      creditsDeducted = AI_CALL_COST
+    }
+  }
+
+  // 5. Run the unified Phase 3 flow.
   try {
     const result = await executeAIDecision({
       org_id,
@@ -290,6 +376,12 @@ aiRouter.post('/execute', async (c) => {
       trace_id: result.trace_id,
     })
   } catch (err) {
+    // Refund on AI flow failure. Successful AI calls do NOT refund.
+    if (creditsDeducted > 0) {
+      await supabaseAdmin
+        .rpc('refund_credits', { p_org_id: org_id, p_amount: creditsDeducted })
+        .then(() => null, () => null)
+    }
     if (err instanceof AIPipelineError) {
       // Map pipeline phase to a sensible HTTP status. Body shape is fixed
       // by the Phase 1 envelope and identical across statuses.
