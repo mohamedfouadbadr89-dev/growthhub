@@ -659,3 +659,344 @@ RULE:
 
 - API response MUST match CreativeArchive type EXACTLY
 - no optional missing fields allowed
+
+
+ Runtime Truth
+
+CURRENT MODE:
+
+* local mock state only
+* no persistence
+* no backend writes
+* no realtime subscriptions
+* no AI execution
+* no execution engine integration
+
+RULES:
+
+* frontend is simulation layer only
+* all actions are optimistic UI placeholders
+* current implementation is intentionally isolated
+
+⸻
+
+📊 Competitor Lifecycle Analysis
+
+Reference competitors:
+
+* Madgicx￼
+* Smartly.io Creative Automation￼
+* AdCreative.ai￼
+
+Competitor lifecycle direction:
+
+creative generation
+→ testing
+→ optimization
+→ fatigue detection
+→ refresh
+→ relaunch
+
+Current system direction:
+
+creative memory layer
+→ reusable intelligence archive
+→ operational lifecycle
+→ execution-aware creative system
+
+Difference:
+
+most competitors optimize:
+
+* creative production
+
+this system direction optimizes:
+
+* creative lifecycle intelligence
+* reusable performance memory
+* governance-aware execution readiness
+* operational observability
+
+Madgicx strengths:
+
+* AI creative generation
+* automation workflows
+* Meta optimization
+* creative fatigue analysis
+* rapid asset generation
+Current missing areas vs competitors:
+
+* automated creative generation
+* fatigue prediction engine
+* creative semantic tagging
+* cross-campaign lineage
+* asset relationship graph
+* creative dependency mapping
+* rollout orchestration
+* multivariate creative testing memory
+
+⸻
+
+⚠️ Dangerous Assumptions
+
+DO NOT ASSUME:
+
+* high ROAS = reusable forever
+* archived creatives are safe to relaunch
+* creative score is globally stable
+* CTR alone determines quality
+* frontend action success = execution success
+* creative compatibility across campaigns
+* platform parity between Meta / Google / TikTok
+
+RULES:
+
+* reuse validation MUST happen server-side
+* relaunch validation MUST remain backend responsibility
+* performance MUST remain attribution-aware
+* creative scoring MUST remain contextual
+
+⸻
+
+🧩 Missing Semantics
+
+Current implementation still lacks:
+
+* creative fatigue lifecycle
+* evergreen creative semantics
+* semantic clustering
+* creative genealogy
+* campaign lineage
+* attribution lineage
+* execution rollback semantics
+* creative confidence scoring
+* creative decay modeling
+* creative survivorship logic
+* winner persistence modeling
+
+Future semantics:
+
+fresh
+→ scaling
+→ saturated
+→ declining
+→ archived
+→ reusable
+→ deprecated
+
+⸻
+
+⚙️ Required Backend Contracts
+
+Required future contracts:
+
+GET /api/v1/creatives/archive
+
+GET /api/v1/creatives/:id/history
+
+GET /api/v1/creatives/:id/performance
+
+POST /api/v1/creatives/:id/reuse
+
+POST /api/v1/creatives/:id/relaunch
+
+POST /api/v1/creatives/:id/archive
+
+POST /api/v1/creatives/bulk/reuse
+
+POST /api/v1/actions/from-creative
+
+RULES:
+
+* actions MUST flow through execution engine
+* backend MUST validate creative eligibility
+* backend MUST remain source of truth
+
+⸻
+
+🗄️ Required Tables
+
+Additional future tables:
+
+creative_lineage
+
+* parent_creative_id
+* child_creative_id
+* derivation_type
+
+creative_scores
+
+* fatigue_score
+* survivability_score
+* evergreen_score
+* saturation_score
+
+creative_events
+
+* reused
+* archived
+* relaunched
+* failed_validation
+
+creative_execution_logs
+
+* execution_id
+* creative_id
+* execution_status
+* rollback_available
+
+creative_relationships
+
+* audience_dependency
+* campaign_dependency
+* funnel_stage
+
+⸻
+
+🔒 Execution Boundaries
+
+Frontend MAY:
+
+* render creative state
+* simulate interactions
+* manage selection state
+* manage optimistic UI
+* render warnings
+
+Frontend MUST NEVER:
+
+* validate relaunch safety
+* compute attribution quality
+* execute campaign launches
+* generate AI recommendations
+* determine creative eligibility
+
+RULE:
+
+* execution authority belongs to backend only
+
+⸻
+
+🛡️ Governance Boundaries
+
+ALL creative actions MUST preserve:
+
+* attribution lineage
+* campaign traceability
+* execution logs
+* org isolation
+* rollback capability
+
+RULES:
+
+* archived creatives MUST remain auditable
+* relaunch MUST preserve historical lineage
+* duplicate MUST preserve metadata references
+
+⸻
+
+✅ What Claude Can Safely Implement
+
+Claude CAN safely implement:
+
+* mock UI interactions
+* local filters
+* selection state
+* loading state
+* optimistic visual feedback
+* adapters
+* normalized UI types
+* client-side sorting
+* simulated action flows
+* empty/loading/error states
+
+Claude CAN also implement:
+
+* React Query integration
+* Supabase fetch layer
+* adapter normalization
+* pagination layer
+* virtualization
+* optimistic UI framework
+
+WITHOUT changing UI structure.
+
+⸻
+
+⏸️ What MUST Remain Deferred
+
+Deferred to backend phase:
+
+* AI scoring
+* fatigue modeling
+* relaunch validation
+* attribution analysis
+* compatibility scoring
+* execution orchestration
+* realtime reconciliation
+* rollback validation
+* campaign dependency analysis
+* creative survivability scoring
+
+RULE:
+
+* frontend MUST NOT approximate backend intelligence
+
+⸻
+
+🚫 What Should NEVER Exist
+
+NEVER ALLOW:
+
+* frontend AI execution
+* frontend-generated performance scores
+* auto-relaunch on page load
+* fallback fake AI generation
+* hidden AI requests
+* silent execution
+* frontend attribution calculations
+* frontend execution authority
+* direct campaign publishing from UI layer
+
+NEVER:
+
+* bypass execution engine
+* bypass governance layer
+* bypass org isolation
+* bypass validation layer
+
+RULE:
+
+* creatives archive is intelligence memory layer
+* NOT autonomous execution layer
+
+⸻
+
+🧬 Creative Lifecycle Intelligence
+
+Lifecycle:
+
+draft
+→ active
+→ scaling
+→ saturated
+→ declining
+→ paused
+→ archived
+→ reusable
+→ deprecated
+
+RULES:
+
+* lifecycle MUST remain traceable
+* archived creatives are reusable intelligence assets
+* declining creatives MUST preserve history
+* evergreen creatives MUST remain discoverable
+
+GOAL:
+
+creative archive becomes:
+
+* performance memory system
+* reusable intelligence layer
+* execution-aware asset registry

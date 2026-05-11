@@ -451,4 +451,513 @@ SECURITY:
 
 org_id scoped channels
 RLS enforced
-✅ DONE
+
+
+🧬 EXECUTION STATE CONSISTENCY
+
+execution state MUST remain synchronized across:
+
+* realtime channels
+* execution engine
+* workflow engine
+* automation control center
+
+RULES:
+
+* stale execution states MUST auto-expire
+* frontend runtime state MUST reconcile with backend snapshots
+* execution conflicts MUST invalidate outdated runtime views
+
+⸻
+
+📸 EXECUTION SNAPSHOT ENGINE
+
+before execution mutation:
+
+system MUST create:
+
+* execution snapshot
+* budget snapshot
+* targeting snapshot
+* bidding snapshot
+* automation state snapshot
+
+RULES:
+
+* rollback REQUIRES snapshot
+* snapshots MUST remain immutable
+* snapshots MUST be org-scoped
+
+⸻
+
+⚠️ EXECUTION CONFLICT RESOLVER
+
+detect conflicts between:
+
+* automations
+* manual actions
+* decision engine
+* workflow engine
+* budget allocator
+
+RULES:
+
+* conflicting executions MUST pause automatically
+* higher priority workflows override lower priority
+* manual override MUST invalidate queued executions
+
+⸻
+
+🕸️ RUNTIME DEPENDENCY GRAPH
+
+track automation dependencies between:
+
+* workflows
+* decisions
+* executions
+* rollback chains
+* platform dependencies
+
+RULES:
+
+* dependent execution failures MUST propagate warnings
+* broken dependency chains MUST reduce automation confidence
+
+⸻
+
+⚡ EXECUTION THROTTLING ENGINE
+
+system MUST dynamically throttle:
+
+* execution frequency
+* budget mutations
+* scaling velocity
+* retry frequency
+
+BASED ON:
+
+* platform health
+* failure rate
+* anomaly pressure
+* API instability
+
+RULES:
+
+* throttling MUST remain backend-controlled
+* frontend MUST display throttling state only
+
+⸻
+
+🧠 EXECUTION CONFIDENCE MODEL
+
+execution confidence MUST combine:
+
+* platform stability
+* signal quality
+* historical execution success
+* validation integrity
+* realtime sync reliability
+
+OUTPUT:
+
+* execution_confidence_score
+* execution_risk_score
+
+⸻
+
+🌐 PLATFORM DEGRADATION CASCADE
+
+IF platform instability increases:
+
+system MUST progressively:
+
+1. reduce execution cadence
+2. reduce scaling aggressiveness
+3. disable high-risk automations
+4. enter degraded mode
+5. emergency pause affected platform
+
+RULES:
+
+* unaffected platforms MUST continue execution
+* degradation severity MUST remain platform-scoped
+
+⸻
+
+🔐 APPROVAL GOVERNANCE
+
+high-risk automations MAY require:
+
+* manual approval
+* multi-user approval
+* admin validation
+* finance validation
+
+RULES:
+
+* approval logic MUST remain backend-controlled
+* frontend approval state is read-only
+* approval history MUST remain auditable
+
+⸻
+
+♻️ EXECUTION RECOVERY ENGINE
+
+system MUST support:
+
+* failed execution recovery
+* partial execution recovery
+* rollback recovery
+* queue restoration
+
+RULES:
+
+* recovery MUST require validation
+* recovery cannot bypass governance layer
+* failed recovery attempts MUST be logged
+
+⸻
+
+🧠 AUTOMATION FATIGUE ENGINE
+
+detect excessive automation activity.
+
+INDICATORS:
+
+* repeated mutations
+* excessive budget changes
+* repeated pause/resume cycles
+* unstable execution patterns
+
+RULES:
+
+* fatigue MUST reduce automation aggressiveness
+* severe fatigue MAY trigger cooldown mode
+
+⸻
+
+📡 EXECUTION OBSERVABILITY
+
+system MUST expose:
+
+* execution throughput
+* queue latency
+* realtime sync lag
+* execution bottlenecks
+* retry pressure
+* execution saturation
+
+RULES:
+
+* observability metrics MUST stream from backend
+* frontend MUST remain read-only
+
+⸻
+
+🛡️ SAFETY SCORE ENGINE
+
+system MUST calculate:
+
+* automation_safety_score
+* rollback_readiness_score
+* platform_stability_score
+* execution_integrity_score
+
+RULES:
+
+* safety scoring MUST remain backend-generated
+* scores MUST update via realtime events
+
+⸻
+
+🧠 RUNTIME MEMORY LAYER
+
+system MUST preserve:
+
+* historical execution outcomes
+* rollback history
+* automation effectiveness
+* failure patterns
+* anomaly sequences
+
+USED FOR:
+
+* execution prioritization
+* risk adjustment
+* automation optimization
+
+⸻
+
+📈 LIVE EXECUTION TIMELINE
+
+activity feed MUST support:
+
+* execution timeline ordering
+* rollback visualization
+* approval events
+* anomaly markers
+* execution dependency events
+
+RULES:
+
+* latest events MUST prepend first
+* duplicate events MUST collapse
+* stale events MUST visually decay
+
+⸻
+
+🔗 DECISION EXECUTION LINKING
+
+every automation execution MUST reference:
+
+* source_decision_id
+* source_signal_id
+* workflow_origin
+* execution_chain_id
+
+RULES:
+
+* execution lineage MUST remain traceable
+* orphan executions are NOT allowed
+
+⸻
+
+🧬 EXECUTION TOPOLOGY ENGINE
+
+system MUST visualize:
+
+* automation relationships
+* execution dependencies
+* rollback propagation
+* platform execution clusters
+* runtime bottlenecks
+
+RULES:
+
+* topology MUST remain backend-generated
+* frontend topology graph MUST be read-only
+
+⸻
+
+📊 EXECUTION VELOCITY ENGINE
+
+system MUST track:
+
+* execution acceleration
+* execution slowdown
+* automation burst frequency
+* mutation velocity
+
+RULES:
+
+* abnormal execution velocity MUST trigger warnings
+* excessive velocity MAY reduce execution sensitivity
+
+⸻
+
+⚠️ ANOMALY PRESSURE ENGINE
+
+system MUST calculate:
+
+* anomaly_density
+* anomaly_frequency
+* anomaly_severity
+* anomaly_spread_rate
+
+RULES:
+
+* rising anomaly pressure MUST reduce automation aggressiveness
+* severe anomaly clusters MAY trigger emergency safeguards
+
+⸻
+
+🔄 RUNTIME RECONCILIATION ENGINE
+
+system MUST continuously reconcile:
+
+* execution states
+* realtime events
+* queue states
+* rollback states
+* platform runtime snapshots
+
+RULES:
+
+* reconciliation conflicts MUST trigger validation mode
+* unresolved mismatches MUST surface operational alerts
+
+⸻
+
+🧾 EXECUTION AUDIT CHAIN
+
+every execution MUST preserve:
+
+* origin source
+* triggering condition
+* approval chain
+* rollback references
+* execution mutations
+* validation snapshots
+
+RULES:
+
+* audit chain MUST remain immutable
+* audit chain MUST be org-scoped
+
+⸻
+
+🚫 FRONTEND STRUCTURE PROTECTION
+
+RULES:
+
+* DO NOT redesign UI
+* DO NOT restructure layout hierarchy
+* DO NOT modify spacing system
+* DO NOT replace existing design system
+* DO NOT alter visual semantics
+* DO NOT rename existing components
+* DO NOT change card architecture
+* ONLY integrate backend/runtime data into existing UI structure
+
+⸻
+
+🧬 UI IMMUTABILITY RULE
+
+existing UI structure is considered production-grade.
+
+backend integrations MUST adapt to UI —
+NOT the opposite.
+
+⸻
+
+⚠️ RUNTIME UI PROTECTION
+
+frontend MUST NEVER:
+
+* simulate execution success
+* fake optimistic runtime updates
+* generate local execution states
+* mutate execution authority
+* bypass governance validation
+
+ALL runtime truth comes from backend orchestration layer.
+
+⸻
+
+🧠 COMPETITIVE EXECUTION POSITIONING
+
+CURRENT POSITIONING:
+
+stronger governance semantics than:
+
+* Madgicx
+* Revealbot
+* Birch
+
+CURRENT ADVANTAGES:
+
+* enterprise execution governance
+* runtime isolation semantics
+* orchestration-first architecture
+* rollback governance direction
+* execution safety modeling
+
+STILL MISSING:
+
+* dependency tracing
+* runtime topology visibility
+* execution lineage visualization
+* anomaly intelligence surface
+* conflict orchestration visibility
+* execution confidence propagation
+
+TARGET POSITION:
+
+execution operating system —
+NOT automation dashboard
+
+⸻
+
+📚 COMPETITOR REFERENCE CONTEXT
+
+REFERENCE SYSTEMS:
+
+Madgicx Automation Overview
+[Madgicx Automation Overview](https://academy.madgicx.com/lessons/how-to-monitor-automation-performance?utm_source=chatgpt.com)
+
+Madgicx Custom Automation
+[Madgicx Custom Automation](https://academy.madgicx.com/lessons/how-madgicx-custom-automation-works?utm_source=chatgpt.com)
+
+Madgicx Automation Tactics
+[Madgicx Automation Tactics](https://academy.madgicx.com/lessons/madgicx-automation-tactics?utm_source=chatgpt.com)
+
+Madgicx Operational Automation Concepts
+[Madgicx Automation Introduction](https://academy.madgicx.com/lessons/introduction-madgicx-automations?utm_source=chatgpt.com)
+
+Runtime Monitoring Reference Model
+[Runtime Monitoring Instrumentation Techniques](https://arxiv.org/abs/1708.07229?utm_source=chatgpt.com)
+
+Decision Lifecycle Engine
+
+Stages:
+
+* detected
+* analyzed
+* recommended
+* validated
+* queued
+* executed
+* monitored
+* rolled_back
+* archived
+
+Rules:
+
+* every decision MUST have lifecycle state
+* no direct execution from recommendation layer
+* rollback MUST remain available
+
+⸻
+
+🧠 Recommendations Intelligence Layer
+
+Decision recommendations MUST combine:
+
+* attribution quality
+* LTV impact
+* CAC efficiency
+* trend velocity
+* saturation risk
+* confidence score
+* operational risk
+
+Rules:
+
+* recommendations MUST be explainable
+* frontend MUST remain render-only
+* scoring backend authoritative
+
+⸻
+
+📊 Competitor Positioning
+
+Reference competitors:
+
+* Madgicx￼
+* Bïrch / Revealbot￼
+* Revealbot Automation￼
+
+Current advantage:
+
+* stronger operational observability
+* governance-first architecture
+* institutional intelligence semantics
+* decision orchestration direction
+
+Still missing:
+
+* simulation layer
+* decision dependency graph
+* multi-step execution plans
+* rollback analytics
+* strategic forecasting

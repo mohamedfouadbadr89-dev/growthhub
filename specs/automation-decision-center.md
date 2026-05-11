@@ -478,3 +478,505 @@ IF multiple decisions affect same entity:
 
 - choose highest confidence + impact
 - discard lower priority decisions
+
+
+ADVANCED DECISION INTELLIGENCE LAYER
+
+PURPOSE
+
+decision center is:
+
+* intelligence surface
+* signal aggregation layer
+* recommendation orchestration hub
+
+decision center is NOT:
+
+* execution runtime
+* campaign mutation layer
+* autonomous action dispatcher
+
+⸻
+
+🔗 DECISION ENGINE BOUNDARY
+
+signals
+→ decision engine
+→ recommendation generation
+→ action proposal
+→ approval layer
+→ execution engine
+
+⸻
+
+RULES:
+
+* decisions NEVER execute directly
+* decisions MUST generate structured recommendations
+* execution belongs ONLY to execution engine
+* frontend MUST remain read-only orchestration surface
+
+⸻
+
+🧠 MULTI-SIGNAL DECISION ENGINE
+
+SIGNAL AGGREGATION
+
+decision confidence MUST combine:
+
+* blended_roas
+* spend_velocity
+* cpa_trend
+* ctr_decay
+* conversion_lag
+* creative_fatigue
+* attribution_shift
+* audience_saturation
+* learning_phase_instability
+* ltv_delta
+* profitability_score
+
+⸻
+
+RULE:
+
+NO decision may rely on single-metric logic
+
+⸻
+
+🧬 DECISION PRIORITY SYSTEM
+
+PRIORITY SCORE
+
+decision_priority_score =
+
+0.35 * projected_financial_impact +
+0.25 * confidence_score +
+0.20 * signal_consistency +
+0.10 * urgency +
+0.10 * execution_safety
+
+⸻
+
+PRIORITY LEVELS
+
+priority_levels:
+
+* critical
+* high
+* medium
+* low
+* insight_only
+
+⸻
+
+RULES:
+
+* critical decisions surface first
+* low-confidence decisions become insights only
+* high-risk decisions require approval
+
+⸻
+
+⚠️ DECISION CONFLICT ENGINE
+
+CONFLICT DETECTION
+
+detect_conflicts_on:
+
+* same campaign
+* same adset
+* same audience
+* overlapping budget impact
+* conflicting bid strategies
+
+⸻
+
+RESOLUTION RULES:
+
+IF conflicts detected:
+
+* choose highest priority_score
+* choose highest confidence_score
+* suppress conflicting low-priority decisions
+* create conflict audit log
+
+⸻
+
+🔁 DECISION LIFECYCLE
+
+decision_states:
+
+* detected
+* validated
+* queued
+* recommended
+* approved
+* rejected
+* expired
+* routed_to_execution
+* archived
+
+⸻
+
+RULES:
+
+* expired decisions cannot execute
+* rejected decisions require new validation cycle
+* archived decisions remain immutable
+
+⸻
+
+🧠 DECISION EXPLAINABILITY ENGINE
+
+every decision MUST include:
+
+* why_generated
+* supporting_signals[]
+* affected_entities[]
+* projected_impact
+* confidence_reasoning
+* estimated_risk
+* rollback_feasibility
+* recommendation_source
+
+⸻
+
+📊 DECISION IMPACT MODELING
+
+IMPACT DIMENSIONS
+
+impact MUST estimate:
+
+* spend_delta
+* projected_roas_delta
+* projected_cpa_delta
+* expected_conversion_delta
+* audience_impact
+* creative_fatigue_reduction
+
+⸻
+
+RULE:
+
+impact models MUST remain simulation-only inside decision center
+
+⸻
+
+🧪 SIMULATION ORCHESTRATION
+
+simulation engine MUST support:
+
+* dry-run decisions
+* historical replay
+* projected outcome windows
+* multi-decision scenarios
+* rollback feasibility scoring
+
+⸻
+
+RULES:
+
+* simulation NEVER mutates live campaigns
+* simulations MUST use cached historical data
+* simulations MUST remain org-isolated
+
+⸻
+
+🔒 APPROVAL GOVERNANCE LAYER
+
+approval REQUIRED for:
+
+* high spend changes
+* campaign pausing
+* large reallocations
+* bid strategy changes
+* multi-platform impact
+
+⸻
+
+approval_levels:
+
+* optional
+* required
+* admin_required
+
+⸻
+
+RULES:
+
+* approvals MUST audit
+* approvals MUST expire
+* approvals MUST support rejection reasoning
+
+⸻
+
+🔁 DECISION → STRATEGY RELATIONSHIP
+
+decision
+→ recommends strategy
+→ strategy generates workflow
+→ workflow routes to execution
+
+⸻
+
+RULES:
+
+* decisions MUST NOT create runtime actions directly
+* strategy templates remain reusable
+* workflow engine owns orchestration
+
+⸻
+
+🔴 REALTIME DECISION STREAMING
+
+SOURCE:
+
+SUPABASE_REALTIME
+
+CHANNELS:
+
+* decision_feed:{org_id}
+* strategy_health:{org_id}
+* signal_alerts:{org_id}
+* execution_feedback:{org_id}
+
+⸻
+
+EVENTS:
+
+* decision_created
+* decision_updated
+* decision_expired
+* signal_detected
+* conflict_detected
+* approval_requested
+* approval_resolved
+
+⸻
+
+RULES:
+
+* realtime MUST remain read-only
+* events MUST deduplicate
+* repeated alerts MUST collapse
+
+⸻
+
+📈 DECISION STREAM HEALTH
+
+each stream MUST expose:
+
+* stream_health_score
+* execution_accuracy
+* recommendation_accuracy
+* avg_confidence
+* false_positive_rate
+* avg_response_time
+* volatility_score
+
+⸻
+
+🧠 AI RECOMMENDATION SAFETY
+
+AI MUST NOT:
+
+* auto-approve decisions
+* bypass validation
+* create destructive recommendations silently
+* create recursive recommendation loops
+
+⸻
+
+AI-generated decisions MUST include:
+
+* ai_confidence
+* reasoning_summary
+* approval_requirement
+* safety_score
+
+⸻
+
+🧾 DECISION AUDIT ENGINE
+
+decision_logs MUST include:
+
+* decision_id
+* org_id
+* signal_sources
+* affected_entities
+* recommendation_output
+* confidence_score
+* approval_state
+* execution_reference
+* rollback_reference
+* generated_by
+* created_at
+
+⸻
+
+🧬 VERSIONED DECISION SNAPSHOTS
+
+decision snapshots MUST freeze:
+
+* source signals
+* confidence scores
+* impact models
+* recommendation reasoning
+
+⸻
+
+RULE:
+
+editing logic MUST create:
+
+* new snapshot
+* new validation cycle
+* new audit chain
+
+⸻
+
+📊 UI ENHANCEMENTS
+
+HERO KPI CARDS
+
+cards MUST expose:
+
+* trend_direction
+* volatility
+* recommendation_accuracy
+* execution_safety_score
+
+⸻
+
+LIVE FEED CARDS
+
+feed cards MUST include:
+
+* confidence badge
+* projected impact
+* risk level
+* approval requirement
+* affected entities count
+
+⸻
+
+DECISION STREAMS
+
+streams MUST expose:
+
+* signal count
+* health trend
+* failure rate
+* recommendation accuracy
+* last validation time
+
+⸻
+
+🧠 COMPETITOR SEMANTIC REFERENCES
+
+REFERENCE MODELS:
+
+Madgicx Automations￼
+
+* AI automation tactics
+* recommendation ranking
+* prebuilt optimization templates
+* account-level orchestration
+* automation confidence semantics
+
+Braze Canvas￼
+
+* orchestration lifecycle
+* workflow approval semantics
+* journey validation logic
+* realtime orchestration graph
+
+Braze Approval Workflow￼
+
+* approval checkpoints
+* launch validation
+* permission-based approvals
+
+Triple Whale￼
+
+* blended profitability analytics
+* unified attribution signals
+* financial intelligence semantics
+
+Northbeam￼
+
+* attribution-aware decisions
+* performance anomaly surfacing
+
+Lifetimely￼
+
+* LTV-aware decisioning
+* cohort profitability intelligence
+
+Revealbot￼
+
+* rule-based automation orchestration
+* multi-platform optimization logic
+
+⸻
+
+⚠️ GOVERNANCE RULES
+
+HARD LOCKS
+
+* NO direct execution from decision center
+* NO executeAction() calls
+* NO AI auto-approval
+* NO runtime mutations
+* NO unsafe autonomous routing
+
+⸻
+
+🧠 FUTURE PHASE ALIGNMENT
+
+THIS PAGE DEPENDS ON:
+
+* signals engine
+* strategy recommendation engine
+* workflow orchestration engine
+* approval engine
+* simulation engine
+* realtime infrastructure
+* observability engine
+
+⸻
+
+CURRENT STATUS:
+
+decision surface = implemented
+signal aggregation = partial
+conflict engine = not implemented
+approval orchestration = partial
+simulation engine = partial
+decision explainability = partial
+
+⸻
+
+🧾 SAFE IMPLEMENTATION ORDER
+
+1. signal aggregation engine
+2. decision scoring engine
+3. approval orchestration
+4. conflict resolution layer
+5. simulation engine
+6. realtime observability
+7. explainability layer
+8. execution feedback loop
+
+⸻
+
+DO NOT IMPLEMENT:
+
+* autonomous execution
+* direct campaign mutation
+* self-learning execution routing
+* unrestricted AI automation
+* runtime workflow rewriting
+
+WITHOUT EXPLICIT GOVERNANCE AUTHORIZATION

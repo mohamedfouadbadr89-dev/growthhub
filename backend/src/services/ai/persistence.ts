@@ -124,6 +124,12 @@ export async function persistAIDecision(
       status: input.response.status,
       reasoning_steps: input.response.reasoning_steps,
       trace_id: input.trace_id,
+      // Path F (2026-05-09) — write the optional top-level category to its
+      // dedicated nullable column. Validator guarantees this is either
+      // undefined or a non-empty trimmed string. Undefined → column NULL,
+      // which the migration permits and the automation-engine fallback
+      // shim handles by reading result.category instead.
+      category: input.response.category ?? null,
     })
     .select('id')
     .single()

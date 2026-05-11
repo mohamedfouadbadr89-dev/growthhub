@@ -393,10 +393,18 @@ automationRouter.get('/runs', async (c) => {
   const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 50 : rawLimit), MAX_LIMIT)
   const offset = Math.max(0, isNaN(rawOffset) ? 0 : rawOffset)
 
+  // Path F operator-visibility bridge (continuation #24, 2026-05-09):
+  // PostgREST nested-select on the existing FK automation_runs.ai_decision_id
+  // → ai_decisions(id) joins the categorical label that triggered each
+  // auto-fired run. Service-role; org_id explicit-filter is the primary gate
+  // (RLS defense-in-depth). Read-only column on a NULLABLE FK; runs that
+  // were fired manually (no ai_decision_id) or against pre-Path-F decisions
+  // (NULL category) yield ai_decisions=null / category=null respectively —
+  // both render as "no category" in any consumer. No schema/index changes.
   let query = supabaseAdmin
     .from('automation_runs')
     .select(
-      'id, org_id, automation_rule_id, ai_decision_id, action_template_id, status, result_data, error_message, executed_at, automation_rules(name)',
+      'id, org_id, automation_rule_id, ai_decision_id, action_template_id, status, result_data, error_message, executed_at, automation_rules(name), ai_decisions(category)',
       { count: 'exact' },
     )
     .eq('org_id', orgId)

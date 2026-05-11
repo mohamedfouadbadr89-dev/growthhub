@@ -2783,14 +2783,95 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
   const traceId = input.traceId ?? aiLink?.trace_id ?? null
   const aiDecisionId = input.aiDecisionId ?? null
 
-  // 5. Decide which handler will run and the high-level mode for logs.
+  // 5. Decide the high-level mode label for [exec] logs + decision_history.data_used.
+  //
+  // OBSERVABILITY-ONLY label. NOT consumed by dispatch, idempotency, Vault
+  // resolution, or any execution-semantic surface — those run independently
+  // below + inside ACTION_HANDLERS / realMeta* / realGoogle* handlers.
+  //
+  // 2026-05-09 (continuation #26 → #27) — observability parity widening.
+  //
+  // History:
+  //   - Phase 4 minimal close: label authored covering only meta.pause_campaign
+  //     (the only live-capable handler at that point).
+  //   - Continuations #5 (google.pause_campaign) / #20 (meta.create_campaign +
+  //     google.create_campaign) added new live-capable dispatch tuples but
+  //     did NOT widen this label, so their live executions persisted
+  //     mode='simulated' in decision_history.data_used despite firing real
+  //     provider APIs. Truthful runtime mode remained available via the
+  //     handlers' own result_data.mode='live', which flows into
+  //     impact_snapshot — a SEPARATE field. The pre-dispatch label was
+  //     just under-extended.
+  //   - Continuation #21 Part B made resolveMetaAccessToken Vault-aware;
+  //     pause_campaign dispatch dropped its env-gate at the same time, but
+  //     the label was not updated.
+  //   - Continuation #26 corrected the meta.pause_campaign label to match
+  //     post-#21 dispatch (env-gate removed).
+  //   - Continuation #27 (this) widens the label across ALL live-capable
+  //     handlers by mirroring each ACTION_HANDLERS dispatch conjunction
+  //     verbatim. NO dispatch logic changed; NO handler internals changed;
+  //     NO Vault resolution changed; NO env precedence changed. Inline +
+  //     explicit per the established Phase 4 minimal architecture style;
+  //     no isLive() helper / no factored abstraction (would create a
+  //     second source of truth that could drift from dispatch).
+  //
+  // PARITY: each disjunct below must be a verbatim mirror of the
+  // corresponding ACTION_HANDLERS.<action_type> dispatch test. If a
+  // dispatch is changed, the matching disjunct here MUST be updated
+  // in the same continuation.
   const liveCandidate =
-    t.platform === 'meta' &&
-    t.action_type === 'pause_campaign' &&
-    META_PAUSE_CAMPAIGN_LIVE &&
-    Boolean(META_TEST_ACCESS_TOKEN) &&
-    (META_LIVE_ORG_ALLOWLIST.length === 0 ||
-      META_LIVE_ORG_ALLOWLIST.includes(input.orgId))
+    // mirror ACTION_HANDLERS.pause_campaign metaLiveAllowed (lines 322-327; #3+#4 then #21B)
+    (t.platform === 'meta' &&
+     t.action_type === 'pause_campaign' &&
+     META_PAUSE_CAMPAIGN_LIVE &&
+     (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+       META_LIVE_ORG_ALLOWLIST.includes(input.orgId))) ||
+    // mirror ACTION_HANDLERS.pause_campaign googleLiveAllowed (lines 336-340; Phase 4 P2 #5)
+    (t.platform === 'google' &&
+     t.action_type === 'pause_campaign' &&
+     GOOGLE_PAUSE_CAMPAIGN_LIVE &&
+     (GOOGLE_LIVE_ORG_ALLOWLIST.length === 0 ||
+       GOOGLE_LIVE_ORG_ALLOWLIST.includes(input.orgId))) ||
+    // mirror ACTION_HANDLERS.increase_budget liveAllowed (lines 358-363; Phase 4 minimal)
+    // env-gate preserved verbatim — separate semantic-gap follow-up tracked
+    // for *_budget Vault adoption; out of scope for this label-only pass.
+    (t.platform === 'meta' &&
+     t.action_type === 'increase_budget' &&
+     META_INCREASE_BUDGET_LIVE &&
+     Boolean(META_TEST_ACCESS_TOKEN) &&
+     (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+       META_LIVE_ORG_ALLOWLIST.includes(input.orgId))) ||
+    // mirror ACTION_HANDLERS.decrease_budget liveAllowed (lines 380-385; Phase 4 minimal)
+    // env-gate preserved verbatim — same separate follow-up as above.
+    (t.platform === 'meta' &&
+     t.action_type === 'decrease_budget' &&
+     META_DECREASE_BUDGET_LIVE &&
+     Boolean(META_TEST_ACCESS_TOKEN) &&
+     (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+       META_LIVE_ORG_ALLOWLIST.includes(input.orgId))) ||
+    // mirror ACTION_HANDLERS.send_alert_email liveAllowed (lines 402-407; Phase 4 minimal)
+    // NOTE: send_alert_email dispatch does NOT gate on t.platform — handler
+    // accepts any platform context; reuses META_LIVE_ORG_ALLOWLIST as a
+    // shared kill-switch. Mirror this verbatim — do NOT add a platform check.
+    (t.action_type === 'send_alert_email' &&
+     SEND_ALERT_EMAIL_LIVE &&
+     Boolean(RESEND_API_KEY) &&
+     (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+       META_LIVE_ORG_ALLOWLIST.includes(input.orgId))) ||
+    // mirror ACTION_HANDLERS.create_campaign metaLiveAllowed (lines 430-435; Phase 6 Sub-C #20)
+    // env-gate preserved verbatim — same separate follow-up as *_budget.
+    (t.platform === 'meta' &&
+     t.action_type === 'create_campaign' &&
+     META_CREATE_CAMPAIGN_LIVE &&
+     Boolean(META_TEST_ACCESS_TOKEN) &&
+     (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+       META_LIVE_ORG_ALLOWLIST.includes(input.orgId))) ||
+    // mirror ACTION_HANDLERS.create_campaign googleLiveAllowed (lines 441-445; Phase 6 Sub-C #20)
+    (t.platform === 'google' &&
+     t.action_type === 'create_campaign' &&
+     GOOGLE_CREATE_CAMPAIGN_LIVE &&
+     (GOOGLE_LIVE_ORG_ALLOWLIST.length === 0 ||
+       GOOGLE_LIVE_ORG_ALLOWLIST.includes(input.orgId)))
   const mode: 'simulated' | 'live' = liveCandidate ? 'live' : 'simulated'
 
   const ctx: HandlerCtx = {

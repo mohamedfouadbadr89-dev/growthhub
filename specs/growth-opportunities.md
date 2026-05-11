@@ -516,6 +516,762 @@ RULES:
 - no execution directly
 - must pass validation layer
 
+GROWTH OPPORTUNITIES POSITIONING
+
+growth opportunities page is:
+
+* strategic growth intelligence layer
+
+* AI opportunity orchestration cockpit
+
+* revenue expansion intelligence system
+
+* operational prioritization engine
+
+growth opportunities page is NOT:
+
+* direct automation executor
+
+* campaign launcher
+
+* autonomous growth engine
+
+* ad manager replacement
+
+⸻
+
+🧬 SYSTEM POSITIONING
+
+attribution engine
+
+→ growth intelligence engine
+
+→ opportunity scoring engine
+
+→ prioritization layer
+
+→ execution governance engine
+
+⸻
+
+🔒 OPPORTUNITY GOVERNANCE ENGINE
+
+RULES:
+
+* frontend is visualization-only
+
+* opportunities MUST originate from backend
+
+* opportunity scoring MUST remain backend authoritative
+
+* execution requires validation layer
+
+* opportunities MUST be explainable
+
+* execution MUST be auditable
+
+⸻
+
+🧠 GROWTH INTELLIGENCE ENGINE
+
+growth engine MUST analyze:
+
+* attributed revenue gaps
+
+* campaign inefficiencies
+
+* audience saturation
+
+* creative fatigue
+
+* budget allocation imbalance
+
+* scaling velocity
+
+* CAC instability
+
+* ROAS trends
+
+* LTV quality
+
+* channel expansion potential
+
+* retention opportunities
+
+* margin compression
+
+RULES:
+
+* growth recommendations MUST NOT rely on ROAS only
+
+* long-term value MUST influence prioritization
+
+* unstable attribution MUST reduce confidence score
+
+⸻
+
+📊 OPPORTUNITY SCORING ENGINE
+
+score MUST combine:
+
+* projected growth
+
+* execution confidence
+
+* implementation effort
+
+* execution risk
+
+* LTV impact
+
+* attribution quality
+
+* margin efficiency
+
+* operational complexity
+
+RULES:
+
+* scoring MUST remain backend-only
+
+* frontend MUST NOT calculate rankings
+
+* low-confidence opportunities MUST degrade priority
+
+⸻
+
+⚡ QUICK WINS ENGINE
+
+quick wins MUST represent:
+
+* low operational effort
+
+* high probability improvements
+
+* immediate efficiency gains
+
+* low execution risk
+
+RULES:
+
+* quick wins MUST be surfaced instantly
+
+* quick wins MUST prioritize execution safety
+
+* repetitive quick wins MUST trigger automation suggestions
+
+⸻
+
+📈 HIGH IMPACT STRATEGY ENGINE
+
+high impact plays MUST support:
+
+* scaling recommendations
+
+* diversification opportunities
+
+* market expansion
+
+* audience expansion
+
+* retention optimization
+
+* budget restructuring
+
+* channel allocation changes
+
+RULES:
+
+* high impact plays REQUIRE reasoning visibility
+
+* strategic plays MUST expose downside risk
+
+* strategic plays MUST expose projected timelines
+
+⸻
+
+🧠 REASONING ENGINE
+
+reasoning engine MUST expose:
+
+* why opportunity exists
+
+* affected systems
+
+* predicted impact
+
+* confidence rationale
+
+* risk dependencies
+
+* attribution dependencies
+
+* operational constraints
+
+RULES:
+
+* reasoning MUST come from backend only
+
+* frontend MUST remain render-only
+
+* no client-generated intelligence
+
+⸻
+
+🛡️ EXECUTION SAFETY LAYER
+
+ALL executions MUST pass:
+
+* validation layer
+
+* org permissions
+
+* budget governance
+
+* active automation conflict checks
+
+* rollout compatibility checks
+
+* execution engine verification
+
+RULES:
+
+* no direct execution from UI
+
+* all execution flows MUST remain reversible
+
+* failed validation MUST block execution immediately
+
+⸻
+
+🔗 ACTION ENGINE INTEGRATION
+
+FLOW:
+
+opportunity
+
+→ action creation
+
+→ validation
+
+→ execution orchestration
+
+→ monitoring
+
+→ rollback capability
+
+API:
+
+POST /api/v1/actions/from-opportunity
+
+RULES:
+
+* opportunities NEVER execute directly
+
+* opportunities ONLY create validated actions
+
+* execution state MUST sync from backend
+
+⸻
+
+📊 STRATEGIC MAPPING ENGINE
+
+effort vs impact matrix MUST support:
+
+* dynamic positioning
+
+* confidence weighting
+
+* execution risk weighting
+
+* revenue weighting
+
+* operational effort modeling
+
+RULES:
+
+* matrix coordinates MUST be backend-computed
+
+* realtime updates MUST reposition opportunities
+
+* dismissed opportunities MUST disappear instantly
+
+⸻
+
+📡 REALTIME GROWTH STREAM
+
+SOURCE:
+
+SUPABASE_REALTIME
+
+CHANNEL:
+
+growth_stream:{org_id}
+
+EVENTS:
+
+opportunity_created
+
+opportunity_updated
+
+opportunity_executed
+
+opportunity_dismissed
+
+summary_updated
+
+coverage_updated
+
+platform_mix_updated
+
+RULES:
+
+* quick wins MUST appear immediately
+
+* executed items MUST reconcile instantly
+
+* sidebar summaries MUST update incrementally
+
+* duplicate realtime events MUST collapse safely
+
+⸻
+
+⚠️ FALLBACK STRATEGY
+
+fallback polling:
+
+GET /api/v1/growth/opportunities every 30s
+
+RULES:
+
+* polling ONLY during realtime degradation
+
+* stale opportunity state MUST reconcile safely
+
+⸻
+
+📊 OPPORTUNITY ENRICHMENT LAYER
+
+EVERY opportunity SHOULD expose:
+
+* projected incremental revenue
+
+* execution confidence
+
+* implementation risk
+
+* attribution confidence
+
+* expected payback window
+
+* operational complexity
+
+* automation compatibility
+
+* historical success similarity
+
+* dependency signals
+
+⸻
+
+🧠 PREDICTIVE MODELING LAYER
+
+predictive engine MUST support:
+
+* scaling projections
+
+* saturation forecasting
+
+* creative fatigue prediction
+
+* CAC trajectory prediction
+
+* channel expansion forecasting
+
+* retention opportunity forecasting
+
+RULES:
+
+* predictive outputs MUST be cached
+
+* predictions MUST remain precomputed
+
+* no live AI inference on page load
+
+⸻
+
+📈 PORTFOLIO INTELLIGENCE ENGINE
+
+portfolio summary MUST expose:
+
+* total upside potential
+
+* projected revenue impact
+
+* execution coverage
+
+* optimization maturity
+
+* pending opportunity count
+
+* risk-adjusted opportunity value
+
+RULES:
+
+* portfolio calculations MUST remain backend authoritative
+
+* summary MUST update incrementally via realtime
+
+⸻
+
+📊 PLATFORM MIX ENGINE
+
+platform mix MUST support:
+
+* revenue weighting
+
+* spend weighting
+
+* efficiency weighting
+
+* attribution quality weighting
+
+* scaling opportunity weighting
+
+RULES:
+
+* platform percentages MUST NOT use raw spend alone
+
+* platform mix SHOULD reflect strategic value
+
+⸻
+
+🧠 EXPERIMENTATION ENGINE
+
+experiments MUST support:
+
+* emerging channels
+
+* retention systems
+
+* optimization hypotheses
+
+* bidding experiments
+
+* audience diversification
+
+* creative strategy testing
+
+RULES:
+
+* experiments MUST expose confidence
+
+* experiments MUST expose effort level
+
+* experiments MUST remain sandbox-safe
+
+⸻
+
+📚 LEARNING ENGINE
+
+system MUST preserve:
+
+* opportunity outcomes
+
+* execution performance
+
+* false-positive recommendations
+
+* dismissed opportunity patterns
+
+* strategic success history
+
+* scaling efficiency trends
+
+USED FOR:
+
+* confidence calibration
+
+* prioritization refinement
+
+* predictive weighting
+
+* recommendation quality improvement
+
+⸻
+
+🧠 COMPETITOR REFERENCE CONTEXT
+
+REFERENCE SYSTEMS:
+
+[Madgicx Growth Automation](https://madgicx.com/blog/best-growth-marketing-automation-platforms?utm_source=chatgpt.com)
+
+[Madgicx Performance Marketing Automation](https://madgicx.com/blog/automated-performance-marketing-with-ai?utm_source=chatgpt.com)
+
+[Madgicx Marketing Automation Guide](https://madgicx.com/blog/marketing-automation?utm_source=chatgpt.com)
+
+[Bïrch vs Madgicx Automation Comparison](https://bir.ch/blog/birch-vs-madgicx?utm_source=chatgpt.com)
+
+[AdsGo vs Madgicx Execution Layer](https://www.adsgo.ai/alternatives/madgicx-alternative?utm_source=chatgpt.com)
+
+REFERENCE PATTERNS:
+
+* AI opportunity surfacing
+
+* automation-assisted workflows
+
+* operational optimization UX
+
+* strategic recommendation systems
+
+* effort vs impact prioritization
+
+* media-buying intelligence
+
+⸻
+
+🧠 COMPETITIVE POSITIONING
+
+CURRENT POSITION:
+
+already visually stronger than:
+
+* Madgicx opportunity surfaces
+
+* Bïrch optimization dashboards
+
+* Revealbot operational panels
+
+* AdEspresso recommendation UX
+
+CURRENT ADVANTAGES:
+
+* enterprise-grade operational semantics
+
+* institutional UI direction
+
+* governance-first architecture
+
+* attribution-aware intelligence
+
+* realtime orchestration direction
+
+* execution safety model
+
+MOST COMPETITORS FOCUS ON:
+
+* ad automation
+
+* campaign execution
+
+* rules engines
+
+* AI-assisted media buying
+
+THIS SYSTEM DIRECTION IS DIFFERENT:
+
+* growth observability
+
+* opportunity intelligence
+
+* strategic orchestration
+
+* execution governance
+
+* operational visibility
+
+* attribution-aware prioritization
+
+* enterprise intelligence systems
+
+⸻
+
+⚠️ CURRENT GAP VS TOP COMPETITORS
+
+STILL MISSING:
+
+* predictive opportunity timelines
+
+* opportunity dependency graph
+
+* execution simulation layer
+
+* portfolio forecasting
+
+* strategic scenario modeling
+
+* opportunity decay tracking
+
+* historical execution benchmarking
+
+* opportunity confidence visualization
+
+⸻
+
+🧬 EXECUTION PHILOSOPHY
+
+system philosophy:
+
+AI suggests
+
+→ governance validates
+
+→ execution engine applies
+
+→ observability monitors
+
+→ rollback protects
+
+NOT:
+
+AI auto-executes blindly
+
+⸻
+
+🚫 FRONTEND IMMUTABILITY RULES
+
+RULES:
+
+* DO NOT redesign UI
+
+* DO NOT alter visual hierarchy
+
+* DO NOT modify layouts
+
+* ONLY replace static data with backend integrations
+
+* preserve institutional operational semantics
+
+⸻
+
+🧱 UI PROTECTION LAYER
+
+existing UI is considered:
+
+* enterprise-grade
+
+* operationally differentiated
+
+* visually mature
+
+* strategically stronger than most ad-tech competitors
+
+backend systems MUST adapt to UI —
+
+NOT the opposite.
+
+⸻
+
+🔥 CLAUDE IMPLEMENTATION ADDITION
+
+Implement runtime-safe growth opportunity integrations.
+
+Rules:
+
+* Replace static/mock data only
+
+* Use React Query
+
+* Add loading/error/empty states
+
+* Add realtime subscriptions
+
+* Scope ALL queries by org_id
+
+* Keep all calculations backend-only
+
+* Prevent duplicate execution requests
+
+* Route execution through actions engine only
+
+* Cache opportunities aggressively
+
+* Reconcile realtime events safely
+
+* Preserve UI semantics exactly
+
+* Keep frontend visualization-only
+
+⸻
+
+🧠 STRATEGIC DIFFERENTIATION
+
+Most competitors optimize:
+
+* campaigns
+
+* ads
+
+* rules
+
+* automation
+
+This system is evolving toward:
+
+* enterprise growth intelligence
+
+* strategic observability
+
+* operational orchestration
+
+* attribution-aware recommendations
+
+* execution governance
+
+* realtime opportunity intelligence
+
+That category positioning is significantly more defensible long term.
+
+ Opportunity Lifecycle
+
+States:
+
+* discovered
+* prioritized
+* validated
+* converted_to_action
+* executed
+* monitored
+* optimized
+* archived
+
+⸻
+
+🧠 Strategic Recommendation Engine
+
+Recommendations MUST combine:
+
+* projected growth
+* confidence
+* operational complexity
+* attribution quality
+* execution risk
+* margin impact
+* LTV effect
+
+⸻
+
+📊 Competitor Positioning
+
+References:
+
+* Madgicx AI Intelligence Platform￼
+* Madgicx Real-Time Decision Making￼
+* Bïrch Performance Automation￼
+* Revealbot Automation Layer￼
+
+Current positioning:
+
+NOT:
+
+* automation-only platform
+
+YES:
+
+* enterprise growth intelligence system
+* strategic orchestration layer
+* operational observability engine
+* attribution-aware recommendation system
 
 ✅ DONE
 

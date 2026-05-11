@@ -449,4 +449,463 @@ execution event
 scheduled refresh
 UI NEVER triggers simulation automatically
 
-UI ONLY listens to updates ✅ DONE
+UI ONLY listens to updates ✅Done
+
+🧠 DECISION DETAIL POSITIONING
+
+decision detail page is:
+
+* strategic execution briefing layer
+* AI reasoning visibility surface
+* execution recommendation cockpit
+* risk + simulation intelligence panel
+
+decision detail page is NOT:
+
+* workflow builder
+* execution mutation engine
+* realtime AI generation surface
+* autonomous optimization engine
+
+⸻
+
+🔗 SYSTEM POSITIONING
+
+signals engine
+→ decision engine
+→ recommendation intelligence
+→ decision detail surface
+→ execution orchestration layer
+
+⸻
+
+⚠️ DECISION GOVERNANCE RULES
+
+decision detail MUST remain:
+
+* backend-authoritative
+* simulation-driven
+* execution-safe
+* audit-compatible
+
+RULES:
+
+* UI MUST NEVER mutate recommendations locally
+* apply state MUST come from backend
+* simulation truth MUST remain backend-generated
+* stale simulations MUST auto-expire
+
+⸻
+
+🧬 DECISION INTELLIGENCE LAYER
+
+decision detail MUST expose:
+
+* reasoning confidence
+* causal confidence
+* simulation confidence
+* execution readiness
+* rollback readiness
+* recommendation priority
+
+RULES:
+
+* all intelligence metrics MUST remain backend-generated
+* frontend MUST remain visualization-only
+
+⸻
+
+📊 CAUSAL ANALYSIS ENGINE
+
+causal analysis MUST support:
+
+* CPA degradation analysis
+* CTR decay analysis
+* frequency saturation analysis
+* audience fatigue detection
+* attribution instability detection
+
+RULES:
+
+* causal correlations MUST be precomputed
+* no frontend calculations allowed
+* correlation confidence MUST be included
+
+⸻
+
+🧠 SIMULATION GOVERNANCE ENGINE
+
+simulation engine MUST support:
+
+* projected revenue impact
+* projected ROAS shift
+* projected spend impact
+* projected volatility
+* downside estimation
+* execution confidence
+
+RULES:
+
+* simulations MUST be generated asynchronously
+* frontend MUST NOT trigger AI simulation logic directly
+* simulation cache REQUIRED
+* simulation refreshes MUST be rate-limited
+
+⸻
+
+⚠️ SIMULATION SAFETY RULES
+
+IF:
+
+* platform instability detected
+* data freshness degraded
+* attribution mismatch detected
+* anomaly pressure high
+
+THEN:
+
+→ simulation confidence MUST decrease
+
+⸻
+
+🛡️ RISK MODELING ENGINE
+
+risk engine MUST evaluate:
+
+* spend leakage risk
+* learning phase instability
+* creative fatigue probability
+* audience saturation risk
+* execution volatility
+* rollback probability
+
+RULES:
+
+* high-risk recommendations MAY require approval
+* risk models MUST remain backend-controlled
+
+⸻
+
+🔴 EXECUTION READINESS ENGINE
+
+system MUST calculate:
+
+* execution readiness score
+* automation compatibility
+* rollback readiness
+* platform stability dependency
+* execution volatility score
+
+RULES:
+
+* readiness MUST update via realtime
+* degraded readiness MUST reduce execution confidence
+
+⸻
+
+📈 IMPACT CONFIDENCE MODEL
+
+impact confidence MUST combine:
+
+* historical performance
+* signal stability
+* platform health
+* attribution quality
+* execution history
+* simulation consistency
+
+OUTPUT:
+
+* projected confidence interval
+* execution reliability score
+
+⸻
+
+🧬 RECOMMENDATION EXECUTION LAYER
+
+recommended actions MUST support:
+
+* automation compatibility
+* estimated execution duration
+* execution dependency mapping
+* rollback compatibility
+* validation requirements
+
+RULES:
+
+* execution support MUST remain backend-defined
+* UI MUST NEVER infer automation support
+
+⸻
+
+🔁 ROLLBACK READINESS ENGINE
+
+before apply_decision:
+
+system MUST validate:
+
+* rollback snapshot exists
+* execution dependency integrity
+* platform operational health
+* approval requirements
+
+RULES:
+
+* rollback readiness REQUIRED for high-risk decisions
+* frontend MUST display rollback availability state only
+
+⸻
+
+📡 RELATED SIGNAL ORCHESTRATION
+
+related signals MUST support:
+
+* source signal linkage
+* severity propagation
+* anomaly clustering
+* cross-platform correlation
+* signal lineage
+
+RULES:
+
+* related signals MUST remain traceable
+* orphan signals NOT allowed
+
+⸻
+
+⚠️ EXECUTION SAFETY CONTROLS
+
+decision apply flow MUST support:
+
+* approval validation
+* cooldown validation
+* platform health validation
+* conflict detection
+* rollback verification
+
+RULES:
+
+* failed validation MUST block apply action
+* frontend MUST display validation status only
+
+⸻
+
+🧠 DECISION MEMORY ENGINE
+
+system MUST preserve:
+
+* historical recommendation outcomes
+* execution effectiveness
+* rollback history
+* simulation variance
+* approval outcomes
+
+USED FOR:
+
+* confidence refinement
+* future recommendation weighting
+* execution prioritization
+
+⸻
+
+🌐 REALTIME DECISION ORCHESTRATION
+
+SOURCE:
+
+SUPABASE_REALTIME
+
+CHANNELS:
+
+* decision_detail:{org_id}:{decision_id}
+* recommendation_updates:{org_id}
+* simulation_updates:{org_id}
+* risk_alerts:{org_id}
+
+EVENTS:
+
+decision_updated
+simulation_updated
+risk_updated
+approval_required
+execution_applied
+rollback_available
+platform_warning
+
+RULES:
+
+* UI MUST patch-update realtime fields
+* no full-page reloads
+* stale events MUST auto-expire visually
+
+⸻
+
+📊 EXECUTION CONFIDENCE VISUALIZATION
+
+UI SHOULD expose:
+
+* confidence intervals
+* execution stability
+* volatility projection
+* risk escalation probability
+* platform dependency warnings
+
+RULES:
+
+* confidence visuals MUST remain backend-generated
+* frontend MUST NOT calculate projections
+
+⸻
+
+🧬 COMPETITOR POSITIONING
+
+CURRENT POSITIONING:
+
+already stronger than:
+
+* Madgicx recommendation detail semantics
+* Revealbot recommendation visibility
+* Birch optimization explainability
+
+CURRENT ADVANTAGES:
+
+* execution governance direction
+* simulation-first architecture
+* backend-authoritative intelligence
+* enterprise safety semantics
+* rollback-aware recommendations
+
+STILL MISSING:
+
+* dependency tracing
+* execution topology graph
+* recommendation lineage
+* realtime anomaly overlays
+* execution confidence propagation
+* approval orchestration visibility
+
+TARGET POSITION:
+
+enterprise-grade recommendation operating system —
+NOT AI recommendation dashboard
+
+⸻
+
+📚 COMPETITOR REFERENCE CONTEXT
+
+REFERENCE SYSTEMS:
+
+[Madgicx Platform](https://madgicx.com/?utm_source=chatgpt.com)
+
+[Madgicx Meta Dashboard](https://academy.madgicx.com/lessons/facebook-dashboard?utm_source=chatgpt.com)
+
+[Madgicx One-Click Report](https://academy.madgicx.com/lessons/one-click-report?utm_source=chatgpt.com)
+
+[Madgicx Custom Automation](https://madgicx.com/products/custom-automation?utm_source=chatgpt.com)
+
+[Madgicx Automated Reporting](https://madgicx.com/products/automated-reporting?utm_source=chatgpt.com)
+
+REFERENCE PATTERNS:
+
+* recommendation visibility semantics
+* execution monitoring semantics
+* operational reporting semantics
+* optimization cockpit patterns
+* blended observability concepts
+
+⸻
+
+🚫 FRONTEND IMMUTABILITY RULES
+
+RULES:
+
+* DO NOT redesign UI
+* DO NOT modify visual hierarchy
+* DO NOT alter spacing system
+* DO NOT replace existing component semantics
+* DO NOT mutate layout structure
+* ONLY replace mock/static data with backend integrations
+
+⸻
+
+🧱 UI PROTECTION LAYER
+
+existing recommendation UI is considered:
+
+* production-grade
+* institutional-grade
+* execution-oriented
+
+backend integrations MUST adapt to existing UI —
+NOT redesign it.
+
+⸻
+
+🔥 CLAUDE IMPLEMENTATION ADDITION
+
+Implement runtime-safe integrations for decision detail page.
+
+Rules:
+
+* DO NOT modify UI structure
+* Replace mock/static data only
+* Use React Query
+* Use realtime subscriptions
+* Keep all intelligence logic in backend
+* Add loading/error/empty states
+* Use strict typing
+* Cache simulations aggressively
+* Prevent duplicate apply execution
+* Prevent optimistic execution state
+* Reconcile realtime updates safely
+* Scope ALL requests by org_id
+
+
+Decision State Machine
+
+Decision flow:
+
+detected
+→ validated
+→ approved
+→ action_created
+→ execution_engine
+→ monitoring
+→ rollback_possible
+
+Rules:
+
+* decisions MUST remain auditable
+* every execution MUST preserve reasoning snapshot
+* execution MUST preserve attribution state
+
+⸻
+
+🧠 Root Cause Intelligence
+
+Decision detail MUST expose:
+
+* causal signals
+* impacted entities
+* confidence rationale
+* attribution dependencies
+* execution risks
+* downstream effects
+
+⸻
+
+⚠️ Competitor Gap Analysis
+
+Most competitors expose:
+
+* rule triggers
+* automation actions
+* campaign metrics
+
+This system direction exposes:
+
+* explainability
+* strategic reasoning
+* operational governance
+* execution lineage
+* attribution-aware decisions
+

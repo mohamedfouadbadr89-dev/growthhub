@@ -65,6 +65,13 @@ interface AIDecisionRow {
   status: string
   reasoning_steps: unknown
   trace_id: string
+  /**
+   * Path F (2026-05-09) — top-level category column added in
+   * 20260509130000_phase3_ai_decisions_category.sql. NULL for any row
+   * persisted before Path F or by an AI response that omitted category;
+   * the extractCategory fallback shim handles those cases.
+   */
+  category: string | null
 }
 
 export interface RuleEvaluationResult {
@@ -86,13 +93,37 @@ function meetsConfidenceThreshold(
 }
 
 /**
- * Extract the categorical label from an ai_decision.result. The AI
- * Output Contract permits `result` to be any JSON value; by convention
- * we look for `result.category` as the string label that maps to
- * automation_rules.trigger_type. If absent, returns null and the
- * decision will not match any categorical trigger.
+ * Path F (2026-05-09) — Hybrid category resolver.
+ *
+ * Reads the categorical label that maps to `automation_rules.trigger_type`
+ * with two-stage fallback:
+ *
+ *   1. Top-level `ai_decisions.category` column (added by
+ *      20260509130000_phase3_ai_decisions_category.sql; populated by
+ *      persistence.ts when validator accepts the optional top-level field).
+ *      This is the preferred surface — column-level, indexable, no JSONB
+ *      traversal, validator-trimmed.
+ *
+ *   2. Legacy `result.category` JSONB path. Preserved verbatim from the
+ *      pre-Path-F shape so any AI response that emits category INSIDE
+ *      result (rather than at the top level) still triggers rules. Also
+ *      covers historical ai_decisions rows where the column is NULL but
+ *      the producer happened to embed a category in result.
+ *
+ * Returns null when neither surface yields a non-empty string. The
+ * automation-engine treats null as "no categorical trigger" — no rule
+ * auto-fires for that decision (intentional safety property; preserves
+ * dormant-by-default behavior pre-prompt-tuning rollout).
  */
-function extractCategory(result: unknown): string | null {
+function extractCategory(
+  decision: Pick<AIDecisionRow, 'category' | 'result'>,
+): string | null {
+  // Stage 1: top-level column.
+  if (typeof decision.category === 'string' && decision.category.length > 0) {
+    return decision.category
+  }
+  // Stage 2: legacy result.category JSONB path (fallback shim).
+  const result = decision.result
   if (result && typeof result === 'object' && !Array.isArray(result)) {
     const cat = (result as { category?: unknown }).category
     if (typeof cat === 'string' && cat.length > 0) return cat
@@ -145,7 +176,7 @@ export async function evaluateRulesForAIDecision(
   // 1. Fetch the AI decision (org-scoped lookup).
   const { data: aiDecision, error: aiErr } = await supabaseAdmin
     .from('ai_decisions')
-    .select('id, org_id, type, result, confidence_score, status, reasoning_steps, trace_id')
+    .select('id, org_id, type, result, confidence_score, status, reasoning_steps, trace_id, category')
     .eq('id', aiDecisionId)
     .eq('org_id', orgId)
     .maybeSingle()
@@ -158,7 +189,7 @@ export async function evaluateRulesForAIDecision(
   }
   const decision = aiDecision as AIDecisionRow
 
-  const category = extractCategory(decision.result)
+  const category = extractCategory(decision)
 
   // 2. Fetch enabled rules for org.
   const { data: rules, error: rulesErr } = await supabaseAdmin
@@ -225,7 +256,7 @@ export async function executeRule(
   if (aiDecisionId) {
     const { data: dec, error: decErr } = await supabaseAdmin
       .from('ai_decisions')
-      .select('id, org_id, type, result, confidence_score, status, reasoning_steps, trace_id')
+      .select('id, org_id, type, result, confidence_score, status, reasoning_steps, trace_id, category')
       .eq('id', aiDecisionId)
       .eq('org_id', orgId)
       .maybeSingle()

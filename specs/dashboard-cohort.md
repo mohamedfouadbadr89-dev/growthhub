@@ -466,4 +466,594 @@ FLOW:
 user → order → attribution → cohort → LTV → dashboard → decision engine
 
 
+
+ COMPETITOR INTELLIGENCE LAYER
+
+PRIMARY REFERENCES:
+
+- Northbeam
+
+- Triple Whale
+
+- Amplitude
+
+- Mixpanel
+
+- PostHog
+
+- Lifetimely
+
+- RevenueCat
+
+BENCHMARK AREAS:
+
+- retention cohorting
+
+- rolling cohorts
+
+- LTV forecasting
+
+- churn curves
+
+- payback windows
+
+- acquisition quality
+
+- cohort profitability
+
+- behavioral retention
+
+- cohort segmentation
+
+- survival analysis
+
+REFERENCE:
+
+[Northbeam Cohort Analysis](https://www.northbeam.io/blog/cohort-analysis-for-marketers-uncovering-trends-in-customer-behavior?utm_source=chatgpt.com)
+
+[Amplitude Cohort Analysis](https://amplitude.com/explore/cohort-analysis?utm_source=chatgpt.com)
+
+---
+
+## ⚡ RUNTIME TRUTH
+
+COHORT DATA IS:
+
+- delayed
+
+- partially complete
+
+- acquisition-biased
+
+- highly dependent on tracking quality
+
+RULES:
+
+- recent cohorts ALWAYS appear weaker initially
+
+- retention improves as cohorts mature
+
+- incomplete cohorts MUST NOT be compared equally with mature cohorts
+
+- cohort retention != product-market fit alone
+
+- retention can be distorted by seasonality
+
+SYSTEM TRUTH PRIORITY:
+
+1. warehouse events
+
+2. order events
+
+3. user activity tracking
+
+4. attribution linkage
+
+5. dashboard aggregates
+
+NEVER:
+
+- calculate retention in frontend
+
+- compute cohorts at request time
+
+- compare incomplete and mature cohorts directly
+
+REFERENCE:
+
+ [oai_citation:0‡northbeam.io](https://www.northbeam.io/blog/cohort-analysis-for-marketers-uncovering-trends-in-customer-behavior?utm_source=chatgpt.com)
+
+---
+
+## 🔄 COMPETITOR LIFECYCLE SEMANTICS
+
+COHORT FLOW:
+
+user acquisition
+
+→ activation
+
+→ retention tracking
+
+→ revenue accumulation
+
+→ LTV calculation
+
+→ cohort scoring
+
+→ profitability analysis
+
+→ optimization feedback
+
+→ acquisition decisioning
+
+RULES:
+
+- cohorts immutable after processing window closes
+
+- recalculation creates new cohort snapshot
+
+- dashboard reads pre-aggregated state only
+
+- retention and revenue processed separately
+
+REFERENCE:
+
+ [oai_citation:1‡northbeam.io](https://www.northbeam.io/blog/cohort-analysis-for-marketers-uncovering-trends-in-customer-behavior?utm_source=chatgpt.com)
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- active user definition
+
+- churn definition
+
+- resurrection logic
+
+- rolling retention semantics
+
+- bracket retention semantics
+
+- cohort maturity scoring
+
+- timezone normalization
+
+- refund handling
+
+- subscription renewals
+
+- reactivation attribution
+
+- bot filtering
+
+- anonymous-to-user merge logic
+
+- event deduplication
+
+- retention confidence
+
+- delayed conversion ingestion
+
+REQUIRED BEFORE SCALE:
+
+- standardized retention definitions
+
+- lifecycle state definitions
+
+- retention audit semantics
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- retention decline means product issue
+
+- high retention means profitability
+
+- cohorts are comparable cross-season
+
+- acquisition source quality remains stable
+
+- all retained users are active users
+
+- cohort revenue is final
+
+- retention equals engagement
+
+- cohorts stabilize quickly
+
+RISKS:
+
+- misleading retention narratives
+
+- false PMF assumptions
+
+- CAC misallocation
+
+- distorted LTV forecasting
+
+- cohort survivorship bias
+
+- invalid acquisition scaling
+
+REFERENCE:
+
+ [oai_citation:2‡magnetmonster.com](https://www.magnetmonster.com/blog/the-retention-marketing-strategy-bible-for-dtc-brands?utm_source=chatgpt.com)
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- GET /api/v1/dashboard/cohort/ltv
+
+- GET /api/v1/dashboard/cohort/history
+
+- POST /api/v1/dashboard/cohort/recompute
+
+- POST /api/v1/dashboard/cohort/export
+
+- POST /api/v1/dashboard/cohort/validate
+
+- GET /api/v1/dashboard/cohort/segments
+
+- GET /api/v1/dashboard/cohort/forecast
+
+MISSING FILTERS:
+
+- acquisition_source
+
+- campaign_id
+
+- device_type
+
+- signup_method
+
+- subscription_plan
+
+- traffic_type
+
+- acquisition_cost_range
+
+MISSING STATES:
+
+- partial_cohort
+
+- stale
+
+- recomputing
+
+- delayed_ingestion
+
+- low_confidence
+
+- incomplete_revenue
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+COHORT COMPUTATION CONTRACT:
+
+INPUT:
+
+- signup_events[]
+
+- activity_events[]
+
+- revenue_events[]
+
+OUTPUT:
+
+- cohort_snapshot
+
+- retention_metrics
+
+- revenue_metrics
+
+- cohort_score
+
+RULES:
+
+- backend-only execution
+
+- deterministic aggregation only
+
+- precomputed snapshots required
+
+---
+
+RETENTION CONTRACT:
+
+INPUT:
+
+- cohort_id
+
+- active_users_day_n
+
+- total_users
+
+OUTPUT:
+
+- retention_rate
+
+RULE:
+
+- active event definition centralized
+
+- frontend MUST NEVER define retention logic
+
+---
+
+LTV CONTRACT:
+
+INPUT:
+
+- cohort_id
+
+- cumulative_revenue
+
+- acquisition_cost
+
+OUTPUT:
+
+- ltv
+
+- payback_period
+
+- profitability_score
+
+RULE:
+
+- refunds included
+
+- canceled subscriptions included
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+cohort_snapshots
+
+cohort_versions
+
+cohort_scores
+
+cohort_forecasts
+
+cohort_profitability
+
+cohort_dimensions
+
+cohort_segments
+
+retention_events
+
+ltv_snapshots
+
+revenue_reconciliation
+
+cohort_jobs
+
+cohort_audit_logs
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- cohort heatmap UI
+
+- retention curve visualization
+
+- segment filters
+
+- cohort comparison cards
+
+- CSV export UI
+
+- loading/error/empty states
+
+- realtime subscriptions
+
+- cohort trend visualization
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- retention computation engine
+
+- LTV forecasting engine
+
+- churn prediction model
+
+- probabilistic forecasting
+
+- survival analysis engine
+
+- warehouse reconciliation
+
+- identity stitching logic
+
+REFERENCE:
+
+ [oai_citation:3‡northbeam.io](https://www.northbeam.io/blog/cohort-analysis-for-marketers-uncovering-trends-in-customer-behavior?utm_source=chatgpt.com)
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+COHORT GOVERNANCE:
+
+- cohort snapshots immutable
+
+- retention definitions centrally managed
+
+- cohort recomputes auditable
+
+- LTV methodology locked per org
+
+SECURITY:
+
+- org isolation mandatory
+
+- no cross-org cohort aggregation
+
+- export access audited
+
+COMPLIANCE:
+
+- GDPR-safe user aggregation
+
+- no raw user exposure in cohort UI
+
+- retention exports anonymized
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- predictive churn AI
+
+- probabilistic LTV forecasting
+
+- behavioral clustering AI
+
+- automated lifecycle recommendations
+
+- AI-generated cohort insights
+
+- causal retention modeling
+
+- reinforcement optimization
+
+RULE:
+
+- do NOT fake predictive retention accuracy
+
+REFERENCE:
+
+ [oai_citation:4‡arXiv](https://arxiv.org/abs/2504.16216?utm_source=chatgpt.com)
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- realtime cohort recompute on page load
+
+- frontend retention calculations
+
+- localStorage cohort caching
+
+- fake cohort projections
+
+- mock retention data in production
+
+- auto-generated cohort explanations
+
+- direct SQL aggregation from frontend
+
+- raw user event exposure in UI
+
+---
+
+## 🔴 COHORT MATURITY SEMANTICS
+
+COHORT MATURITY:
+
+- immature cohorts flagged separately
+
+- recent cohorts weighted differently
+
+- incomplete revenue windows visible
+
+RULES:
+
+- D30 cannot be trusted before maturity window
+
+- comparisons require aligned maturity periods
+
+- dashboards must expose cohort freshness
+
+SYSTEM MUST TRACK:
+
+- cohort maturity
+
+- ingestion lag
+
+- retention drift
+
+- revenue completeness
+
+- acquisition quality shift
+
+REFERENCE:
+
+ [oai_citation:5‡sarasanalytics.com](https://www.sarasanalytics.com/blog/shopify-cohort-analysis?utm_source=chatgpt.com)
+
+---
+
+## 📊 RETENTION INTELLIGENCE SEMANTICS
+
+IF:
+
+- strong D1
+
+AND
+
+- weak D7
+
+THEN:
+
+- onboarding quality issue
+
+---
+
+IF:
+
+- strong retention
+
+AND
+
+- weak monetization
+
+THEN:
+
+- pricing or activation issue
+
+---
+
+IF:
+
+- cohorts improving sequentially
+
+THEN:
+
+- acquisition quality or PMF improving
+
+---
+
+IF:
+
+- paid cohorts weaker than organic
+
+THEN:
+
+- scaling efficiency risk
+
+REFERENCE:
+
+ [oai_citation:6‡northbeam.io](https://www.northbeam.io/blog/beyond-acquisition-why-retention-should-be-every-marketers-priority?utm_source=chatgpt.com)
+
+ 
 ✅ DONE

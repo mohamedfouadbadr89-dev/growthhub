@@ -434,4 +434,762 @@ REASON:
 - avoid mismatch across system
 
 
+COMPETITOR INTELLIGENCE LAYER
+
+PRIMARY REFERENCES:
+
+- Motion
+
+- Triple Whale
+
+- Segwise
+
+- Marpipe
+
+- VidMob
+
+- Pencil
+
+- Foreplay
+
+- MotionApp
+
+- AppsFlyer Creative Analytics
+
+BENCHMARK AREAS:
+
+- creative fatigue detection
+
+- hook analysis
+
+- thumbstop analysis
+
+- ROAS lifecycle tracking
+
+- creative scoring systems
+
+- creative clustering
+
+- creative iteration velocity
+
+- creative winner detection
+
+- creative decay tracking
+
+- cross-platform performance normalization
+
+REFERENCE:
+
+[Motion Creative Fatigue Framework](https://motionapp.com/blog/ad-fatigue?utm_source=chatgpt.com)
+
+[Segwise Creative Analytics Guide](https://segwise.ai/blog/creative-analytics-track-measure-improve-ad-performance?utm_source=chatgpt.com)
+
+---
+
+## ⚡ RUNTIME TRUTH
+
+CREATIVES ARE:
+
+- volatile
+
+- platform-sensitive
+
+- audience-sensitive
+
+- lifecycle-dependent
+
+- attribution-sensitive
+
+RULES:
+
+- winning creatives decay over time
+
+- CTR alone is insufficient
+
+- ROAS fluctuates by attribution windows
+
+- hook effectiveness changes by audience
+
+- creatives may perform differently across placements
+
+- frequency impacts fatigue state
+
+- realtime metrics are eventually consistent
+
+SYSTEM TRUTH PRIORITY:
+
+1. verified ad platform metrics
+
+2. attribution engine
+
+3. conversion events
+
+4. spend data
+
+5. creative scoring
+
+6. dashboard aggregates
+
+NEVER:
+
+- assume a winning creative remains winning
+
+- calculate scoring in frontend
+
+- classify fatigue solely from ROAS
+
+- merge platform metrics blindly
+
+- trust partial attribution windows
+
+REFERENCE:
+
+ [oai_citation:0‡Motion](https://motionapp.com/blog/ad-fatigue?utm_source=chatgpt.com)
+
+---
+
+## 🔄 COMPETITOR LIFECYCLE
+
+CREATIVE FLOW:
+
+creative upload
+
+→ platform delivery
+
+→ impression accumulation
+
+→ hook evaluation
+
+→ engagement analysis
+
+→ conversion attribution
+
+→ fatigue detection
+
+→ score recalculation
+
+→ status transition
+
+→ scale / refresh / pause
+
+LIFECYCLE STATES:
+
+- testing
+
+- learning
+
+- scaling
+
+- saturated
+
+- fatigue
+
+- retired
+
+RULES:
+
+- creatives require historical context
+
+- lifecycle transitions are gradual
+
+- fatigue is signal-based
+
+- platform delivery impacts performance
+
+REFERENCE:
+
+ [oai_citation:1‡Darkroom Agency](https://www.darkroomagency.com/observatory/what-is-performance-creative-and-how-does-it-drive-results?utm_source=chatgpt.com)
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- attribution windows
+
+- placement normalization
+
+- frequency thresholds
+
+- platform weighting
+
+- audience overlap
+
+- creative version lineage
+
+- creative iteration hierarchy
+
+- hook taxonomy
+
+- visual taxonomy
+
+- fatigue confidence scoring
+
+- creative saturation rules
+
+- benchmark normalization
+
+- platform-specific CTR standards
+
+- engagement quality weighting
+
+- organic vs paid separation
+
+- creative refresh lifecycle
+
+- multi-asset creatives
+
+- creative variants
+
+- UGC vs branded classification
+
+- holdout testing
+
+- asset inheritance
+
+REQUIRED BEFORE SCALE:
+
+- canonical creative taxonomy
+
+- creative lifecycle governance
+
+- attribution standardization
+
+- fatigue scoring model
+
+REFERENCE:
+
+ [oai_citation:2‡segwise.ai](https://segwise.ai/blog/creative-analytics-track-measure-improve-ad-performance?utm_source=chatgpt.com)
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- high CTR means profitability
+
+- high ROAS means scalability
+
+- fatigue equals creative failure
+
+- hook rate equals purchase intent
+
+- platform metrics are identical
+
+- attribution windows are stable
+
+- one creative works across all audiences
+
+- spend growth means creative health
+
+RISKS:
+
+- false winner detection
+
+- overscaling fatigued creatives
+
+- incorrect budget allocation
+
+- delayed fatigue response
+
+- platform reporting mismatch
+
+- creative duplication waste
+
+- inaccurate executive reporting
+
+REFERENCE:
+
+ [oai_citation:3‡Hawky](https://hawky.ai/blog/identify-fix-creative-fatigue-ads?utm_source=chatgpt.com)
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- GET /api/v1/dashboard/creatives/overview
+
+- GET /api/v1/dashboard/creatives/top
+
+- GET /api/v1/dashboard/creatives/fatigue
+
+- GET /api/v1/dashboard/creatives/trends
+
+- GET /api/v1/dashboard/creatives/benchmarks
+
+- GET /api/v1/dashboard/creatives/platforms
+
+- GET /api/v1/dashboard/creatives/history
+
+- GET /api/v1/dashboard/creatives/variants
+
+- POST /api/v1/dashboard/creatives/refresh
+
+- POST /api/v1/dashboard/creatives/export
+
+MISSING FILTERS:
+
+- adset_id
+
+- ad_id
+
+- placement
+
+- audience_segment
+
+- funnel_stage
+
+- creative_type
+
+- lifecycle_state
+
+- fatigue_status
+
+- format
+
+- attribution_model
+
+MISSING STATES:
+
+- delayed_attribution
+
+- learning_phase
+
+- partial_sync
+
+- stale_metrics
+
+- fatigue_detected
+
+- low_confidence
+
+- recalculating
+
+- awaiting_conversion_window
+
+- incomplete_platform_data
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+CREATIVE SCORING CONTRACT:
+
+INPUT:
+
+- impressions
+
+- clicks
+
+- spend
+
+- conversions
+
+- revenue
+
+- hook_rate
+
+- thumb_stop_rate
+
+OUTPUT:
+
+- score
+
+- status
+
+- trend
+
+- fatigue_level
+
+RULES:
+
+- backend-only scoring
+
+- deterministic formulas
+
+- historical comparison mandatory
+
+REFERENCE:
+
+ [oai_citation:4‡segwise.ai](https://segwise.ai/blog/creative-analytics-track-measure-improve-ad-performance?utm_source=chatgpt.com)
+
+---
+
+FATIGUE DETECTION CONTRACT:
+
+INPUT:
+
+- rolling_ctr
+
+- rolling_roas
+
+- frequency
+
+- hook_decay
+
+- engagement_decay
+
+OUTPUT:
+
+- fatigue_status
+
+- fatigue_score
+
+- recommended_action
+
+RULES:
+
+- no frontend fatigue inference
+
+- rolling windows required
+
+- platform-aware thresholds
+
+REFERENCE:
+
+ [oai_citation:5‡Hawky](https://hawky.ai/blog/identify-fix-creative-fatigue-ads?utm_source=chatgpt.com)
+
+---
+
+TOP CREATIVE CONTRACT:
+
+INPUT:
+
+- scoring
+
+- attribution
+
+- trend
+
+- spend_threshold
+
+OUTPUT:
+
+- ranked_creatives[]
+
+RULES:
+
+- minimum spend threshold required
+
+- exclude insufficient data
+
+- deduplicate variants
+
+---
+
+CREATIVE TREND CONTRACT:
+
+INPUT:
+
+- current_period
+
+- previous_period
+
+OUTPUT:
+
+- trend_percentage
+
+- lifecycle_state
+
+RULES:
+
+- compare equivalent windows
+
+- exclude incomplete attribution periods
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+creative_variants
+
+creative_lifecycle
+
+creative_fatigue
+
+creative_benchmarks
+
+creative_platform_metrics
+
+creative_status_history
+
+creative_score_history
+
+creative_taxonomy
+
+creative_elements
+
+creative_hooks
+
+creative_audiences
+
+creative_sync_logs
+
+creative_refresh_jobs
+
+creative_alerts
+
+creative_versioning
+
+creative_performance_windows
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- creative dashboards
+
+- top creative cards
+
+- fatigue tables
+
+- creative galleries
+
+- filters
+
+- sorting
+
+- search
+
+- pagination
+
+- export actions
+
+- realtime subscriptions
+
+- loading/error/empty states
+
+- platform badges
+
+- trend indicators
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- creative scoring engine
+
+- fatigue prediction engine
+
+- attribution reconciliation
+
+- automated creative optimization
+
+- autonomous creative scaling
+
+- platform bid optimization
+
+- creative generation systems
+
+- creative semantic analysis engine
+
+REFERENCE:
+
+ [oai_citation:6‡segwise.ai](https://segwise.ai/blog/creative-analytics-track-measure-improve-ad-performance?utm_source=chatgpt.com)
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+CREATIVE GOVERNANCE:
+
+- score formulas versioned
+
+- fatigue logic auditable
+
+- creative lifecycle immutable historically
+
+- attribution windows standardized
+
+SECURITY:
+
+- org-level isolation mandatory
+
+- platform tokens server-side only
+
+- creative assets permission-scoped
+
+COMPLIANCE:
+
+- creative audit logs immutable
+
+- export activity logged
+
+- asset ownership traceable
+
+RULES:
+
+- all platform syncs audited
+
+- all recalculations logged
+
+- all scoring deterministic
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- AI-generated creative scoring
+
+- autonomous creative generation
+
+- AI fatigue prediction
+
+- AI hook analysis
+
+- multimodal semantic creative analysis
+
+- automated ad duplication
+
+- autonomous scaling recommendations
+
+- AI-generated creative briefs
+
+RULE:
+
+- analytics must remain deterministic initially
+
+REFERENCE:
+
+ [oai_citation:7‡segwise.ai](https://segwise.ai/blog/creative-analytics-track-measure-improve-ad-performance?utm_source=chatgpt.com)
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- frontend ROAS calculations
+
+- frontend fatigue scoring
+
+- browser-side attribution logic
+
+- automatic AI creative generation on GET
+
+- uncached scoring recomputation
+
+- fake creative metrics
+
+- hidden score manipulation
+
+- direct platform API calls from frontend
+
+- automatic scaling execution
+
+- auto-generated creative statuses in UI
+
+---
+
+## 🔴 CREATIVE FATIGUE SEMANTICS
+
+FATIGUE SIGNALS:
+
+- CTR decay
+
+- rising CPC
+
+- falling ROAS
+
+- hook rate decline
+
+- frequency saturation
+
+- conversion decay
+
+RULES:
+
+- fatigue is gradual
+
+- fatigue != failure
+
+- creatives may recover with audience refresh
+
+- hook decay may occur before ROAS decay
+
+- frequency is lagging indicator
+
+REFERENCE:
+
+ [oai_citation:8‡Hawky](https://hawky.ai/blog/identify-fix-creative-fatigue-ads?utm_source=chatgpt.com)
+
+---
+
+## 📊 STRATEGIC CREATIVE INTELLIGENCE
+
+IF:
+
+- CTR rising
+
+AND
+
+- ROAS falling
+
+THEN:
+
+- low-intent engagement risk
+
+---
+
+IF:
+
+- hook rate strong
+
+BUT
+
+- conversion weak
+
+THEN:
+
+- messaging mismatch risk
+
+---
+
+IF:
+
+- ROAS strong
+
+BUT
+
+- frequency rapidly rising
+
+THEN:
+
+- fatigue risk emerging
+
+---
+
+IF:
+
+- one creative dominates spend
+
+THEN:
+
+- creative concentration dependency risk
+
+---
+
+IF:
+
+- creatives refreshing frequently
+
+BUT
+
+- performance stagnant
+
+THEN:
+
+- strategic creative framework failure
+
+REFERENCE:
+
+ [oai_citation:9‡Motion](https://motionapp.com/blog/ad-fatigue?utm_source=chatgpt.com)
+
+ 
+
 ✅ DONE
