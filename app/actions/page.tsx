@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Sparkles, CheckCircle, Zap, Activity } from "lucide-react";
 
 type PlatformFilter = "All" | "Meta" | "Google" | "TikTok" | "Snapchat";
@@ -404,9 +405,16 @@ export default function ActionsPage() {
                       {deploying[action.id] ? "Deploying…" : "Deploy Now"}
                     </button>
                   )}
-                  <button className="px-4 py-3 bg-surface-container-low text-foreground rounded-xl text-xs font-bold hover:bg-surface-container-high transition-colors font-body">
+                  {/* Navigation-only exposure to the existing Action Detail
+                      mocked-shell at /actions/[id]. NO data wiring, NO backend
+                      fetch, NO state mutation. Preserves DEFERRED-BY-GOVERNANCE
+                      classification per continuation #22 — frontend Link only. */}
+                  <Link
+                    href={`/actions/${action.id}`}
+                    className="px-4 py-3 bg-surface-container-low text-foreground rounded-xl text-xs font-bold hover:bg-surface-container-high transition-colors font-body inline-flex items-center"
+                  >
                     Inspect Logic
-                  </button>
+                  </Link>
                 </div>
               </div>
             );

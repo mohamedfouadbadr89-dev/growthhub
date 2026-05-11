@@ -321,5 +321,240 @@ result → feeds back to:
 - decision engine
 - audience scoring
 
+
+GOVERNANCE AUDIT LAYER
+
+Runtime Truth
+
+CURRENT REALITY:
+
+* app/actions/[id]/page.tsx is currently a mocked-shell UI
+* page renders successfully through dynamic routing
+* frontend data is local mocked state only
+* NO real recommendation engine exists yet
+* NO real simulation engine exists yet
+* NO realtime execution pipeline exists yet
+* backend execution substrate EXISTS separately via executeAction
+* actions_library EXISTS as execution template catalog
+* decision_history EXISTS as audit + execution history layer
+* Action Detail UI currently does NOT reflect runtime backend truth
+
+⸻
+
+Competitor Lifecycle
+
+Typical competitor flow:
+
+AI insight
+→ recommendation
+→ scoring
+→ simulation
+→ approval
+→ execution
+→ rollback
+→ reporting
+
+Current system status:
+
+* execution substrate exists
+* recommendation lifecycle authority DOES NOT exist yet
+* scoring authority incomplete
+* simulation authority missing
+* rollback authority missing
+
+This page is currently a PREVIEW of a future lifecycle.
+
+NOT a fully wired runtime system.
+
+⸻
+
+Missing Semantics
+
+The following semantic layers are currently undefined or incomplete:
+
+* recommendation ownership
+* recommendation lifecycle
+* confidence semantics
+* impact scoring semantics
+* risk semantics
+* simulation semantics
+* approval semantics
+* rollback semantics
+* realtime execution semantics
+* execution visibility semantics
+
+⸻
+
+Dangerous Assumptions
+
+The frontend MUST NOT assume:
+
+* displayed confidence is real
+* displayed simulation is real
+* displayed impact score is real
+* displayed risks are runtime validated
+* execution has actually occurred
+* automation exists behind UI controls
+* rollback protection exists
+* realtime exists
+* recommendation engine exists
+
+UI state MUST NOT imply backend guarantees.
+
+⸻
+
+Spec Gaps
+
+The following architecture gaps currently exist:
+
+* missing recommendations authority layer
+* missing recommendation state machine
+* missing simulation engine specification
+* missing execution approval specification
+* missing rollback specification
+* missing realtime execution specification
+* missing recommendation-generation specification
+
+The current page spec exceeds current backend reality.
+
+⸻
+
+Required Backend Contracts
+
+Future safe implementation requires:
+
+GET /api/v1/actions/:id
+→ ActionDetail authoritative response
+
+POST /api/v1/actions/:id/execute
+→ governed execution entrypoint
+
+Future required contracts may include:
+
+* simulation contracts
+* recommendation contracts
+* approval contracts
+* rollback contracts
+* realtime event contracts
+
+These contracts DO NOT fully exist yet.
+
+⸻
+
+Required Tables
+
+Current runtime already includes:
+
+* actions_library
+* decision_history
+
+Future implementation may require:
+
+* recommendations
+* recommendation_scores
+* recommendation_simulations
+* action_approvals
+* action_rollbacks
+* action_execution_events
+
+DO NOT implement prematurely.
+
+⸻
+
+Execution Boundaries
+
+Frontend responsibilities:
+
+* rendering only
+* user interaction only
+* explicit execution initiation only
+
+Frontend MUST NEVER:
+
+* calculate scoring
+* calculate risk
+* generate simulations
+* trigger AI automatically
+* execute platform mutations directly
+* own execution state machine
+
+Backend owns ALL execution truth.
+
+⸻
+
+Governance Boundaries
+
+This page is GOVERNANCE-DEFERRED.
+
+Allowed:
+
+* mocked-shell rendering
+* routing
+* safe frontend exposure
+* isolated UI iteration
+
+NOT allowed:
+
+* speculative backend wiring
+* fake orchestration
+* hidden execution systems
+* implicit automation
+* recommendation engine invention
+* fake runtime guarantees
+
+⸻
+
+What Claude Can Safely Implement
+
+Claude MAY safely implement:
+
+* routing exposure
+* isolated UI rendering
+* mocked-shell improvements
+* loading states
+* error states
+* empty states
+* frontend-only interaction polish
+* component isolation
+* governance-safe refactors
+
+WITHOUT backend expansion.
+
+⸻
+
+What MUST Remain Deferred
+
+The following MUST remain deferred until architecture authority exists:
+
+* recommendation engine
+* confidence engine
+* risk engine
+* simulation engine
+* rollback engine
+* realtime execution
+* approval workflows
+* execution orchestration
+* recommendation lifecycle
+* autonomous execution systems
+
+⸻
+
+What Should NEVER Exist
+
+The system MUST NEVER contain:
+
+* direct frontend AI calls
+* direct frontend execution
+* hidden autonomous execution
+* fake execution success
+* fake runtime guarantees
+* client-side scoring truth
+* client-side risk authority
+* uncached AI execution
+* implicit AI execution on page load
+* frontend-owned orchestration
+* execution without audit trail
+
+
 ✅ DONE
 
