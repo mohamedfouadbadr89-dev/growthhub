@@ -654,3 +654,587 @@ into workflow.edges
 - NO static JSX nodes
 - NO hardcoded logic in UI
 - ALL logic MUST come from workflow state
+
+
+
+WORKFLOW ORCHESTRATION SEMANTICS LAYER
+
+PURPOSE
+
+automation builder is:
+
+* workflow composition layer
+* orchestration editor
+* runtime-safe workflow generator
+
+automation builder is NOT:
+
+* execution engine
+* campaign mutation layer
+* direct automation runtime
+
+⸻
+
+🔗 BUILDER SYSTEM BOUNDARY
+
+workflow_builder
+→ produces
+workflow_definition
+→ consumed by
+automation_runtime
+→ dispatches
+executeAction()
+
+⸻
+
+RULES:
+
+* builder NEVER executes actions directly
+* builder NEVER mutates campaigns directly
+* builder ONLY generates orchestration definitions
+* runtime execution belongs to execution engine ONLY
+
+⸻
+
+BLOCK:
+
+* NO direct executeAction() from builder
+* NO external API execution from frontend
+* NO direct campaign updates from canvas nodes
+
+⸻
+
+🧬 WORKFLOW GRAPH SEMANTICS
+
+NODE TYPES
+
+supported_nodes:
+
+* trigger
+* condition
+* branch
+* delay
+* action
+* approval
+* rollback
+* notification
+* ai_recommendation
+* split_test
+* webhook
+* custom_logic
+
+⸻
+
+NODE LIFECYCLE
+
+node_states:
+
+* draft
+* configured
+* validated
+* active
+* paused
+* failed
+* archived
+
+⸻
+
+RULE:
+
+* invalid nodes MUST block activation
+* archived nodes MUST remain immutable
+* failed nodes MUST surface runtime diagnostics
+
+⸻
+
+🔁 ORCHESTRATION FLOW MODEL
+
+canonical_runtime_flow:
+
+event
+→ trigger node
+→ condition evaluation
+→ routing logic
+→ approval gate
+→ action queue
+→ execution engine
+→ execution logs
+→ feedback signals
+→ optimization layer
+
+⸻
+
+🧠 VISUAL WORKFLOW ENGINE
+
+CANVAS SEMANTICS
+
+canvas MUST support:
+
+* graph-based orchestration
+* directional edge validation
+* multi-branch logic
+* node grouping
+* zoom/pan virtualization
+* realtime node updates
+* execution overlays
+* state-aware rendering
+
+⸻
+
+NODE POSITION SYSTEM
+
+RULES:
+
+* node positions MUST persist
+* canvas state MUST restore
+* edges MUST recompute dynamically
+* disconnected nodes MUST surface warnings
+
+⸻
+
+🔗 EDGE ORCHESTRATION RULES
+
+edges represent:
+
+* execution order
+* dependency routing
+* conditional branching
+
+⸻
+
+VALIDATION:
+
+BLOCK IF:
+
+* circular loops detected
+* orphan nodes detected
+* invalid branch merges
+* missing terminal action
+* isolated action nodes
+
+⸻
+
+⚠️ APPROVAL ORCHESTRATION
+
+approval nodes required for:
+
+* high budget impact
+* campaign pausing
+* bid spikes
+* bulk mutations
+* external webhooks
+
+⸻
+
+approval_states:
+
+* pending
+* approved
+* rejected
+* expired
+
+⸻
+
+RULES:
+
+* rejected flows MUST terminate safely
+* expired approvals MUST invalidate execution
+* approval events MUST be logged
+
+⸻
+
+🧪 SIMULATION & DRY RUN ENGINE
+
+simulation_mode: REQUIRED
+
+simulation MUST include:
+
+* projected spend delta
+* projected ROAS delta
+* estimated execution frequency
+* affected entities
+* rollback feasibility
+* execution risk
+
+⸻
+
+RULES:
+
+* simulations MUST NOT mutate real systems
+* dry runs MUST use historical snapshots
+* simulations MUST remain isolated per org
+
+⸻
+
+🔒 WORKFLOW SAFETY LAYER
+
+EXECUTION SAFETY
+
+safety_checks:
+
+* budget thresholds
+* duplicate actions
+* recursive loops
+* unsafe scaling
+* platform policy violations
+* missing permissions
+
+⸻
+
+BLOCK IF:
+
+* risk_score > allowed_threshold
+* workflow overlaps existing active workflow
+* cooldown conflict exists
+* execution frequency exceeds limits
+
+⸻
+
+⏱ COOLDOWN + THROTTLING
+
+workflow MUST define:
+
+* cooldown_minutes
+* max_runs_per_hour
+* max_runs_per_day
+* concurrency_limit
+
+⸻
+
+RULES:
+
+* duplicate events MUST collapse
+* repeated executions MUST throttle
+* execution storms MUST auto-block
+
+⸻
+
+🔁 ROLLBACK ORCHESTRATION
+
+rollback_supported: true
+
+rollback_graph MUST support:
+
+* restore budget
+* resume campaign
+* revert bids
+* restore previous workflow state
+
+⸻
+
+RULES:
+
+* rollback snapshots REQUIRED
+* rollback events MUST audit
+* rollback MUST include reason metadata
+
+⸻
+
+🧠 AI WORKFLOW GENERATION
+
+AI generation is:
+
+* assistive only
+* recommendation-based
+* draft-only generation
+
+⸻
+
+AI MUST generate:
+
+* workflow graph
+* node structure
+* conditions
+* explanations
+* risk assessment
+* approval requirements
+
+⸻
+
+AI MUST NOT:
+
+* auto-activate workflows
+* bypass validation
+* create destructive flows silently
+* create execution loops
+
+⸻
+
+🧠 AI REASONING OUTPUT
+
+generated workflow MUST include:
+
+* why_generated
+* supporting_signals[]
+* estimated_impact
+* risk_score
+* approval_requirement
+* simulation_summary
+
+⸻
+
+📊 BUILDER RUNTIME OBSERVABILITY
+
+EXECUTION VISIBILITY
+
+builder MUST surface:
+
+* execution history
+* node execution count
+* last execution time
+* failure rate
+* average runtime
+* blocked executions
+* rollback history
+
+⸻
+
+🧾 AUDIT + EVENT SYSTEM
+
+workflow audit logs MUST include:
+
+* workflow_id
+* execution_id
+* trigger_event
+* validation_result
+* approval_state
+* execution_duration
+* rollback_status
+* affected_entities
+* user_id
+* org_id
+
+⸻
+
+🔴 REALTIME EVENT ENGINE
+
+SOURCE:
+
+SUPABASE_REALTIME
+
+CHANNELS:
+
+* workflow_runtime:{org_id}
+* workflow_state:{org_id}
+* workflow_validation:{org_id}
+
+⸻
+
+EVENTS:
+
+* workflow_activated
+* workflow_paused
+* execution_started
+* execution_completed
+* execution_failed
+* rollback_triggered
+* approval_requested
+* approval_resolved
+
+⸻
+
+RULES:
+
+* realtime events MUST deduplicate
+* frontend MUST subscribe safely
+* execution updates MUST stream incrementally
+
+⸻
+
+🧬 VERSIONING + SNAPSHOTS
+
+IMMUTABLE EXECUTION SNAPSHOT
+
+active workflows MUST use:
+
+* frozen graph
+* frozen validation rules
+* frozen risk profile
+
+⸻
+
+RULE:
+
+editing workflow MUST create:
+
+* new workflow version
+* new validation cycle
+* new execution snapshot
+
+⸻
+
+🔗 BUILDER ↔ STRATEGY RELATIONSHIP
+
+strategy templates:
+
+* generate starter workflows
+
+builder:
+
+* edits orchestration graph
+
+runtime:
+
+* executes validated workflow
+
+⸻
+
+RULES:
+
+* strategies own templates
+* builder owns orchestration editing
+* runtime owns execution
+
+⸻
+
+📊 UI REQUIREMENTS
+
+BUILDER CANVAS
+
+canvas MUST support:
+
+* drag/drop nodes
+* connection previews
+* execution overlays
+* minimap
+* zoom controls
+* undo/redo
+* node duplication
+* branch visualization
+
+⸻
+
+RIGHT CONFIG PANEL
+
+config panel MUST expose:
+
+* node metadata
+* execution risk
+* approval requirements
+* validation state
+* compatible platforms
+* cooldown settings
+* rollback support
+
+⸻
+
+AI DRAWER
+
+AI drawer MUST expose:
+
+* prompt history
+* cached generations
+* recommendation reasoning
+* risk warnings
+* suggested templates
+
+⸻
+
+🧠 COMPETITOR SEMANTIC REFERENCES
+
+REFERENCE MODELS:
+
+Madgicx:
+
+* automation templates
+* AI workflow recommendations
+* stop-loss orchestration
+* scaling automations
+* recommendation ranking
+Braze Canvas:
+
+* orchestration graph semantics
+* journey builder logic
+* execution lifecycle
+* validation + approval semantics
+
+Triple Whale:
+
+* profitability-aware automation
+* blended signal orchestration
+
+Northbeam:
+
+* attribution-aware decisions
+* anomaly-driven triggers
+
+Lifetimely:
+
+* LTV-aware workflow prioritization
+* cohort-driven automation semantics
+
+AdCreative.ai:
+
+* creative fatigue lifecycle
+* creative rotation semantics
+
+Markifact:
+
+* orchestration operations semantics
+* workflow lifecycle management
+
+Revealbot:
+
+* advanced automation rules
+* multi-platform execution semantics
+⸻
+
+⚠️ GOVERNANCE RULES
+
+HARD LOCKS
+
+* NO direct execution from builder UI
+* NO executeAction() from frontend
+* NO runtime workflow mutation
+* NO AI auto-activation
+* NO unsafe workflow bypass
+
+⸻
+
+🧠 FUTURE PHASE ALIGNMENT
+
+THIS PAGE DEPENDS ON:
+
+* automation runtime engine
+* validation engine
+* approval engine
+* rollback engine
+* signals engine
+* realtime orchestration layer
+* execution observability layer
+
+⸻
+
+CURRENT STATUS:
+
+frontend builder shell = implemented
+workflow runtime = partial
+approval engine = partial
+rollback engine = not implemented
+execution observability = partial
+AI orchestration generation = partial
+
+⸻
+
+🧾 SAFE IMPLEMENTATION ORDER
+
+1. workflow graph API
+2. validation engine
+3. approval engine
+4. simulation engine
+5. rollback system
+6. realtime orchestration
+7. execution observability
+8. AI workflow generation hardening
+
+⸻
+
+DO NOT IMPLEMENT:
+
+* autonomous execution
+* self-modifying workflows
+* unrestricted AI orchestration
+* direct runtime mutation
+* unsafe multi-step execution
+
+WITHOUT EXPLICIT GOVERNANCE AUTHORIZATION

@@ -524,3 +524,684 @@ log:
 - result
 
 
+---
+
+# 🧠 RUNTIME SEMANTICS LAYER
+
+## PURPOSE
+
+automation strategies are NOT workflows
+
+automation strategies are NOT executions
+
+automation strategies are:
+- reusable orchestration templates
+- recommendation-ready playbooks
+- workflow generators
+
+---
+
+## STRATEGY SYSTEM BOUNDARY
+
+BOUNDARY:
+
+strategy_template
+→ generates
+workflow_definition
+→ produces
+execution_runs
+
+---
+
+RULES:
+
+- strategy templates NEVER execute directly
+- workflows own runtime execution
+- execution engine owns action dispatch
+- executeAction() remains canonical execution path
+
+---
+
+BLOCK:
+
+- NO strategy may bypass workflow conversion
+- NO strategy may dispatch actions directly
+- NO strategy may call external APIs directly
+
+---
+
+## CANONICAL FLOW
+
+decision/signal
+→ recommendation engine
+→ strategy recommendation
+→ user review
+→ strategy validation
+→ workflow generation
+→ workflow activation
+→ runtime trigger
+→ executeAction()
+→ decision_history
+→ automation_runs
+
+---
+
+# 🧬 STRATEGY TEMPLATE SYSTEM
+
+## TEMPLATE TYPES
+
+template_type:
+
+- stop_loss
+- scaling
+- creative_rotation
+- bid_control
+- reporting
+- budget_reallocation
+- audience_protection
+- fatigue_prevention
+- trend_amplification
+- custom
+
+---
+
+## TEMPLATE SOURCE
+
+template_source:
+
+- system
+- ai_generated
+- user_created
+- imported
+
+---
+
+RULES:
+
+- system templates are immutable
+- user templates are editable
+- ai_generated templates require review
+- imported templates require validation
+
+---
+
+# 📦 STRATEGY TEMPLATE METADATA
+
+FIELDS:
+
+- template_version
+- template_origin
+- lifecycle_stage
+- recommendation_rank
+- execution_risk
+- required_permissions
+- compatible_platforms
+- compatible_objectives
+- estimated_runtime_frequency
+- cooldown_window
+- rollback_supported
+
+---
+
+# 🧠 AI RECOMMENDATION INTELLIGENCE
+
+## RECOMMENDATION ENGINE INPUTS
+
+recommendations MUST use:
+
+- blended_roas
+- spend_velocity
+- ctr_trend
+- cpa_trend
+- cvr_trend
+- frequency_fatigue
+- creative_decay
+- attribution_delta
+- ltv_delta
+- cohort_decay
+- conversion_lag
+- platform_volatility
+
+---
+
+## SIGNAL SOURCES
+
+signal_sources:
+
+- ai_decisions
+- alerts
+- campaign_metrics
+- attribution_engine
+- creative_performance
+- audience_decay
+- budget_volatility
+- anomaly_engine
+
+---
+
+RULE:
+
+recommendations MUST NOT rely on single-metric logic
+
+---
+
+## RECOMMENDATION REASONING
+
+every recommendation MUST include:
+
+- why_recommended
+- supporting_signals[]
+- affected_entities[]
+- estimated_impact_window
+- confidence_reasoning
+- rollback_risk
+- recommendation_priority
+
+---
+
+## RECOMMENDATION PRIORITY SCORE
+
+priority_score =
+
+0.30 * financial_impact +
+0.25 * confidence +
+0.20 * execution_safety +
+0.15 * consistency +
+0.10 * urgency
+
+---
+
+# ⚠️ STRATEGY VALIDATION ENGINE
+
+validation_required: true
+
+validation_stages:
+
+- schema_validation
+- permission_validation
+- execution_validation
+- platform_validation
+- cooldown_validation
+- risk_validation
+- dependency_validation
+
+---
+
+BLOCK IF:
+
+- conflicting workflows detected
+- execution overlap detected
+- cooldown active
+- missing permissions
+- unsupported platform
+- invalid budget delta
+- unsafe automation loop
+- missing org scope
+
+---
+
+# 🔒 ORG ISOLATION RULES
+
+ALL strategy entities MUST include:
+
+- org_id
+- created_by
+- updated_by
+
+---
+
+RULES:
+
+- NO cross-org strategy visibility
+- NO shared execution state
+- NO shared cooldown state
+- NO shared recommendation cache
+
+---
+
+# 🔁 STRATEGY STATE MACHINE
+
+allowed_states:
+
+- draft
+- recommended
+- pending_review
+- validated
+- active
+- paused
+- cooling_down
+- blocked
+- archived
+- failed
+
+---
+
+## STATE TRANSITIONS
+
+draft
+→ validated
+→ active
+
+recommended
+→ pending_review
+→ validated
+→ active
+
+active
+→ paused
+→ active
+
+active
+→ cooling_down
+→ active
+
+active
+→ failed
+
+failed
+→ paused
+
+paused
+→ archived
+
+---
+
+BLOCK:
+
+- archived strategies cannot reactivate
+- failed strategies cannot auto-reactivate
+- blocked strategies require admin override
+
+---
+
+# ⏱ EXECUTION FREQUENCY CONTROL
+
+## EXECUTION WINDOWS
+
+strategy executions MUST define:
+
+- max_runs_per_hour
+- max_runs_per_day
+- cooldown_minutes
+- execution_window
+- timezone_mode
+
+---
+
+## THROTTLING
+
+prevent:
+
+- event storms
+- repeated triggers
+- recursive execution
+- duplicate workflow dispatch
+
+---
+
+# 🧠 EVENT-DRIVEN ORCHESTRATION
+
+SOURCE:
+
+SUPABASE_REALTIME
+
+CHANNELS:
+
+- strategy_triggers:{org_id}
+- strategy_state:{org_id}
+- workflow_runtime:{org_id}
+
+---
+
+## EVENT TYPES
+
+events:
+
+- decision_created
+- alert_triggered
+- metric_threshold_hit
+- creative_fatigue_detected
+- attribution_shift_detected
+- budget_anomaly_detected
+- workflow_failed
+- execution_completed
+
+---
+
+RULES:
+
+- strategies react to events
+- strategies MUST NOT poll excessively
+- realtime events MUST deduplicate
+- repeated events MUST collapse
+
+---
+
+# 🔄 DEDUPLICATION LAYER
+
+dedup_key:
+
+org_id +
+strategy_id +
+entity_id +
+event_type +
+time_bucket
+
+---
+
+RULE:
+
+duplicate events inside cooldown window MUST collapse into one execution candidate
+
+---
+
+# 🛡 EXECUTION SAFETY ENGINE
+
+## SAFETY LEVELS
+
+execution_risk:
+
+- low
+- medium
+- high
+- critical
+
+---
+
+## REQUIREMENTS
+
+high-risk strategies require:
+
+- approval
+- simulation
+- rollback capability
+
+critical-risk strategies require:
+
+- admin approval
+- dry-run validation
+- manual confirmation
+
+---
+
+## DRY RUN MODE
+
+dry_run_supported: true
+
+simulation_output:
+
+- expected_budget_change
+- expected_roas_delta
+- expected_spend_delta
+- estimated_risk
+- affected_campaigns
+
+---
+
+# 🔁 ROLLBACK SYSTEM
+
+rollback_supported: true
+
+rollback_actions:
+
+- restore_budget
+- resume_campaign
+- revert_bid
+- restore_workflow_state
+
+---
+
+RULES:
+
+- rollback MUST log reason
+- rollback MUST snapshot previous state
+- rollback MUST create audit event
+
+---
+
+# 🧾 STRATEGY AUDIT SYSTEM
+
+## REQUIRED LOGS
+
+strategy_logs MUST include:
+
+- trigger_source
+- signal_source
+- workflow_id
+- execution_id
+- validation_result
+- risk_score
+- cooldown_status
+- rollback_status
+- execution_duration
+- affected_entities
+- decision_reference_id
+
+---
+
+## AUDIT TABLES
+
+NEW TABLES:
+
+strategy_versions
+strategy_validation_logs
+strategy_execution_events
+strategy_state_history
+strategy_cooldowns
+strategy_rollbacks
+
+---
+
+# 🧠 VERSION CONTROL ENGINE
+
+## IMMUTABLE EXECUTION VERSION
+
+running workflows MUST use:
+
+- frozen strategy snapshot
+- frozen validation config
+- frozen risk profile
+
+---
+
+RULE:
+
+editing strategy MUST create:
+- new version
+- new snapshot
+- new validation cycle
+
+---
+
+# 🔗 WORKFLOW BUILDER INTEGRATION
+
+## BUILDER CONTRACT
+
+strategy activation MUST produce:
+
+workflow_definition
+
+---
+
+workflow_definition MUST contain:
+
+- trigger_graph
+- condition_graph
+- action_graph
+- rollback_graph
+- cooldown_rules
+- risk_controls
+
+---
+
+RULES:
+
+- builder owns orchestration editing
+- strategy page owns templates only
+- workflow builder owns runtime logic
+
+---
+
+# 🧠 COMPETITOR SEMANTIC REFERENCES
+
+REFERENCE MODELS:
+
+Madgicx:
+- preset automation templates
+- AI recommendation ranking
+- dynamic benchmark logic
+- strategy lifecycle
+- template customization flow
+
+Braze Canvas:
+- orchestration lifecycle
+- workflow validation
+- activation safety
+- execution graph semantics
+
+Northbeam:
+- insight-driven recommendations
+- attribution-aware decisioning
+- performance anomaly surfacing
+
+Triple Whale:
+- blended analytics signals
+- profitability-aware automation
+- signal aggregation semantics
+
+Lifetimely:
+- LTV-aware recommendations
+- cohort-aware strategy ranking
+
+AdCreative.ai:
+- creative fatigue lifecycle
+- asset rotation logic
+
+Markifact:
+- orchestration workflow semantics
+- automation operational lifecycle
+
+---
+
+# 📊 UI RUNTIME REQUIREMENTS
+
+## HERO RECOMMENDATION CARD
+
+hero card MUST include:
+
+- recommendation_reason
+- confidence_breakdown
+- affected_campaign_count
+- estimated_savings_window
+- signal_summary
+- risk_level
+- approval_requirement
+
+---
+
+## STRATEGY CARD REQUIREMENTS
+
+each card MUST expose:
+
+- execution_risk
+- compatible_platforms
+- cooldown_window
+- estimated_frequency
+- success_rate
+- recommended_for
+- last_updated_at
+- version_number
+
+---
+
+## FILTERS
+
+filters MUST support:
+
+- platform
+- objective
+- execution_risk
+- automation_level
+- lifecycle_stage
+- compatible_channel
+- recommendation_score
+
+---
+
+# ⚠️ GOVERNANCE RULES
+
+## HARD LOCKS
+
+- NO direct execution from strategies page
+- NO executeAction() calls from frontend
+- NO bypass of automation-engine
+- NO runtime workflow mutation
+- NO direct AI execution on page load
+
+---
+
+## SAFE BOUNDARY
+
+strategies page responsibilities:
+
+- display templates
+- display recommendations
+- validate activation
+- generate workflow draft
+
+NOT:
+
+- execute actions
+- mutate campaigns directly
+- bypass workflow engine
+- bypass approval system
+
+---
+
+# 🧠 FUTURE PHASE ALIGNMENT
+
+THIS PAGE DEPENDS ON:
+
+- automation_workflows subsystem
+- recommendation engine subsystem
+- workflow builder subsystem
+- signals engine
+- attribution engine
+- creative fatigue engine
+
+---
+
+CURRENT STATUS:
+
+frontend shell = implemented
+backend orchestration = partial
+recommendation engine = not implemented
+workflow runtime = partial
+strategy lifecycle runtime = not implemented
+
+---
+
+# 🧾 IMPLEMENTATION NOTES
+
+SAFE IMPLEMENTATION ORDER:
+
+1. strategy templates API
+2. recommendation engine
+3. workflow conversion
+4. validation engine
+5. cooldown engine
+6. realtime orchestration
+7. rollback system
+8. execution observability
+
+---
+
+DO NOT IMPLEMENT:
+
+- direct execution
+- multi-step orchestration runtime
+- MCP routing
+- AI auto-activation
+- autonomous execution
+
+WITHOUT EXPLICIT GOVERNANCE AUTHORIZATION

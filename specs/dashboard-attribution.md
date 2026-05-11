@@ -467,6 +467,391 @@ FLOW:
 
 execution → logs → metrics update → attribution → dashboard update
 
+## 🧠 COMPETITOR INTELLIGENCE LAYER
 
+PRIMARY REFERENCES:
+
+- Northbeam
+- Triple Whale
+- Hyros
+- Rockerbox
+- Cometly
+- SegmentStream
+
+BENCHMARK AREAS:
+
+- multi-touch attribution
+- deterministic attribution
+- blended ROAS
+- incrementality testing
+- media mix modeling
+- journey reconstruction
+- first-party tracking
+- attribution governance
+- cross-channel identity resolution
+- budget intelligence
+
+REFERENCE:
+[Northbeam](https://www.northbeam.io/?utm_source=chatgpt.com)
+[Triple Whale](https://www.triplewhale.com/?utm_source=chatgpt.com)
+
+---
+
+## ⚡ RUNTIME TRUTH
+
+ATTRIBUTION IS:
+
+- probabilistic
+- delayed
+- model-dependent
+- identity-fragmented
+
+RULES:
+
+- attribution results are NOT source-of-truth revenue
+- attribution models produce different outcomes
+- platform-reported ROAS != system-calculated ROAS
+- customer journeys may be incomplete
+- realtime dashboards may use partial ingestion
+
+SYSTEM TRUTH PRIORITY:
+
+1. warehouse events
+2. first-party tracking
+3. backend attribution engine
+4. ad-platform reported metrics
+
+NEVER:
+
+- trust frontend calculations
+- merge identity in browser
+- compute attribution client-side
+
+REFERENCE:
+ [oai_citation:0‡northbeam.io](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+---
+
+## 🔄 COMPETITOR LIFECYCLE SEMANTICS
+
+ATTRIBUTION FLOW:
+
+tracking
+→ ingestion
+→ identity stitching
+→ touchpoint normalization
+→ attribution assignment
+→ aggregation
+→ dashboard serving
+→ optimization feedback
+→ budget decisioning
+
+RULES:
+
+- attribution snapshots immutable after calculation window closes
+- recomputation creates new attribution version
+- dashboards read from processed attribution state
+- attribution engine separated from visualization layer
+
+REFERENCE:
+ [oai_citation:1‡triplewhale.com](https://www.triplewhale.com/blog/triple-whale-vs-northbeam?utm_source=chatgpt.com)
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- identity stitching logic
+- lookback windows
+- view-through attribution
+- click-through weighting
+- timezone normalization
+- offline conversion ingestion
+- attribution confidence
+- fraud filtering
+- deduplication logic
+- assisted conversion semantics
+- incrementality boundaries
+- revenue reconciliation logic
+- partial attribution handling
+- multi-device identity resolution
+
+REQUIRED BEFORE SCALE:
+
+- deterministic attribution policies
+- reconciliation standards
+- attribution audit semantics
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- Meta attribution matches Google attribution
+- every user journey is complete
+- cookies persist reliably
+- attributed revenue equals actual incrementality
+- last-click is "truth"
+- realtime attribution is final
+- campaign IDs are normalized
+- ROAS is stable across models
+
+RISKS:
+
+- double attribution
+- inflated ROAS
+- phantom conversions
+- cross-device fragmentation
+- duplicated touchpoints
+- invalid optimization decisions
+
+REFERENCE:
+ [oai_citation:2‡Cometly](https://www.cometly.com/post/marketing-attribution-platforms-ranked?utm_source=chatgpt.com)
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- POST /api/v1/dashboard/attribution/export
+- POST /api/v1/dashboard/attribution/version
+- GET /api/v1/dashboard/attribution/models
+- GET /api/v1/dashboard/attribution/history
+- POST /api/v1/dashboard/attribution/reconcile
+- POST /api/v1/dashboard/attribution/refresh
+- POST /api/v1/dashboard/attribution/validate
+
+MISSING FILTERS:
+
+- lookback_window
+- campaign_id
+- device_type
+- geo
+- first_party_only
+- assisted_only
+
+MISSING STATES:
+
+- processing
+- stale
+- partial
+- inconsistent
+- delayed_ingestion
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+ATTRIBUTION CALCULATION CONTRACT:
+
+INPUT:
+- journeys[]
+- attribution_model
+- lookback_window
+
+OUTPUT:
+- attribution_version
+- attributed_results[]
+- unattributed_revenue
+- confidence_score
+
+RULE:
+
+- deterministic execution only
+- backend-exclusive execution
+
+---
+
+IDENTITY RESOLUTION CONTRACT:
+
+INPUT:
+- anonymous_id
+- session_id
+- user_id
+- device_id
+
+OUTPUT:
+- unified_identity_id
+
+RULES:
+
+- no browser-side identity merge
+- identity graph persisted centrally
+
+---
+
+RECOMPUTE CONTRACT:
+
+FLOW:
+
+POST
+→ enqueue job
+→ process async
+→ store snapshot
+→ broadcast realtime update
+
+RULE:
+
+- recompute MUST NEVER block UI
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+attribution_versions
+attribution_jobs
+attribution_model_config
+attribution_snapshots
+identity_graph
+identity_links
+revenue_reconciliation
+channel_normalization
+campaign_mapping
+conversion_events
+tracking_failures
+attribution_audit_logs
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- attribution dashboard UI
+- model selector UX
+- loading/error states
+- chart rendering
+- optimistic processing state
+- realtime subscriptions
+- export UI
+- filtering UI
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- attribution engine
+- identity resolution system
+- MMM engine
+- incrementality testing
+- probabilistic modeling
+- warehouse reconciliation
+- tracking recovery logic
+
+REFERENCE:
+ [oai_citation:3‡northbeam.io](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+ATTRIBUTION GOVERNANCE:
+
+- attribution model locked per org
+- all recomputes auditable
+- historical attribution immutable
+- attribution snapshots versioned
+
+SECURITY:
+
+- org isolation mandatory
+- no cross-org aggregation
+- signed export generation only
+
+COMPLIANCE:
+
+- GDPR-safe identity handling
+- consent-aware attribution
+- PII isolation required
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- AI-driven attribution
+- media mix modeling
+- incrementality engine
+- causal attribution
+- predictive budget allocation
+- probabilistic identity graph
+- LTV-weighted attribution
+- cross-platform deterministic stitching
+
+RULE:
+
+- do NOT fake enterprise attribution accuracy
+
+REFERENCE:
+ [oai_citation:4‡arXiv](https://arxiv.org/abs/2012.11403?utm_source=chatgpt.com)
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- frontend attribution calculations
+- realtime recompute on page load
+- localStorage attribution cache
+- hidden attribution adjustments
+- auto-changing attribution model
+- client-side identity stitching
+- direct ad platform trust
+- mock attribution in production
+- synchronous recompute requests
+
+---
+
+## 🔴 ATTRIBUTION CONFIDENCE SEMANTICS
+
+ATTRIBUTION CONFIDENCE:
+
+- represents model certainty
+- NOT factual truth
+
+RULES:
+
+- low-confidence journeys flagged
+- unattributed revenue always visible
+- dashboards must expose attribution gaps
+
+SYSTEM MUST TRACK:
+
+- attribution drift
+- identity fragmentation
+- unattributed percentage
+- stale attribution windows
+- duplicate conversion risk
+
+REFERENCE:
+ [oai_citation:5‡Stormy AI](https://stormy.ai/blog/triple-whale-vs-northbeam-2026-attribution-guide?utm_source=chatgpt.com)
+
+---
+
+## 📊 BUDGET INTELLIGENCE SEMANTICS
+
+RULES:
+
+- assist-heavy channels are not low-performing
+- closing channels are not always acquisition drivers
+- blended ROAS must be explainable
+- attribution != incrementality
+
+IF:
+
+- Meta assists high
+AND
+- Google closes conversions
+
+THEN:
+
+- preserve upper-funnel spend
+- avoid last-click bias
+
+REFERENCE:
+ [oai_citation:6‡Cometly](https://www.cometly.com/post/marketing-attribution-platforms-ranked?utm_source=chatgpt.com)
 
 ✅ DONE

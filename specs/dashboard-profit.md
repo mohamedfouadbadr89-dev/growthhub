@@ -468,4 +468,645 @@ FLOW:
 
 execution → logs → metrics → attribution → segments → profit → dashboard
 
+
+
+
+ 🧠 COMPETITOR INTELLIGENCE LAYER
+
+PRIMARY REFERENCES:
+
+- Northbeam
+
+- Triple Whale
+
+- Peel Insights
+
+- Lifetimely
+
+- Segmetrics
+
+- Polar Analytics
+
+- Wicked Reports
+
+BENCHMARK AREAS:
+
+- contribution profit
+
+- net margin visibility
+
+- channel profitability
+
+- CAC efficiency
+
+- blended profitability
+
+- payback analysis
+
+- operational cost visibility
+
+- realtime margin tracking
+
+- cohort profitability
+
+- incremental profit analysis
+
+REFERENCE:
+
+[Northbeam](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+[Northbeam Reviews](https://www.g2.com/products/northbeam/reviews?utm_source=chatgpt.com)
+
+---
+
+## ⚡ RUNTIME TRUTH
+
+PROFIT IS:
+
+- delayed
+
+- attribution-sensitive
+
+- refund-sensitive
+
+- inventory-sensitive
+
+- operationally distorted
+
+RULES:
+
+- revenue ≠ realized profit
+
+- ad spend updates faster than COGS
+
+- operational costs may lag
+
+- refunds alter historical profitability
+
+- attribution affects channel profit accuracy
+
+- gross profit and net profit MUST remain separate
+
+SYSTEM TRUTH PRIORITY:
+
+1. verified financial transactions
+
+2. attributed spend
+
+3. refund ledger
+
+4. operational cost snapshots
+
+5. dashboard aggregates
+
+NEVER:
+
+- compute profitability in frontend
+
+- calculate CAC from raw spend only
+
+- use estimated margins as source of truth
+
+- blend realized and projected profit silently
+
+REFERENCE:
+
+ [oai_citation:0‡northbeam.io](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+---
+
+## 🔄 COMPETITOR LIFECYCLE SEMANTICS
+
+PROFIT FLOW:
+
+traffic
+
+→ attribution
+
+→ conversion
+
+→ order
+
+→ refund validation
+
+→ cost allocation
+
+→ contribution margin
+
+→ net profitability
+
+→ cohort profitability
+
+→ scaling decisions
+
+RULES:
+
+- channel profitability changes over time
+
+- contribution margin separate from net margin
+
+- CAC linked to attribution engine
+
+- operational costs allocated asynchronously
+
+REFERENCE:
+
+ [oai_citation:1‡northbeam.io](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- gross vs net revenue
+
+- refund accounting
+
+- tax treatment
+
+- shipping revenue handling
+
+- currency normalization
+
+- inventory depreciation
+
+- partial refunds
+
+- delayed fulfillment cost
+
+- blended operational allocation
+
+- agency fee allocation
+
+- subscription churn impact
+
+- recurring revenue treatment
+
+- failed payment handling
+
+- multi-channel order allocation
+
+- margin confidence scoring
+
+REQUIRED BEFORE SCALE:
+
+- financial normalization rules
+
+- accounting reconciliation rules
+
+- profitability methodology standardization
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- high revenue means profitability
+
+- ROAS equals profit
+
+- CAC and CPA interchangeable
+
+- contribution margin equals net margin
+
+- operational costs fully synced
+
+- channel attribution perfectly accurate
+
+- recent profit metrics finalized
+
+RISKS:
+
+- overscaling unprofitable campaigns
+
+- incorrect executive reporting
+
+- false margin confidence
+
+- distorted CAC decisions
+
+- underreported operational costs
+
+- inaccurate board-level profitability
+
+REFERENCE:
+
+ [oai_citation:2‡G2](https://www.g2.com/products/northbeam/reviews?utm_source=chatgpt.com)
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- GET /api/v1/dashboard/profit/margin
+
+- GET /api/v1/dashboard/profit/contribution
+
+- GET /api/v1/dashboard/profit/cohorts
+
+- GET /api/v1/dashboard/profit/refunds
+
+- GET /api/v1/dashboard/profit/payback
+
+- GET /api/v1/dashboard/profit/forecast
+
+- POST /api/v1/dashboard/profit/recompute
+
+- POST /api/v1/dashboard/profit/export
+
+MISSING FILTERS:
+
+- campaign_id
+
+- acquisition_channel
+
+- product_category
+
+- subscription_plan
+
+- geo
+
+- attribution_model
+
+- customer_segment
+
+- device_type
+
+MISSING STATES:
+
+- stale_costs
+
+- delayed_refunds
+
+- incomplete_margin
+
+- attribution_mismatch
+
+- recalculating
+
+- partial_profit
+
+- low_confidence
+
+- pending_finance_sync
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+PROFIT COMPUTATION CONTRACT:
+
+INPUT:
+
+- orders[]
+
+- refunds[]
+
+- attributed_spend[]
+
+- operational_costs[]
+
+OUTPUT:
+
+- gross_profit
+
+- net_profit
+
+- contribution_margin
+
+- profit_margin
+
+RULES:
+
+- backend-only execution
+
+- immutable financial snapshots
+
+- refund-aware calculations
+
+---
+
+CAC CONTRACT:
+
+INPUT:
+
+- attributed_spend
+
+- acquired_customers
+
+OUTPUT:
+
+- cac
+
+- cohort_cac
+
+- blended_cac
+
+RULES:
+
+- attribution-linked only
+
+- deduplicated customers required
+
+---
+
+CHANNEL PROFIT CONTRACT:
+
+INPUT:
+
+- attributed_revenue
+
+- attributed_cost
+
+- operational_allocations
+
+OUTPUT:
+
+- channel_profit
+
+- margin
+
+- profitability_status
+
+RULES:
+
+- attribution engine required
+
+- operational allocation versioned
+
+REFERENCE:
+
+ [oai_citation:3‡northbeam.io](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+profit_snapshots
+
+profit_versions
+
+refund_ledger
+
+operational_allocations
+
+contribution_margin_daily
+
+gross_margin_daily
+
+profit_audit_logs
+
+financial_reconciliation
+
+profit_forecasts
+
+channel_profitability_snapshots
+
+payback_snapshots
+
+cost_sync_status
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- profit cards UI
+
+- margin visualizations
+
+- trend charts
+
+- realtime subscriptions
+
+- breakdown tables
+
+- profitability badges
+
+- filters
+
+- export buttons
+
+- loading/error/empty states
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- accounting reconciliation engine
+
+- profitability forecasting engine
+
+- financial allocation logic
+
+- refund reconciliation
+
+- margin simulation
+
+- autonomous budget shifts
+
+- finance-grade reporting engine
+
+REFERENCE:
+
+ [oai_citation:4‡northbeam.io](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+FINANCIAL GOVERNANCE:
+
+- profitability formulas versioned
+
+- cost allocation auditable
+
+- margin methodology immutable
+
+- financial snapshots reproducible
+
+SECURITY:
+
+- org-level financial isolation
+
+- export logging mandatory
+
+- financial access RBAC enforced
+
+COMPLIANCE:
+
+- accounting-safe calculations
+
+- immutable audit trail
+
+- refund history preserved
+
+- recalculation history retained
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- AI profitability forecasting
+
+- autonomous spend optimization
+
+- predictive finance modeling
+
+- causal margin attribution
+
+- generative financial recommendations
+
+- automated pricing optimization
+
+- AI-driven operational allocation
+
+RULE:
+
+- do NOT fake accounting precision
+
+REFERENCE:
+
+ [oai_citation:5‡northbeam.io](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- frontend margin calculations
+
+- realtime full financial recomputes
+
+- uncached profitability aggregation
+
+- fake revenue projections
+
+- client-side CAC computation
+
+- browser-based accounting logic
+
+- direct SQL access from frontend
+
+- automatic AI profit generation
+
+---
+
+## 🔴 PROFITABILITY SEMANTICS
+
+PROFITABILITY LAYERS:
+
+- gross revenue
+
+- contribution profit
+
+- operating profit
+
+- net profit
+
+RULES:
+
+- dashboards MUST distinguish layers clearly
+
+- contribution margin separate from net margin
+
+- refunds applied historically
+
+- operational costs versioned
+
+SYSTEM MUST TRACK:
+
+- refund impact
+
+- attribution confidence
+
+- operational lag
+
+- financial completeness
+
+- margin consistency
+
+REFERENCE:
+
+ [oai_citation:6‡northbeam.io](https://www.northbeam.io/?utm_source=chatgpt.com)
+
+---
+
+## 📊 STRATEGIC PROFIT INTELLIGENCE
+
+IF:
+
+- revenue increasing
+
+AND
+
+- margin decreasing
+
+THEN:
+
+- scaling inefficiency risk
+
+---
+
+IF:
+
+- CAC rising
+
+AND
+
+- LTV stable
+
+THEN:
+
+- acquisition deterioration
+
+---
+
+IF:
+
+- high ROAS
+
+BUT
+
+- weak contribution profit
+
+THEN:
+
+- attribution illusion
+
+---
+
+IF:
+
+- operational costs spike
+
+AND
+
+- revenue flat
+
+THEN:
+
+- margin compression risk
+
+---
+
+IF:
+
+- one channel dominates profitability
+
+THEN:
+
+- dependency concentration risk
+
+REFERENCE:
+
+ [oai_citation:7‡linkedin.com](https://www.linkedin.com/company/northbeam?utm_source=chatgpt.com)
+
+
+ 
 ✅ DONE

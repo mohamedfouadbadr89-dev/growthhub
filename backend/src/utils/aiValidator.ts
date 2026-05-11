@@ -81,6 +81,20 @@ export interface AIResponse {
    * validator, so this field is guaranteed consistent everywhere.
    */
   status: AIDecisionStatus
+  /**
+   * AI Output Contract Category Formalization (Path F, 2026-05-09).
+   *
+   * Optional categorical label that maps to `automation_rules.trigger_type`
+   * for the closed-loop auto-fire hook in execute-ai-decision.ts. When
+   * present, must be a non-empty trimmed string. When absent, the
+   * automation-engine falls back to extracting from `result.category`
+   * (legacy JSONB path) — see automation-engine.ts:extractCategory.
+   *
+   * Persisted verbatim into ai_decisions.category (nullable column added
+   * in 20260509130000_phase3_ai_decisions_category.sql). Callers must NOT
+   * forge this field; it flows from the AI provider's response only.
+   */
+  category?: string
 }
 
 export interface AIValidationDetail {
@@ -168,6 +182,25 @@ export function validateAIResponse(input: unknown): AIResponse {
 
   const normalizedSteps = validateReasoningSteps(reasoning_steps)
 
+  // Optional `category` (Path F). Accept missing / null / undefined silently
+  // (preserves backwards-compat with prompts that don't yet emit it). When
+  // present it must be a non-empty trimmed string — otherwise reject loudly
+  // rather than persist a malformed label that would never match a rule
+  // trigger_type anyway. Strict rejection here is consistent with the
+  // existing reasoning_steps validation: contract violations throw.
+  const rawCategory = (input as { category?: unknown }).category
+  let normalizedCategory: string | undefined
+  if (rawCategory !== undefined && rawCategory !== null) {
+    if (typeof rawCategory !== 'string' || rawCategory.trim().length === 0) {
+      throw new AIValidationError({
+        field: 'category',
+        reason: 'when present, must be a non-empty string',
+        received: rawCategory,
+      })
+    }
+    normalizedCategory = rawCategory.trim()
+  }
+
   // `status` is intentionally NOT destructured from `input`. It is
   // recomputed from confidence_score so the AI cannot forge its own
   // approval state. See header comment: "DERIVED — never accepted from input".
@@ -177,6 +210,7 @@ export function validateAIResponse(input: unknown): AIResponse {
     confidence_score,
     reasoning_steps: normalizedSteps,
     status: deriveStatus(confidence_score),
+    ...(normalizedCategory !== undefined ? { category: normalizedCategory } : {}),
   }
 }
 

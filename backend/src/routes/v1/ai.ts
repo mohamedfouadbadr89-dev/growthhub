@@ -113,15 +113,21 @@ aiRouter.post('/decisions/generate', async (c) => {
 
   // Same AI Output Contract system prompt as /execute. The validator
   // (utils/aiValidator) rejects anything that doesn't match exactly.
+  // Path F (2026-05-09): optional top-level "category" string added.
+  // Maps to automation_rules.trigger_type for the auto-fire hook
+  // (services/ai/execute-ai-decision.ts:308). Omit when no categorical
+  // label applies — fallback shim still extracts from result.category.
   const systemPrompt =
     'You are an AI decision engine for a growth-operations platform. ' +
     'Respond ONLY with a single JSON object that matches this exact contract: ' +
     '{"type":"dashboard"|"insight"|"decision",' +
     '"result": <any JSON value>,' +
     '"confidence_score": <number between 0 and 1 inclusive>,' +
-    '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...]}. ' +
+    '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...],' +
+    '"category"?: <optional non-empty string label such as ROAS_DROP, SPEND_SPIKE, CONVERSION_DROP, SCALING_OPPORTUNITY>}. ' +
     '"reasoning_steps" must contain at least one entry. ' +
-    'Do not include markdown, code fences, prose, or any keys other than the four above.'
+    '"category" is optional; include it when the decision corresponds to a recognizable categorical signal that an automation rule could trigger on; omit it otherwise. ' +
+    'Do not include markdown, code fences, prose, or any keys other than the five above.'
 
   const userContent =
     typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
@@ -192,12 +198,16 @@ aiRouter.post('/decisions/generate', async (c) => {
       providerCall,
     })
     // Legacy-compatible response: {type, result, confidence_score} are at
-    // the original depth. Additive Phase 3 fields appended.
+    // the original depth. Additive Phase 3 fields appended. Path F (2026-
+    // 05-09) — optional `category` surfaced when present so frontend
+    // consumers can render the categorical label without re-querying
+    // ai_decisions.category.
     return ok(c, {
       type: result.response.type,
       result: result.response.result,
       confidence_score: result.response.confidence_score,
       reasoning_steps: result.response.reasoning_steps,
+      ...(result.response.category !== undefined ? { category: result.response.category } : {}),
       decision_id: result.decision_id,
       trace_id: result.trace_id,
     })
@@ -289,17 +299,23 @@ aiRouter.post('/execute', async (c) => {
   const client = getOpenRouterClient(apiKey)
 
   // System prompt that demands the AI Output Contract from the model:
-  //   { type, result, confidence_score, reasoning_steps }
+  //   { type, result, confidence_score, reasoning_steps, category? }
   // The validator will reject anything else with a structured detail.
+  // Path F (2026-05-09): optional top-level "category" string added.
+  // Maps to automation_rules.trigger_type for the auto-fire hook
+  // (services/ai/execute-ai-decision.ts:308). Omit when no categorical
+  // label applies — fallback shim still extracts from result.category.
   const systemPrompt =
     'You are an AI decision engine for a growth-operations platform. ' +
     'Respond ONLY with a single JSON object that matches this exact contract: ' +
     '{"type":"dashboard"|"insight"|"decision",' +
     '"result": <any JSON value>,' +
     '"confidence_score": <number between 0 and 1 inclusive>,' +
-    '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...]}. ' +
+    '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...],' +
+    '"category"?: <optional non-empty string label such as ROAS_DROP, SPEND_SPIKE, CONVERSION_DROP, SCALING_OPPORTUNITY>}. ' +
     '"reasoning_steps" must contain at least one entry. ' +
-    'Do not include markdown, code fences, prose, or any keys other than the four above.'
+    '"category" is optional; include it when the decision corresponds to a recognizable categorical signal that an automation rule could trigger on; omit it otherwise. ' +
+    'Do not include markdown, code fences, prose, or any keys other than the five above.'
 
   const userContent =
     typeof prompt === 'string' ? prompt : JSON.stringify(prompt)

@@ -361,3 +361,444 @@ RULE:
 
 - compare predicted vs actual
 - update scoring model
+
+
+ Runtime Truth
+
+CURRENT MODE:
+
+* frontend simulation layer
+* static mock creative variants
+* local UI ranking only
+* no persistence
+* no realtime updates
+* no execution engine
+* no backend scoring authority
+
+RULES:
+
+* UI is presentation-only
+* all AI insights currently mocked
+* predicted metrics are placeholders
+* no production scoring should occur client-side
+
+⸻
+
+📊 Competitor Lifecycle Analysis
+
+Reference competitors:
+
+* Madgicx￼
+* Smartly.io￼
+* AdCreative.ai￼
+* Hawky AI￼
+
+Observed competitor lifecycle:
+
+creative generation
+→ creative scoring
+→ fatigue analysis
+→ audience matching
+→ deployment
+→ realtime optimization
+→ refresh cycle
+→ creative retirement
+
+Madgicx direction:
+
+* Meta-focused optimization
+* creative fatigue prediction
+* AI-assisted scaling
+* predictive creative intelligence
+* automated refresh cycles  
+
+Hawky direction:
+
+* cross-platform creative intelligence
+* unified command center
+* attribution-aware optimization
+* creative pattern learning
+* business-impact prioritization  
+
+Gap vs competitors:
+
+CURRENT SYSTEM MISSING:
+
+* creative fatigue engine
+* semantic hook analysis graph
+* creative pattern lineage
+* cross-platform winner detection
+* creative survivorship modeling
+* multimodal creative embeddings
+* audience-creative compatibility graph
+* creative memory persistence
+* creative strategy replay system
+* automated refresh orchestration
+
+SYSTEM ADVANTAGE DIRECTION:
+
+* governance-first execution
+* explainability
+* traceable lifecycle
+* execution safety boundaries
+* institutional-grade operational modeling
+
+⸻
+
+⚠️ Dangerous Assumptions
+
+DO NOT ASSUME:
+
+* predicted uplift = actual uplift
+* high CTR = profitable creative
+* engagement = conversion quality
+* high score creatives are reusable universally
+* top performer remains stable over time
+* platform behavior parity
+* AI score accuracy without post-launch feedback
+
+RULES:
+
+* prediction ≠ truth
+* actual attribution MUST override prediction
+* backend MUST validate all deployment decisions
+* frontend MUST NEVER infer execution safety
+
+⸻
+
+🧩 Missing Semantics
+
+Current implementation lacks:
+
+* creative fatigue semantics
+* creative novelty scoring
+* hook-level attribution
+* audience resonance modeling
+* creative entropy tracking
+* execution survivability
+* creative confidence decay
+* post-launch learning semantics
+* semantic embedding clustering
+* creative strategy lineage
+
+Future lifecycle semantics:
+
+generated
+→ scored
+→ tested
+→ validated
+→ scaling
+→ saturated
+→ declining
+→ refreshed
+→ deprecated
+
+⸻
+
+⚙️ Required Backend Contracts
+
+Required future contracts:
+
+GET /api/v1/creatives/results
+
+GET /api/v1/creatives/:id/analysis
+
+GET /api/v1/creatives/:id/performance
+
+GET /api/v1/creatives/:id/lineage
+
+POST /api/v1/creatives/generate
+
+POST /api/v1/creatives/:id/push
+
+POST /api/v1/creatives/:id/share
+
+POST /api/v1/actions/from-creative
+
+POST /api/v1/creatives/:id/archive
+
+RULES:
+
+* push MUST go through actions engine
+* generation MUST remain async
+* backend owns ranking authority
+* backend owns prediction authority
+
+⸻
+
+🗄️ Required Tables
+
+Additional future tables:
+
+creative_analysis
+
+* hook_strength
+* visual_retention
+* cta_clarity
+* emotional_resonance
+
+creative_predictions
+
+* predicted_ctr
+* predicted_roas
+* confidence_score
+* survivability_score
+
+creative_lineage
+
+* parent_creative_id
+* derivation_type
+* generation_batch_id
+
+creative_embeddings
+
+* semantic_vector
+* hook_cluster
+* visual_cluster
+
+creative_feedback
+
+* actual_ctr
+* actual_roas
+* fatigue_detected
+* prediction_accuracy
+
+creative_push_logs
+
+* pushed_by
+* execution_id
+* campaign_id
+* rollback_state
+
+creative_strategy_docs
+
+* generated_summary
+* insights_snapshot
+* export_version
+
+⸻
+
+🔒 Execution Boundaries
+
+Frontend MAY:
+
+* render variants
+* display rankings
+* compare variants
+* manage selection state
+* simulate pushes
+* show optimistic feedback
+* render insights
+
+Frontend MUST NEVER:
+
+* generate creatives directly
+* compute AI scores
+* infer deployment safety
+* validate campaign compatibility
+* determine creative eligibility
+* calculate attribution truth
+* override execution governance
+
+RULE:
+
+* backend is intelligence authority
+* frontend is orchestration surface only
+
+⸻
+
+🛡️ Governance Boundaries
+
+ALL pushes MUST preserve:
+
+* audit trail
+* creative lineage
+* execution traceability
+* rollback capability
+* org isolation
+* attribution linkage
+
+RULES:
+
+* every generation MUST be versioned
+* every push MUST be logged
+* top performer MUST remain explainable
+* exported strategy docs MUST be reproducible
+
+⸻
+
+🧠 Recommendations Engine Semantics
+
+Recommendations MUST include:
+
+* reasoning source
+* confidence score
+* attribution context
+* audience context
+* lifecycle stage
+* freshness window
+
+RULES:
+
+* recommendation MUST NOT rely on single metric
+* recommendation MUST consider:
+    * CTR
+    * ROAS
+    * fatigue
+    * engagement decay
+    * audience fit
+    * attribution quality
+
+Recommendation lifecycle:
+
+suggested
+→ validated
+→ deployed
+→ monitored
+→ reinforced
+OR
+→ deprecated
+
+⸻
+
+🔄 Creative Intelligence Lifecycle
+
+creative generated
+→ semantic analysis
+→ scoring
+→ ranking
+→ deployment candidate
+→ push validation
+→ execution
+→ realtime feedback
+→ attribution reconciliation
+→ lifecycle update
+
+RULES:
+
+* creative system is learning loop
+* not static generation engine
+
+⸻
+
+⚡ Required Realtime Contracts
+
+CHANNEL:
+
+creatives_results:{org_id}
+
+EVENTS:
+
+creative_generated
+creative_scored
+creative_promoted
+creative_declining
+creative_fatigue_detected
+creative_push_completed
+creative_prediction_updated
+
+RULES:
+
+* top performers MUST update instantly
+* stale predictions MUST invalidate
+* push state MUST sync in realtime
+
+⸻
+
+📊 Attribution Semantics
+
+ALL scoring MUST use:
+
+* attributed revenue
+* NOT raw clicks
+* NOT vanity engagement only
+
+RULES:
+
+* prediction models MUST reconcile against actual performance
+* post-launch feedback MUST retrain scoring system
+* creative ranking MUST evolve continuously
+
+⸻
+
+✅ What Claude Can Safely Implement
+
+Claude CAN safely implement:
+
+* UI rendering
+* sorting state
+* filtering
+* compare mode
+* selection logic
+* optimistic loading states
+* realtime-ready state containers
+* adapter layer
+* React Query integration
+* Supabase fetch layer
+* pagination/infinite scroll
+* virtualization
+
+WITHOUT changing UI structure.
+
+⸻
+
+⏸️ What MUST Remain Deferred
+
+Deferred to backend phase:
+
+* multimodal scoring
+* semantic embeddings
+* visual analysis
+* hook analysis
+* audience fit prediction
+* survivability scoring
+* fatigue prediction
+* post-launch reconciliation
+* automated optimization
+* strategy generation engine
+
+RULE:
+
+* frontend MUST NEVER emulate intelligence layer
+
+⸻
+
+🚫 What Should NEVER Exist
+
+NEVER ALLOW:
+
+* frontend AI generation
+* hidden auto-generation on load
+* silent deployment
+* client-side prediction authority
+* fake confidence scores
+* fake realtime intelligence
+* frontend execution authority
+* direct campaign publishing
+* ungoverned AI outputs
+
+NEVER:
+
+* bypass action engine
+* bypass governance layer
+* bypass attribution reconciliation
+* bypass execution validation
+
+RULE:
+
+* creative results page is decision-support surface
+* NOT autonomous AI execution layer
+
+⸻
+
+🧬 Strategic Direction
+
+SYSTEM SHOULD EVOLVE INTO:
+
+* creative intelligence operating system
+* performance memory layer
+* semantic creative graph
+* attribution-aware optimization engine
+* institutional creative observability layer
+
+—not مجرد AI gallery/results UI.
