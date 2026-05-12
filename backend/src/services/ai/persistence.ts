@@ -221,8 +221,14 @@ export async function persistAILog(
       ? `persistAILog: ${error.message}`
       : 'persistAILog: insert returned no row'
     // Console-only — see comment above on recursion risk.
+    // Continuation #49 — request_id correlation. AILogEntry already
+    // carries optional request_id (utils/aiLogger.ts:48-57); surfacing
+    // it here closes a grep-parity gap in the [AI] correlator chain.
     // eslint-disable-next-line no-console
-    console.error(`[AI] ${message} (trace_id=${entry.trace_id} phase=${entry.phase})`)
+    console.error(
+      `[AI][req=${entry.request_id ?? 'no-request-id'}] ${message} ` +
+        `(trace_id=${entry.trace_id} phase=${entry.phase})`,
+    )
     throw new Error(message)
   }
 

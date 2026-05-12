@@ -149,7 +149,15 @@ connectRouter.post('/complete', async (c) => {
       token = data.access_token
     }
   } catch (err) {
-    console.error('OAuth token exchange failed:', err)
+    // Continuation #48 — request_id correlation. Tag with platform so
+    // operators can pivot from [req] back to the failing platform branch
+    // without needing to inspect the request body. Grep parity with
+    // [req]/[err]/[exec]/[AI] chain.
+    console.error(
+      `[connect-oauth][req=${c.get('requestId') ?? 'no-request-id'}] ` +
+        `OAuth token exchange failed (platform=${platform}, org=${orgId}):`,
+      err,
+    )
     return fail(c, 'OAuth token exchange failed', 502, { code: 'OAUTH_EXCHANGE_FAILED' })
   }
 
@@ -158,7 +166,12 @@ connectRouter.post('/complete', async (c) => {
   try {
     vaultSecretId = await createSecret(token)
   } catch (err) {
-    console.error('Vault secret creation failed:', err)
+    // Continuation #48 — request_id correlation (see above).
+    console.error(
+      `[connect-oauth][req=${c.get('requestId') ?? 'no-request-id'}] ` +
+        `Vault secret creation failed (platform=${platform}, org=${orgId}):`,
+      err,
+    )
     return fail(c, 'Failed to store credentials', 500, { code: 'VAULT_STORE_FAILED' })
   }
 
@@ -173,7 +186,12 @@ connectRouter.post('/complete', async (c) => {
     .single()
 
   if (error || !integration) {
-    console.error('Integration upsert failed:', error)
+    // Continuation #48 — request_id correlation (see above).
+    console.error(
+      `[connect-oauth][req=${c.get('requestId') ?? 'no-request-id'}] ` +
+        `Integration upsert failed (platform=${platform}, org=${orgId}):`,
+      error,
+    )
     return fail(c, 'Failed to create integration', 500, { code: 'INTEGRATION_UPSERT_FAILED' })
   }
 

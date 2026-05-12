@@ -2327,8 +2327,10 @@ async function realGoogleCreateCampaign(
     })
     // Budget exists but campaign create failed → orphan budget. Log but do
     // not auto-delete — operator prunes via Google Ads dashboard.
+    // Continuation #49 — request_id correlation (ctx.requestId already in
+    // scope; same pattern as #48 [billing-usage] / [connect-oauth] fixes).
     console.warn(
-      `[exec] orphaned Google Ads budget ${budgetResourceName} for org=${ctx.orgId} (campaign create transport failed)`,
+      `[exec][req=${ctx.requestId ?? 'no-request-id'}] orphaned Google Ads budget ${budgetResourceName} for org=${ctx.orgId} (campaign create transport failed)`,
     )
     return {
       success: false,
@@ -2361,8 +2363,10 @@ async function realGoogleCreateCampaign(
   })
 
   if (!ok) {
+    // Continuation #49 — request_id correlation (sibling fix to the
+    // transport-failure orphan warn above).
     console.warn(
-      `[exec] orphaned Google Ads budget ${budgetResourceName} for org=${ctx.orgId} (campaign create HTTP ${campaignResp.status})`,
+      `[exec][req=${ctx.requestId ?? 'no-request-id'}] orphaned Google Ads budget ${budgetResourceName} for org=${ctx.orgId} (campaign create HTTP ${campaignResp.status})`,
     )
     return {
       success: false,

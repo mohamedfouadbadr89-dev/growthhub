@@ -12,6 +12,10 @@ import {
   AlertCircle,
   Clock,
   Loader2,
+  History,
+  ChevronDown,
+  ChevronUp,
+  XCircle,
 } from "lucide-react";
 
 interface Integration {
@@ -20,6 +24,19 @@ interface Integration {
   status: "connected" | "disconnected" | "error";
   lastSyncedAt: string | null;
   createdAt: string;
+}
+
+// Continuation #46 — sync history consumer. Shape mirrors the canonical
+// envelope returned by `GET /api/v1/integrations/:id/sync-logs` (Phase 2
+// route; mounted since #3 unlock). Fields are camelCased server-side
+// (see routes/v1/integrations.ts:138-144) so the FE consumes verbatim.
+interface SyncLogEntry {
+  id: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  status: "running" | "success" | "failed" | string;
+  recordsWritten: number | null;
+  errorMessage: string | null;
 }
 
 const PLATFORM_META = {
@@ -68,6 +85,19 @@ export default function IntegrationsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+
+  // Continuation #46 — sync-history per-integration state.
+  //   syncLogs[integrationId] : entries array (or null on fetch error)
+  //   syncLogsLoading[integrationId] : true while in-flight
+  //   syncLogsError[integrationId] : error string for inline display
+  //   syncLogsExpanded[integrationId] : whether the panel is open
+  // Lazy-fetched on first expand; cached for the session. A subsequent
+  // "Sync Now" success re-fetches the relevant integration to reflect
+  // the new entry (see handleSync below).
+  const [syncLogs, setSyncLogs] = useState<Record<string, SyncLogEntry[]>>({});
+  const [syncLogsLoading, setSyncLogsLoading] = useState<Record<string, boolean>>({});
+  const [syncLogsError, setSyncLogsError] = useState<Record<string, string>>({});
+  const [syncLogsExpanded, setSyncLogsExpanded] = useState<Record<string, boolean>>({});
 
   const searchParams = typeof window !== "undefined"
     ? new URLSearchParams(window.location.search)
@@ -142,8 +172,56 @@ export default function IntegrationsPage() {
       await apiClient(`/api/v1/integrations/${id}`, token, { method: "DELETE" });
       setIntegrations((prev) => prev.filter((i) => i.id !== id));
       setToast({ msg: "Integration disconnected.", type: "success" });
-    } catch {
-      setToast({ msg: "Failed to disconnect. Please try again.", type: "error" });
+    } catch (err) {
+      // Continuation #46 — closes the #36-noted gap (skipped at the time
+      // as "catch {} no-binding; not enrichable"). With binding added,
+      // formatErrorMessage now surfaces ApiError.requestId for operator
+      // log-pivot consistency with the other handlers on this page.
+      setToast({ msg: formatErrorMessage(err, "Failed to disconnect. Please try again."), type: "error" });
+    }
+  };
+
+  // Continuation #46 — lazy sync-logs fetcher. Consumes the existing
+  // Phase 2 endpoint `GET /api/v1/integrations/:id/sync-logs` that has
+  // been mounted since #3 unlock but never had a FE consumer until now.
+  // Closes a UI/BE visibility gap with no operator-decision required.
+  const fetchSyncLogs = useCallback(async (id: string) => {
+    const token = await getToken();
+    if (!token) {
+      setSyncLogsError((s) => ({ ...s, [id]: "Your session expired — please sign in again" }));
+      return;
+    }
+    setSyncLogsLoading((s) => ({ ...s, [id]: true }));
+    setSyncLogsError((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    try {
+      // Server returns the entries array directly under canonical envelope's
+      // data field; apiClient auto-unwraps. limit defaults to 20 server-side.
+      const entries = await apiClient<SyncLogEntry[]>(
+        `/api/v1/integrations/${id}/sync-logs?limit=10`,
+        token,
+      );
+      setSyncLogs((s) => ({ ...s, [id]: entries ?? [] }));
+    } catch (err) {
+      setSyncLogsError((s) => ({
+        ...s,
+        [id]: formatErrorMessage(err, "Failed to load sync history"),
+      }));
+    } finally {
+      setSyncLogsLoading((s) => ({ ...s, [id]: false }));
+    }
+  }, [getToken]);
+
+  const toggleSyncLogs = (id: string) => {
+    const willExpand = !syncLogsExpanded[id];
+    setSyncLogsExpanded((s) => ({ ...s, [id]: willExpand }));
+    // Lazy-fetch on first expand; cached results re-display without refetch.
+    // Refresh path (post Sync Now success) lives in handleSync below.
+    if (willExpand && syncLogs[id] === undefined && !syncLogsLoading[id]) {
+      void fetchSyncLogs(id);
     }
   };
 
@@ -155,6 +233,13 @@ export default function IntegrationsPage() {
       await apiClient(`/api/v1/integrations/${id}/sync`, token, { method: "POST" });
       setToast({ msg: "Sync queued! Data will update shortly.", type: "success" });
       setTimeout(fetchIntegrations, 3000);
+      // Continuation #46 — if the sync-history panel is open for this
+      // integration, refresh its cache so the new run appears once the
+      // backend has had time to log it. Same 3s delay as the integrations-
+      // list refetch so both UI views land in sync.
+      if (syncLogsExpanded[id]) {
+        setTimeout(() => { void fetchSyncLogs(id); }, 3000);
+      }
     } catch (err) {
       // Special-case 409 friendly text preserved; non-409 path uses
       // formatErrorMessage to surface ApiError.requestId (continuation #36).
@@ -262,25 +347,122 @@ export default function IntegrationsPage() {
 
                   <div className="mt-6">
                     {connected ? (
-                      <div className="flex gap-2">
+                      <>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleSync(integration!.id)}
+                            disabled={isSyncing}
+                            className="flex-1 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 font-body flex items-center justify-center gap-2"
+                          >
+                            {isSyncing ? (
+                              <><Loader2 size={14} className="animate-spin" /> Syncing…</>
+                            ) : (
+                              <><RefreshCw size={14} /> Sync Now</>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleDisconnect(integration!.id)}
+                            className="px-3 py-2 rounded-xl text-red-600 text-sm font-medium hover:bg-red-50 transition-colors font-body"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+
+                        {/* Continuation #46 — collapsible Sync History panel.
+                            Toggle button + lazy-fetched list of recent
+                            sync_logs rows via `GET /api/v1/integrations/:id/sync-logs`.
+                            Closes the previously-unfilled UI/BE visibility gap:
+                            the Phase 2 endpoint has been live since #3 unlock
+                            but no FE consumer existed until this turn. */}
                         <button
-                          onClick={() => handleSync(integration!.id)}
-                          disabled={isSyncing}
-                          className="flex-1 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 font-body flex items-center justify-center gap-2"
+                          type="button"
+                          onClick={() => toggleSyncLogs(integration!.id)}
+                          className="mt-3 w-full flex items-center justify-between px-3 py-2 rounded-xl bg-surface-container-low text-xs font-bold text-muted-foreground hover:bg-surface-container-high transition-colors font-body"
+                          aria-expanded={!!syncLogsExpanded[integration!.id]}
                         >
-                          {isSyncing ? (
-                            <><Loader2 size={14} className="animate-spin" /> Syncing…</>
-                          ) : (
-                            <><RefreshCw size={14} /> Sync Now</>
-                          )}
+                          <span className="flex items-center gap-2">
+                            <History size={13} />
+                            Sync History
+                          </span>
+                          {syncLogsExpanded[integration!.id]
+                            ? <ChevronUp size={14} />
+                            : <ChevronDown size={14} />}
                         </button>
-                        <button
-                          onClick={() => handleDisconnect(integration!.id)}
-                          className="px-3 py-2 rounded-xl text-red-600 text-sm font-medium hover:bg-red-50 transition-colors font-body"
-                        >
-                          Disconnect
-                        </button>
-                      </div>
+
+                        {syncLogsExpanded[integration!.id] && (
+                          <div className="mt-2 bg-surface-container-low rounded-xl p-3">
+                            {syncLogsLoading[integration!.id] ? (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground font-body">
+                                <Loader2 size={12} className="animate-spin" />
+                                Loading…
+                              </div>
+                            ) : syncLogsError[integration!.id] ? (
+                              <div className="text-xs text-red-600 font-body">
+                                {syncLogsError[integration!.id]}
+                              </div>
+                            ) : (syncLogs[integration!.id] ?? []).length === 0 ? (
+                              <div className="text-xs text-muted-foreground font-body">
+                                No sync runs yet.
+                              </div>
+                            ) : (
+                              <ul className="space-y-2">
+                                {(syncLogs[integration!.id] ?? []).map((log) => {
+                                  // Status pill: success=emerald, failed=red,
+                                  // running=amber, other=muted. Matches the
+                                  // visual language of /automation/history badges.
+                                  const isSuccess = log.status === "success";
+                                  const isFailed  = log.status === "failed";
+                                  const isRunning = log.status === "running";
+                                  const StatusIcon = isSuccess ? CheckCircle2
+                                                   : isFailed  ? XCircle
+                                                   : isRunning ? Loader2
+                                                   : AlertCircle;
+                                  const statusClass = isSuccess ? "text-emerald-600"
+                                                    : isFailed  ? "text-red-600"
+                                                    : isRunning ? "text-amber-600"
+                                                    : "text-muted-foreground";
+                                  return (
+                                    <li
+                                      key={log.id}
+                                      className="flex items-start gap-2 text-[11px] font-body"
+                                    >
+                                      <StatusIcon
+                                        size={12}
+                                        className={`${statusClass} shrink-0 mt-0.5 ${isRunning ? "animate-spin" : ""}`}
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between gap-2">
+                                          <span className={`font-bold ${statusClass} capitalize`}>
+                                            {log.status}
+                                          </span>
+                                          <span className="text-muted-foreground shrink-0">
+                                            {formatDate(log.startedAt)}
+                                          </span>
+                                        </div>
+                                        {/* records written for successful runs */}
+                                        {isSuccess && log.recordsWritten !== null && (
+                                          <div className="text-muted-foreground">
+                                            {log.recordsWritten.toLocaleString()} records written
+                                          </div>
+                                        )}
+                                        {/* error message for failed runs.
+                                            Truncated to keep the card height
+                                            bounded; full message available
+                                            in the backend audit if needed. */}
+                                        {isFailed && log.errorMessage && (
+                                          <div className="text-red-600 truncate" title={log.errorMessage}>
+                                            {log.errorMessage}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </>
                     ) : hasError ? (
                       <button
                         onClick={() => handleConnect(platform)}

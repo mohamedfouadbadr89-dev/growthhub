@@ -15,6 +15,9 @@ import { creativesRouter } from './creatives.js'
 import { campaignsRouter } from './campaigns.js'
 import { aiRouter } from './ai.js'
 import { billingRouter } from './billing.js'
+// Continuation #50 — approval-queue WRITE chain per operator authorization.
+// Consumes the #43 approval_queue substrate via dispatcher service.
+import { approvalsRouter } from './approvals.js'
 
 type Variables = { userId: string; orgId: string }
 
@@ -134,5 +137,10 @@ v1.route('/creatives', creativesRouter)
 v1.route('/campaigns', campaignsRouter)
 v1.route('/ai', aiRouter)
 v1.route('/billing', billingRouter)
+// Continuation #50 — approval-queue WRITE chain. Mounts behind the
+// existing /api/v1/* authMiddleware which extracts org_id from Clerk
+// JWT, so c.get('orgId') is guaranteed populated in every approvals
+// handler. No new middleware; no new substrate; consumes #43 table.
+v1.route('/approvals', approvalsRouter)
 
 export { v1 }

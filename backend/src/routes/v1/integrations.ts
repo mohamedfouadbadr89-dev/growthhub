@@ -53,7 +53,17 @@ integrationsRouter.delete('/:id', async (c) => {
     try {
       await deleteSecret(integration.vault_refresh_token_secret_id as string)
     } catch (err) {
-      console.error('Failed to delete Vault secret:', err)
+      // Continuation #48 — request_id correlation for grep parity with
+      // [req]/[err]/[exec]/[AI] chain. The Vault deletion failure is
+      // observability-only (we still soft-disconnect the integration),
+      // so the warn lands here instead of throwing; tagging with
+      // request_id lets operators pivot from any error sink back to
+      // the originating HTTP request.
+      console.error(
+        `[integrations-disconnect][req=${c.get('requestId') ?? 'no-request-id'}] ` +
+          `Failed to delete Vault secret (integration_id=${id}, org=${orgId}):`,
+        err,
+      )
     }
   }
 

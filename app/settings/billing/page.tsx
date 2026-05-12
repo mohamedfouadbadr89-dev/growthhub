@@ -15,6 +15,8 @@ import {
   Key,
   Trash2,
   Save,
+  Activity,
+  Info,
 } from "lucide-react";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
@@ -27,14 +29,25 @@ import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 // Sections that remain MOCKED-DEFERRED per holistic governance recommendation:
 //   - PLAN_FEATURES list           → no plan-catalogue endpoint
 //   - Plan price ("$499.00/month") → no pricing catalogue
-//   - "Upgrade Plan" / "View Details" buttons → Stripe checkout-session
-//     creation is forward-positioned for a future pass (no Stripe outbound
-//     API in A1c); wiring this button to PATCH /plan would lie about
-//     behavior (it would only flip plan_type enum, not actually upgrade).
 //   - System Utilization widget   → no monthly-spend aggregation endpoint
+//                                    (different concern from #43 AI Usage:
+//                                    System Utilization is $ spend; AI Usage
+//                                    is per-op-type daily counts)
 //   - INVOICES table              → no invoices endpoint
 //   - Payment Method card display → no Stripe payment-method API wiring
 //   - Annual billing banner       → no annual-plan logic
+//
+// Sections WIRED (resolved from prior MOCKED-DEFERRED list):
+//   - "Upgrade Plan" → POST /api/v1/billing/checkout (Phase 7 Sub-pass D, #21)
+//   - "View Details" → POST /api/v1/billing/portal (#47) — opens Stripe-
+//     hosted customer portal for managing payment method, viewing
+//     invoices, and canceling subscription. 404 NO_STRIPE_CUSTOMER
+//     surfaced as friendly text when org has not yet completed a checkout.
+//   - AI Usage section → GET /api/v1/billing/usage (#42 endpoint, #43 consumer)
+//     Renders per-operation-type daily consumption vs effective limit from
+//     the AI Operating Model 3-tier architecture (AI_OPERATING_MODEL.md §3
+//     + §7 "operator-visible consumption metrics" third pillar of LLM Cost
+//     Governance). LTD orgs see an advisory badge (enforcement_active=false).
 
 const PLAN_FEATURES = ["Unlimited Executions", "Priority API Access", "Dedicated Support"];
 
@@ -51,6 +64,42 @@ interface BillingState {
   credits_balance: number;
   has_byok_key: boolean;
 }
+
+// Continuation #43 — operator-visible AI consumption metrics consumer.
+// Shape mirrors the canonical envelope returned by `GET /api/v1/billing/usage`
+// (added in continuation #42). Each `usage[*]` entry corresponds to one
+// operation_type from AI_OPERATING_MODEL.md §3 3-tier architecture.
+interface UsageEntry {
+  operation_type: string;
+  used: number;
+  limit: number;
+  remaining: number;
+}
+
+interface UsageState {
+  org_id: string;
+  plan_type: string;
+  enforcement_active: boolean;
+  window: {
+    start: string;
+    end: string;
+    timezone: string;
+  };
+  usage: UsageEntry[];
+}
+
+// Human-readable label for each operation_type. Centralized here so the
+// FE never has to derive it from the wire-format key. New operation
+// types added to the enum should land here too.
+const OP_LABELS: Record<string, string> = {
+  ai_decision_generate:     "AI Decision Generate",
+  ai_execute:               "AI Execute",
+  creative_copy:            "Creative Copy",
+  creative_image:           "Creative Image",
+  daily_digest:             "Daily Digest",
+  conversational_query:     "Conversational Query",
+  strategic_recommendation: "Strategic Recommendation",
+};
 
 function planLabel(planType: string): string {
   if (planType === "ltd") return "Lifetime Deal";
@@ -79,17 +128,51 @@ export default function BillingPage() {
   const [upgrading,    setUpgrading]    = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
 
+  // Continuation #47 — Stripe Customer Portal redirect state. Wired to
+  // the existing /billing/portal endpoint (Phase 7 Sub-pass D, #21)
+  // which had no FE consumer until this turn. Portal is Stripe-hosted
+  // (no custom payment UI); operator clicks "View Details" → BE creates
+  // billing portal session → FE redirects to session.url.
+  const [openingPortal, setOpeningPortal] = useState(false);
+  const [portalError,   setPortalError]   = useState<string | null>(null);
+
+  // Continuation #43 — AI Usage section state. Independent from billing
+  // state because /usage is a separate canonical endpoint (#42); a load
+  // failure on /usage must NOT poison the billing-plan render path. Both
+  // fetches happen in parallel inside the same useEffect.
+  const [usage,      setUsage]      = useState<UsageState | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
+
   async function load() {
     setLoading(true);
     setLoadError(null);
+    setUsageError(null);
     try {
       const token = await getToken();
       if (!token) throw new ApiError(401, "Sign in required");
-      const data = await apiClient<BillingState>("/api/v1/billing/plan", token);
-      setBilling(data);
+      // Parallel fetch — both canonical envelopes; api-client auto-unwraps.
+      // Promise.allSettled so one endpoint failing does not poison the other.
+      const [planResult, usageResult] = await Promise.allSettled([
+        apiClient<BillingState>("/api/v1/billing/plan", token),
+        apiClient<UsageState>("/api/v1/billing/usage", token),
+      ]);
+
+      if (planResult.status === "fulfilled") {
+        setBilling(planResult.value);
+      } else {
+        // Continuation #35: formatErrorMessage surfaces ApiError.requestId
+        // (from #34) so operators can quote it to support for backend log pivot.
+        setLoadError(formatErrorMessage(planResult.reason, "Failed to load billing state"));
+      }
+
+      if (usageResult.status === "fulfilled") {
+        setUsage(usageResult.value);
+      } else {
+        setUsageError(formatErrorMessage(usageResult.reason, "Failed to load AI usage"));
+      }
     } catch (err) {
-      // Continuation #35: formatErrorMessage surfaces ApiError.requestId
-      // (from #34) so operators can quote it to support for backend log pivot.
+      // Outer catch — token retrieval failure (rare). Falls through to
+      // finally; both endpoints will report their own failures next call.
       setLoadError(formatErrorMessage(err, "Failed to load billing state"));
     } finally {
       setLoading(false);
@@ -174,6 +257,45 @@ export default function BillingPage() {
     } catch (err) {
       setUpgradeError(formatErrorMessage(err, "Failed to start checkout"));
       setUpgrading(false);
+    }
+  }
+
+  // Continuation #47 — Stripe Customer Portal handler. Consumes the
+  // existing `POST /api/v1/billing/portal` endpoint (Phase 7 Sub-pass D,
+  // #21) which returns a Stripe-hosted portal URL. Operator manages
+  // payment methods, invoices, and subscription via Stripe-hosted UI;
+  // on close Stripe redirects back to /settings/billing via return_url
+  // default (set server-side from OAUTH_REDIRECT_BASE_URL env).
+  //
+  // 404 NO_STRIPE_CUSTOMER special-case mirrors the established friendly-
+  // text pattern in app/integrations/page.tsx (409 conflict-on-sync from
+  // #36) — orgs that haven't completed a checkout yet have no Stripe
+  // customer on file; surface that explicitly rather than as a generic
+  // 5xx.
+  async function handlePortal() {
+    if (openingPortal) return;
+    setPortalError(null);
+    setOpeningPortal(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      const result = await apiClient<{ portal_url: string }>(
+        "/api/v1/billing/portal",
+        token,
+        { method: "POST" },
+      );
+      // Redirect to Stripe-hosted portal. On close Stripe routes back to
+      // the return_url the BE configured (default: /settings/billing).
+      window.location.href = result.portal_url;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setPortalError(
+          "No Stripe customer on file yet — complete a checkout first to access the billing portal.",
+        );
+      } else {
+        setPortalError(formatErrorMessage(err, "Failed to open billing portal"));
+      }
+      setOpeningPortal(false);
     }
   }
 
@@ -275,12 +397,31 @@ export default function BillingPage() {
                 <span>Upgrade Plan</span>
               )}
             </button>
-            <button className="px-8 py-3 text-foreground font-semibold text-sm hover:bg-surface-container-low rounded-xl transition-all font-body">
-              View Details
+            {/* Continuation #47 — "View Details" button wired to the
+                existing /billing/portal endpoint. Opens Stripe-hosted
+                customer portal for managing payment method, viewing
+                invoices, and canceling subscription. 404 NO_STRIPE_CUSTOMER
+                surfaced as friendly text below. */}
+            <button
+              onClick={handlePortal}
+              disabled={openingPortal || loading}
+              className="px-8 py-3 text-foreground font-semibold text-sm hover:bg-surface-container-low rounded-xl transition-all font-body disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {openingPortal ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
+                  <span>Opening…</span>
+                </>
+              ) : (
+                <span>View Details</span>
+              )}
             </button>
           </div>
           {upgradeError && (
             <p className="mt-3 text-xs text-red-600 font-body">{upgradeError}</p>
+          )}
+          {portalError && (
+            <p className="mt-3 text-xs text-red-600 font-body">{portalError}</p>
           )}
         </div>
 
@@ -403,6 +544,101 @@ export default function BillingPage() {
               )}
             </button>
           </div>
+        )}
+      </div>
+
+      {/* ─── Continuation #43 — AI Usage (Today) ─────────────────────────────
+          Operator-visible per-operation-type daily consumption metrics from
+          the #42 `GET /api/v1/billing/usage` endpoint. Closes the third pillar
+          of LLM Cost Governance per AI_OPERATING_MODEL.md §7 line 331. Always
+          renders all 7 operation types so the FE surface stays stable (even
+          when used=0). LTD orgs see an "Advisory only" badge per
+          enforcement_active=false from the BE response (limits surfaced but
+          not enforced because BYOK orgs run on their own provider key).
+          ──────────────────────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-3xl p-8 border border-border shadow-sm">
+        <div className="flex items-start justify-between gap-6 mb-6 flex-wrap">
+          <div className="flex items-start gap-6">
+            <div className="w-12 h-12 rounded-2xl bg-surface-container-low flex items-center justify-center shrink-0">
+              <Activity size={22} className="text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h3 className="text-foreground font-bold text-lg font-sans">AI Usage Today</h3>
+                {usage && !usage.enforcement_active && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold font-body bg-blue-50 text-blue-700 uppercase tracking-wider">
+                    <Info size={11} />
+                    Advisory only · BYOK
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground font-body mt-1">
+                Per-operation daily consumption (UTC). Counts reset at UTC midnight.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {usageError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-body rounded-lg px-4 py-2 mb-4">
+            {usageError}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-sm text-muted-foreground font-body">Loading usage…</div>
+        ) : usage ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {usage.usage.map((entry) => {
+              // Defensive: limit=0 means "operation suspended for this org"
+              // (org_ai_limits override). Render as fully filled red bar
+              // when usage > 0 to make the suspension state visually obvious;
+              // otherwise empty bar (no usage, no allowance).
+              const pct = entry.limit > 0
+                ? Math.min(100, Math.round((entry.used / entry.limit) * 100))
+                : (entry.used > 0 ? 100 : 0);
+              const isExhausted = entry.remaining === 0 && entry.limit > 0;
+              const isSuspended = entry.limit === 0;
+              const barColor = isSuspended
+                ? "bg-red-500"
+                : isExhausted
+                  ? "bg-red-500"
+                  : pct >= 80
+                    ? "bg-amber-500"
+                    : "bg-primary";
+
+              return (
+                <div
+                  key={entry.operation_type}
+                  className="p-4 bg-surface-container-low rounded-2xl"
+                >
+                  <div className="flex justify-between items-baseline gap-2 mb-2">
+                    <span className="text-sm font-bold text-foreground font-body truncate">
+                      {OP_LABELS[entry.operation_type] ?? entry.operation_type}
+                    </span>
+                    <span className="text-xs font-mono text-muted-foreground shrink-0">
+                      {entry.used}/{entry.limit}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-surface-container-high rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${barColor} rounded-full transition-all`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[10px] uppercase tracking-widest font-body text-muted-foreground">
+                    {isSuspended
+                      ? "Suspended"
+                      : isExhausted
+                        ? "Limit reached"
+                        : `${entry.remaining} remaining`}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground font-body">No usage data available.</div>
         )}
       </div>
 
