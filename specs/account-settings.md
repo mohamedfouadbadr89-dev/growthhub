@@ -282,3 +282,522 @@ RULES:
 - encrypted storage (Supabase Vault)
 - never exposed to frontend
 - fetched server-side only
+
+
+## ⚡ RUNTIME TRUTH
+
+ACCOUNT SYSTEMS ARE:
+
+- identity-sensitive
+
+- security-critical
+
+- organization-scoped
+
+- session-dependent
+
+- audit-dependent
+
+RULES:
+
+- Clerk is the identity provider ONLY
+
+- authorization must remain internal
+
+- sessions may briefly lag revocation
+
+- org membership can change dynamically
+
+- API keys are high-risk assets
+
+- frontend session state is NOT trusted
+
+- email ownership may change over time
+
+- security events must be immutable
+
+SYSTEM TRUTH PRIORITY:
+
+1. Clerk identity
+
+2. internal RBAC
+
+3. organization membership
+
+4. security audit logs
+
+5. active session registry
+
+6. dashboard session state
+
+NEVER:
+
+- trust frontend authorization
+
+- expose API keys to frontend
+
+- treat Clerk as full authorization engine
+
+- store secrets in browser storage
+
+- bypass audit logging
+
+---
+
+## 🔗 CLERK INTEGRATION BOUNDARY
+
+CLERK RESPONSIBILITY:
+
+- authentication
+
+- session management
+
+- identity management
+
+- organization membership
+
+- MFA verification
+
+INTERNAL SYSTEM RESPONSIBILITY:
+
+- RBAC
+
+- feature permissions
+
+- AI permissions
+
+- execution authorization
+
+- BYOK governance
+
+- audit governance
+
+- security monitoring
+
+RULES:
+
+- Clerk MUST NOT be treated as authorization source
+
+- internal APIs MUST validate org permissions
+
+- all sensitive actions require internal authorization checks
+
+- org isolation enforced internally
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- session expiration policy
+
+- concurrent session limits
+
+- trusted device lifecycle
+
+- account recovery workflow
+
+- API key rotation lifecycle
+
+- API key validation process
+
+- org ownership transfer
+
+- email verification flow
+
+- deleted account handling
+
+- suspended org behavior
+
+- RBAC inheritance rules
+
+- notification preference granularity
+
+- audit retention policy
+
+- forced logout behavior
+
+- compromised account handling
+
+- login anomaly thresholds
+
+- session risk scoring
+
+REQUIRED BEFORE SCALE:
+
+- canonical authorization model
+
+- session governance policy
+
+- secrets lifecycle management
+
+- account recovery governance
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- Clerk RBAC is sufficient
+
+- frontend session state is trusted
+
+- revoked sessions terminate instantly
+
+- masked keys are safe if leaked server-side
+
+- org owner always exists
+
+- API keys remain valid forever
+
+- email identity never changes
+
+- users belong to one organization only
+
+- 2FA guarantees account safety
+
+- browser state reflects backend truth
+
+RISKS:
+
+- privilege escalation
+
+- unauthorized org access
+
+- leaked API credentials
+
+- stale session abuse
+
+- broken audit trails
+
+- orphaned organizations
+
+- security bypasses
+
+- cross-org exposure
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- GET /api/v1/account/sessions
+
+- POST /api/v1/account/sessions/revoke
+
+- GET /api/v1/account/security
+
+- POST /api/v1/account/verify-email
+
+- POST /api/v1/account/recovery
+
+- POST /api/v1/account/api-keys
+
+- DELETE /api/v1/account/api-keys/:id
+
+- POST /api/v1/account/api-keys/validate
+
+- GET /api/v1/account/audit
+
+- GET /api/v1/account/devices
+
+MISSING STATES:
+
+- session_expired
+
+- session_revoked
+
+- org_access_revoked
+
+- key_validation_failed
+
+- suspicious_activity
+
+- email_unverified
+
+- recovery_pending
+
+- account_locked
+
+- stale_permissions
+
+- security_review_required
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+SESSION CONTRACT:
+
+INPUT:
+
+- session_id
+
+- user_id
+
+- org_id
+
+OUTPUT:
+
+- valid
+
+- revoked
+
+- expires_at
+
+- risk_level
+
+RULES:
+
+- backend validation only
+
+- org-scoped validation required
+
+- revoked sessions blocked globally
+
+---
+
+API KEY CONTRACT:
+
+INPUT:
+
+- provider
+
+- encrypted_key
+
+OUTPUT:
+
+- validation_status
+
+- provider_access
+
+- scopes
+
+RULES:
+
+- validation server-side only
+
+- raw keys NEVER returned
+
+- encrypted storage mandatory
+
+---
+
+SECURITY EVENT CONTRACT:
+
+INPUT:
+
+- action
+
+- ip_address
+
+- device
+
+- org_id
+
+OUTPUT:
+
+- audit_event
+
+- risk_score
+
+- security_status
+
+RULES:
+
+- immutable logs required
+
+- all sensitive actions logged
+
+---
+
+ORG ACCESS CONTRACT:
+
+INPUT:
+
+- user_id
+
+- org_id
+
+OUTPUT:
+
+- role
+
+- permissions
+
+- access_status
+
+RULES:
+
+- internal RBAC required
+
+- Clerk org membership alone insufficient
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+user_preferences
+
+api_keys
+
+api_key_audit
+
+session_revocations
+
+account_audit_logs
+
+org_membership_history
+
+security_events
+
+trusted_devices
+
+notification_preferences
+
+login_attempts
+
+account_recovery_requests
+
+permission_snapshots
+
+security_reviews
+
+api_key_validations
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- settings UI
+
+- profile forms
+
+- preferences UI
+
+- session tables
+
+- audit history rendering
+
+- API key forms
+
+- device lists
+
+- loading/error/empty states
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- auth engine
+
+- session validation engine
+
+- token issuance
+
+- vault encryption
+
+- RBAC enforcement
+
+- security scoring
+
+- anomaly detection
+
+- MFA verification
+
+- secrets management runtime
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+ACCOUNT GOVERNANCE:
+
+- org ownership changes auditable
+
+- all key updates logged
+
+- all security actions immutable
+
+- account recovery controlled
+
+- email changes require verification
+
+- session revocations tracked
+
+SECURITY:
+
+- org isolation mandatory
+
+- secrets server-side only
+
+- RBAC enforced internally
+
+- device trust controlled centrally
+
+COMPLIANCE:
+
+- audit logs immutable
+
+- recovery history retained
+
+- security actions reproducible
+
+- deleted account handling traceable
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- adaptive authentication
+
+- AI fraud detection
+
+- behavioral security scoring
+
+- autonomous account lockdown
+
+- AI permission management
+
+- automatic risk remediation
+
+- predictive compromise detection
+
+RULE:
+
+- security actions must remain deterministic initially
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- frontend API key validation
+
+- localStorage secrets
+
+- raw API key exposure
+
+- direct vault access from frontend
+
+- browser-side RBAC
+
+- auth decisions in UI
+
+- hidden admin bypasses
+
+- silent org switching
+
+- frontend permission enforcement only
+
+- uncached session mutation
+
+- direct Clerk token trust without backend validation
+
+---

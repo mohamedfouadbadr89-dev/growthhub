@@ -9,7 +9,7 @@ import {
   AlertTriangle, ChevronDown, ChevronRight, Plus, ArrowLeftRight,
   Check, Send,
 } from "lucide-react"
-import { apiClient, ApiError } from "@/lib/api-client"
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client"
 
 // Phase 6 Sub-pass B (continuation #13, 2026-05-08): wired to canonical
 // `GET /api/v1/campaigns/:id` (real metrics + 14d trend + decisions overlay),
@@ -153,8 +153,8 @@ export default function CampaignDetailPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          const e = err as ApiError | Error
-          setLoadError(e.message || "Failed to load campaign")
+          // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+          setLoadError(formatErrorMessage(err, "Failed to load campaign"))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -190,8 +190,8 @@ export default function CampaignDetailPage() {
       )
       setSuggestions(result.suggestions)
     } catch (err) {
-      const e = err as ApiError | Error
-      setAuditError(e.message || "Audit failed")
+      // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+      setAuditError(formatErrorMessage(err, "Audit failed"))
     } finally {
       setAuditRunning(false)
     }
@@ -214,8 +214,8 @@ export default function CampaignDetailPage() {
       )
       setPushed(true)
     } catch (err) {
-      const e = err as ApiError | Error
-      setPushError(e.message || "Push failed")
+      // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+      setPushError(formatErrorMessage(err, "Push failed"))
     } finally {
       setPushing(false)
     }

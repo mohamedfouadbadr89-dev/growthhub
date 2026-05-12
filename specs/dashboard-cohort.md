@@ -1056,4 +1056,443 @@ REFERENCE:
  [oai_citation:6‡northbeam.io](https://www.northbeam.io/blog/beyond-acquisition-why-retention-should-be-every-marketers-priority?utm_source=chatgpt.com)
 
  
+ PYTHON ANALYTICS EXECUTION LAYER
+
+RUNTIME:
+
+- Python analytics workers
+
+- warehouse-side aggregation
+
+- async cohort computation jobs
+
+- vectorized retention processing
+
+USED FOR:
+
+- retention aggregation
+
+- cohort recomputation
+
+- LTV aggregation
+
+- revenue reconciliation
+
+- churn curve analysis
+
+- cohort maturity scoring
+
+- anomaly detection
+
+- forecasting preparation
+
+RULES:
+
+- Python NEVER runs in frontend
+
+- cohort recompute MUST be async
+
+- analytics outputs MUST persist to DB
+
+- frontend reads persisted snapshots only
+
+- large cohorts processed in batches
+
+NEVER:
+
+- compute cohorts in browser
+
+- aggregate retention client-side
+
+- expose analytics workers publicly
+
+---
+
+## 🔄 COHORT MATURITY LIFECYCLE
+
+FLOW:
+
+acquisition
+
+→ activation
+
+→ retention observation
+
+→ maturity scoring
+
+→ revenue stabilization
+
+→ profitability evaluation
+
+→ forecasting eligibility
+
+→ archival
+
+RULES:
+
+- immature cohorts MUST be flagged
+
+- mature and immature cohorts MUST NOT be ranked equally
+
+- cohort confidence increases over time
+
+- retention certainty decays with incomplete ingestion
+
+---
+
+## 🧬 EVENT INTEGRITY SEMANTICS
+
+ALL EVENTS MUST INCLUDE:
+
+- org_id
+
+- user_id
+
+- session_id
+
+- event_id
+
+- timestamp
+
+- ingestion_timestamp
+
+- source
+
+RULES:
+
+- duplicate events MUST be detectable
+
+- invalid timestamps MUST be quarantined
+
+- malformed retention events MUST be rejected
+
+- revenue events MUST remain immutable
+
+RISKS:
+
+- inflated retention
+
+- distorted LTV
+
+- phantom engagement
+
+- broken cohort analysis
+
+---
+
+## ⚠️ IDENTITY FRAGMENTATION SEMANTICS
+
+RETENTION MAY BE DISTORTED BY:
+
+- anonymous users
+
+- cookie expiration
+
+- multi-device usage
+
+- privacy restrictions
+
+- consent rejection
+
+- account switching
+
+RULES:
+
+- unresolved identity MUST remain observable
+
+- stitched identities MUST be auditable
+
+- retention certainty MUST degrade gracefully
+
+NEVER:
+
+- silently merge identities
+
+- assume deterministic identity resolution
+
+---
+
+## 📊 REVENUE MATURITY SEMANTICS
+
+RECENT COHORT REVENUE IS:
+
+- incomplete
+
+- delayed
+
+- refund-sensitive
+
+- subscription-dependent
+
+RULES:
+
+- recent cohorts MUST expose incomplete revenue state
+
+- refunds MUST recompute profitability
+
+- subscription renewals MUST remain traceable
+
+- LTV truth changes over time
+
+SYSTEM MUST TRACK:
+
+- delayed revenue
+
+- refund impact
+
+- subscription churn
+
+- payback maturity
+
+- monetization lag
+
+---
+
+## 🧠 FORECASTING GOVERNANCE
+
+FORECASTS ARE:
+
+- probabilistic
+
+- confidence-weighted
+
+- non-deterministic
+
+RULES:
+
+- forecasted LTV != realized LTV
+
+- confidence score mandatory
+
+- low-confidence cohorts flagged
+
+- forecasting outputs versioned
+
+NEVER:
+
+- present forecasts as truth
+
+- auto-optimize spend from forecasts
+
+---
+
+## 🧠 COMPETITOR INTELLIGENCE EXPANSION
+
+ADVANCED COMPETITOR CAPABILITIES:
+
+Amplitude:
+
+- behavioral cohorting
+
+- lifecycle segmentation
+
+- retention intelligence
+
+Mixpanel:
+
+- funnel-linked retention
+
+- event-based lifecycle analysis
+
+RevenueCat:
+
+- subscription cohort analytics
+
+- renewal-aware LTV tracking
+
+Northbeam:
+
+- blended acquisition quality
+
+- cohort profitability intelligence
+
+PostHog:
+
+- warehouse-native analytics
+
+- product-led cohort tracking
+
+SYSTEM DIRECTION:
+
+- deterministic analytics first
+
+- explainable retention intelligence
+
+- warehouse-native processing
+
+- retention observability infrastructure
+
+- profitability-aware cohorting
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS (ADDITIONAL)
+
+POST /api/v1/dashboard/cohort/maturity
+
+POST /api/v1/dashboard/cohort/reconciliation
+
+GET /api/v1/dashboard/cohort/drift
+
+GET /api/v1/dashboard/cohort/health
+
+POST /api/v1/dashboard/cohort/anomaly-check
+
+GET /api/v1/dashboard/cohort/confidence
+
+RULES:
+
+- cohort recomputes async only
+
+- forecasting backend-owned
+
+- retention confidence backend-generated
+
+- reconciliation versioned
+
+---
+
+## 🗄️ REQUIRED TABLES (ADDITIONAL)
+
+cohort_maturity
+
+cohort_confidence
+
+retention_drift_logs
+
+event_integrity_logs
+
+subscription_reconciliation
+
+refund_adjustments
+
+revenue_maturity_state
+
+forecast_versions
+
+cohort_forecast_confidence
+
+warehouse_compute_jobs
+
+---
+
+## ⚡ EXECUTION BOUNDARIES (ADDITIONAL)
+
+CLAUDE MAY IMPLEMENT:
+
+- cohort heatmap rendering
+
+- maturity indicators
+
+- confidence labels
+
+- stale cohort warnings
+
+- retention drift visualization
+
+- forecasting UI states
+
+- reconciliation history rendering
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- churn prediction engine
+
+- probabilistic LTV forecasting
+
+- survival analysis engine
+
+- warehouse aggregation engine
+
+- revenue reconciliation engine
+
+- identity stitching infrastructure
+
+- forecasting ML systems
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES (ADDITIONAL)
+
+ALL COHORT OUTPUTS MUST BE:
+
+- explainable
+
+- reproducible
+
+- versioned
+
+- auditable
+
+RULES:
+
+- cohort recomputes immutable
+
+- retention definitions centrally managed
+
+- forecasting changes traceable
+
+- profitability logic versioned
+
+COMPLIANCE:
+
+- GDPR-safe aggregation mandatory
+
+- anonymized retention exports required
+
+- no raw behavioral exposure
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED (ADDITIONAL)
+
+DEFER:
+
+- autonomous churn AI
+
+- self-optimizing retention systems
+
+- predictive lifecycle automation
+
+- reinforcement learning optimization
+
+- AI acquisition quality scoring
+
+- probabilistic survival forecasting
+
+- autonomous pricing optimization
+
+RULE:
+
+- do NOT fake predictive retention certainty
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST (ADDITIONAL)
+
+NEVER:
+
+- frontend retention computation
+
+- realtime full cohort recompute on page load
+
+- localStorage retention cache
+
+- fake LTV forecasts
+
+- hidden retention manipulation
+
+- silent cohort recalculation
+
+- browser-side aggregation
+
+- mock cohort forecasting in production
+
+RULE:
+
+- cohorts are analytical infrastructure
+
+- NOT visualization-only dashboards
+
+---
 ✅ DONE

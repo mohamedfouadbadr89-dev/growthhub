@@ -909,3 +909,413 @@ This system direction exposes:
 * execution lineage
 * attribution-aware decisions
 
+Runtime Truth
+
+Current decision detail page is still partially frontend-driven and not yet connected to a true orchestration runtime.
+
+Current implementation state:
+
+* apply execution is initiated from frontend
+* execution confirmation is partially simulated
+* execution lineage is absent
+* rollback awareness is absent
+* orchestration dependencies are absent
+* execution reconciliation is not implemented
+* runtime topology visibility is absent
+* approval governance is incomplete
+* realtime orchestration state is incomplete
+
+Current page behaves as:
+
+strategic recommendation visualization layer
+
+NOT yet:
+
+enterprise execution cockpit runtime
+
+⸻
+
+🧬 Competitor Lifecycle
+
+Reference competitors analyzed:
+
+* Madgicx
+* Braze
+* Triple Whale
+* Northbeam
+* Lifetimely
+* AdCreative.ai
+* Markifact
+* Revealbot
+* Birch
+
+Observed lifecycle maturity:
+
+Madgicx
+
+Strong:
+
+* recommendation surfaces
+* automation visibility
+* optimization explainability
+
+Weak:
+
+* orchestration governance
+* execution lineage
+* rollback semantics
+* runtime dependency visibility
+
+⸻
+
+Braze
+
+Strong:
+
+* workflow orchestration
+* customer journey execution
+* event-driven automation
+
+Weak:
+
+* marketing execution governance
+* attribution intelligence
+* rollback-aware campaign execution
+
+⸻
+
+Triple Whale
+
+Strong:
+
+* attribution visibility
+* blended analytics
+* profitability intelligence
+
+Weak:
+
+* execution orchestration
+* recommendation governance
+* runtime automation control
+
+⸻
+
+Northbeam
+
+Strong:
+
+* attribution modeling
+* media mix analysis
+* forecasting intelligence
+
+Weak:
+
+* execution runtime systems
+* orchestration governance
+* automation lifecycle management
+
+⸻
+
+Lifetimely
+
+Strong:
+
+* LTV analytics
+* retention visibility
+
+Weak:
+
+* orchestration semantics
+* execution intelligence
+* runtime governance
+
+⸻
+
+AdCreative.ai
+
+Strong:
+
+* AI creative generation
+* creative scoring
+
+Weak:
+
+* operational intelligence
+* execution governance
+* orchestration safety
+
+⸻
+
+Markifact
+
+Strong:
+
+* operational reporting
+* marketing observability
+
+Weak:
+
+* execution topology
+* runtime orchestration
+* dependency intelligence
+
+⸻
+
+Target positioning for this system:
+
+Execution Intelligence Operating System
+
+NOT:
+
+* analytics dashboard
+* recommendation UI
+* automation trigger panel
+
+⸻
+
+⚠️ Missing Semantics
+
+Current page still lacks:
+
+* execution lineage semantics
+* dependency propagation semantics
+* rollback dependency chains
+* orchestration visibility
+* execution topology awareness
+* runtime drift semantics
+* execution queue visibility
+* conflict orchestration semantics
+* anomaly propagation semantics
+* execution replay semantics
+* degraded-mode semantics
+* execution saturation semantics
+* workflow graph visibility
+* approval chain visibility
+
+Current implementation is:
+
+recommendation-centric
+
+NOT yet:
+
+orchestration-centric
+
+⸻
+
+🚨 Dangerous Assumptions
+
+The following assumptions are forbidden:
+
+❌ frontend execution equals successful orchestration
+❌ apply button equals execution approval
+❌ recommendation confidence guarantees execution safety
+❌ platform state is stable
+❌ simulations are permanently valid
+❌ execution states are synchronous
+❌ realtime events arrive ordered
+❌ execution truth can live in frontend
+❌ orchestration dependencies are optional
+❌ rollback availability is guaranteed
+
+Backend orchestration layer MUST remain authoritative.
+
+⸻
+
+🧩 Spec Gaps
+
+Still missing from architecture:
+
+* execution dependency graph
+* rollback propagation engine
+* orchestration deadlock prevention
+* execution replay system
+* multi-stage approval engine
+* runtime degradation policies
+* anomaly cluster modeling
+* execution saturation controls
+* queue reconciliation semantics
+* dependency failure propagation
+* execution arbitration engine
+* topology rendering contracts
+* execution consistency guarantees
+
+These remain deferred orchestration concerns.
+
+⸻
+
+🔌 Required Backend Contracts
+
+Required backend contracts before production orchestration:
+
+GET /api/v1/decisions/:id
+POST /api/v1/decisions/:id/apply
+POST /api/v1/decisions/:id/simulate
+
+GET /api/v1/runtime/execution-readiness
+GET /api/v1/runtime/platform-health
+GET /api/v1/runtime/rollback-state
+GET /api/v1/runtime/conflicts
+GET /api/v1/runtime/topology
+GET /api/v1/runtime/dependency-state
+GET /api/v1/runtime/anomaly-pressure
+
+Realtime channels:
+
+* decision_detail:{org_id}:{decision_id}
+* execution_runtime:{org_id}
+* orchestration_runtime:{org_id}
+* rollback_runtime:{org_id}
+
+Backend MUST remain:
+
+* execution authority
+* simulation authority
+* orchestration authority
+* governance authority
+
+⸻
+
+🗄️ Required Tables
+
+Still required:
+
+decision_execution_lineage
+decision_dependencies
+execution_snapshots
+rollback_snapshots
+runtime_conflicts
+execution_reconciliation_logs
+execution_topology_edges
+platform_degradation_state
+automation_fatigue_logs
+approval_chains
+execution_confidence_history
+runtime_dependency_graph
+orchestration_runtime_state
+simulation_refresh_queue
+
+All tables MUST:
+
+* include org_id
+* enforce RLS
+* remain backend-owned
+
+⸻
+
+⚡ Execution Boundaries
+
+Frontend MUST NEVER:
+
+❌ execute platform mutations directly
+❌ bypass orchestration
+❌ fabricate execution success
+❌ mutate execution confidence
+❌ bypass governance validation
+❌ simulate rollback readiness
+❌ generate local execution authority
+❌ bypass approval chains
+❌ infer execution dependencies
+❌ override orchestration conflicts
+
+Frontend MAY ONLY:
+
+✅ render backend truth
+✅ request execution
+✅ observe execution state
+✅ reconcile realtime updates
+
+Execution authority belongs ONLY to orchestration backend.
+
+⸻
+
+🛡️ Governance Boundaries
+
+Governance layer MUST control:
+
+* execution approvals
+* rollback authorization
+* dependency validation
+* throttling
+* degraded mode activation
+* anomaly-pressure handling
+* execution retries
+* conflict arbitration
+* queue prioritization
+* cooldown enforcement
+* approval escalation
+* platform isolation
+
+Governance MUST remain backend-controlled.
+
+⸻
+
+✅ What Claude Can Safely Implement
+
+Claude MAY safely implement:
+
+* API integrations
+* React Query fetching
+* realtime subscriptions
+* loading states
+* empty states
+* typed DTO mapping
+* cache reconciliation
+* render-only orchestration widgets
+* execution readiness rendering
+* platform health rendering
+* simulation rendering
+* risk visualization
+* observability surfaces
+
+ONLY IF:
+
+* backend contracts already exist
+
+⸻
+
+⛔ What MUST Remain Deferred
+
+The following MUST remain deferred until orchestration backend exists:
+
+* autonomous execution
+* rollback engine
+* dependency propagation
+* execution arbitration
+* topology engine
+* anomaly-pressure engine
+* degraded-mode orchestration
+* approval workflow engine
+* execution replay engine
+* orchestration recovery engine
+* execution deadlock prevention
+* adaptive throttling engine
+
+These are orchestration-layer concerns —
+NOT frontend concerns.
+
+⸻
+
+❌ What Should NEVER Exist
+
+The following architecture is permanently forbidden:
+
+❌ direct OpenAI/OpenRouter calls from frontend
+❌ optimistic fake execution
+❌ local execution authority
+❌ frontend-generated orchestration state
+❌ duplicated runtime truth
+❌ execution without audit chain
+❌ execution without snapshots
+❌ frontend rollback authority
+❌ local dependency resolution
+❌ simulated governance approval
+❌ automatic execution from recommendation rendering
+❌ stale simulation reuse without validation
+❌ execution without org scoping
+❌ silent retries without audit logs
+
+This system is intended to evolve into:
+
+enterprise execution intelligence infrastructure —
+NOT recommendation UI softw
+

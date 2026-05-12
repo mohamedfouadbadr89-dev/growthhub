@@ -497,3 +497,377 @@ EXAMPLE:
 - ALL execution MUST go through confirmation modal
 
 - ALL numeric fields MUST be raw numbers (no formatting)
+
+
+GOVERNANCE AUDIT LAYER
+
+## Runtime Truth
+
+CURRENT REALITY:
+
+* app/actions/page.tsx is currently a mocked-shell UI
+
+* page renders successfully through protected routing
+
+* frontend data is currently local mocked state only
+
+* "Inspect Logic" now routes correctly to /actions/[id]
+
+* dynamic action detail routing is operational
+
+* no backend fetch currently powers the overview page
+
+* no realtime stream currently connected
+
+* no execution API currently wired from UI
+
+* current "Deploy Now" behavior is frontend-only mocked interaction
+
+* recommendation cards are currently visual placeholders
+
+* Actions list currently does NOT consume canonical backend Action shape
+
+* GET /api/v1/actions backend contract is NOT yet connected to UI
+
+* current runtime preserves DEFERRED-BY-GOVERNANCE status
+
+---
+
+## Competitor Lifecycle
+
+EXPECTED PRODUCT LIFECYCLE:
+
+decision engine
+
+→ generates recommendation
+
+→ recommendation becomes pending action
+
+→ user validates action
+
+→ execution approval flow
+
+→ execution engine
+
+→ execution logs
+
+→ performance feedback loop
+
+→ automation recommendation
+
+→ decision refinement
+
+CURRENT STATUS:
+
+* lifecycle only partially exists
+
+* execution engine exists minimally in backend
+
+* recommendation-generation lifecycle is NOT implemented
+
+* frontend currently visualizes future-state lifecycle only
+
+---
+
+## Missing Semantics
+
+MISSING DOMAIN SEMANTICS:
+
+* distinction between recommendation vs executable action
+
+* canonical pending-action lifecycle
+
+* approval-state semantics
+
+* risk escalation semantics
+
+* bulk execution semantics
+
+* dependency-chain semantics
+
+* rollback ownership semantics
+
+* realtime event semantics
+
+* conflict-resolution semantics
+
+* execution-authority semantics
+
+* automation promotion semantics
+
+---
+
+## Dangerous Assumptions
+
+CURRENT UI ASSUMPTIONS THAT ARE NOT YET TRUE:
+
+* displayed impact scores imply real backend scoring
+
+* displayed urgency implies validated prioritization
+
+* displayed recommendations imply recommendation engine exists
+
+* displayed execution buttons imply executable backend linkage
+
+* displayed risk labels imply real validation
+
+* displayed automation recommendations imply automation analysis exists
+
+* displayed realtime activity implies realtime stream exists
+
+* displayed execution history implies canonical audit persistence
+
+RULE:
+
+* UI placeholders MUST NOT be interpreted as production truth
+
+---
+
+## Spec Gaps
+
+KNOWN ARCHITECTURE GAPS:
+
+* recommendation engine specification incomplete
+
+* recommendation persistence model undefined
+
+* recommendation scoring lifecycle undefined
+
+* execution approval-state transitions undefined
+
+* bulk conflict-resolution behavior incomplete
+
+* dependency-resolution engine undefined
+
+* realtime reconciliation behavior incomplete
+
+* action-priority weighting rules incomplete
+
+* action replay semantics undefined
+
+* execution ownership boundaries incomplete
+
+---
+
+## Required Backend Contracts
+
+REQUIRED BUT NOT YET FULLY IMPLEMENTED:
+
+GET /api/v1/actions
+
+POST /api/v1/actions/:id/execute
+
+POST /api/v1/actions/:id/schedule
+
+POST /api/v1/actions/bulk
+
+MISSING CONTRACT BEHAVIOR:
+
+* canonical ActionsResponse normalization
+
+* recommendation hydration
+
+* realtime synchronization
+
+* validation pipeline exposure
+
+* risk evaluation response model
+
+* approval workflow state exposure
+
+* execution replay handling
+
+* dependency validation
+
+* conflict detection response
+
+* partial-success bulk response model
+
+---
+
+## Required Tables
+
+REQUIRED TABLES FOR FULL IMPLEMENTATION:
+
+actions
+
+action_logs
+
+action_execution_queue
+
+action_conflicts
+
+action_dependencies
+
+action_recommendations
+
+action_validation_results
+
+action_rollback_logs
+
+action_realtime_events
+
+CURRENT STATUS:
+
+* only partial schema currently exists
+
+* recommendation-layer persistence incomplete
+
+* rollback persistence missing
+
+* dependency persistence missing
+
+* realtime event persistence missing
+
+---
+
+## Execution Boundaries
+
+STRICT EXECUTION BOUNDARIES:
+
+* frontend MUST NEVER execute platform APIs directly
+
+* frontend MUST NEVER generate AI decisions
+
+* frontend MUST NEVER bypass validation layer
+
+* frontend MUST NEVER bypass approval flow
+
+* execution authority belongs ONLY to backend
+
+* validation authority belongs ONLY to backend
+
+* risk authority belongs ONLY to backend
+
+* rollback authority belongs ONLY to backend
+
+* realtime authority belongs ONLY to backend infrastructure
+
+---
+
+## Governance Boundaries
+
+DEFERRED-BY-GOVERNANCE SURFACES:
+
+* recommendation engine
+
+* automated prioritization
+
+* realtime synchronization
+
+* bulk execution orchestration
+
+* rollback engine
+
+* dependency engine
+
+* conflict engine
+
+* approval workflow engine
+
+* execution queue orchestration
+
+* recommendation persistence lifecycle
+
+RULE:
+
+* frontend may expose navigation safely
+
+* frontend MUST NOT simulate backend truth beyond approved mocked-shell scope
+
+---
+
+## What Claude Can Safely Implement
+
+SAFE IMPLEMENTATION ZONE:
+
+* route exposure
+
+* UI navigation
+
+* loading states
+
+* empty states
+
+* error states
+
+* frontend rendering structure
+
+* non-executable placeholders
+
+* static layout improvements
+
+* frontend-only organization
+
+* guarded API integration
+
+* safe GET-based rendering
+
+* readonly realtime placeholders
+
+* explicit mocked-shell labeling
+
+---
+
+## What MUST Remain Deferred
+
+DEFERRED UNTIL SPEC + BACKEND AUTHORITY EXIST:
+
+* real recommendation generation
+
+* automated action prioritization
+
+* execution orchestration
+
+* rollback engine
+
+* dependency-resolution engine
+
+* realtime execution synchronization
+
+* approval workflow engine
+
+* bulk execution engine
+
+* canonical risk scoring
+
+* execution replay engine
+
+* automation promotion engine
+
+---
+
+## What Should NEVER Exist
+
+FORBIDDEN ARCHITECTURE PATTERNS:
+
+* direct frontend AI execution
+
+* direct frontend platform execution
+
+* frontend-owned risk evaluation
+
+* frontend-owned approval bypass
+
+* frontend-owned rollback execution
+
+* auto-execution on page load
+
+* GET-triggered AI generation
+
+* fallback AI generation
+
+* client-side secret exposure
+
+* mock execution pretending to be real execution
+
+* cross-org action visibility
+
+* non-auditable execution flows
+
+* execution without idempotency
+
+* execution without validation
+
+* execution without logging
+

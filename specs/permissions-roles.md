@@ -411,3 +411,566 @@ permissions:
 - use_ai
 - execute_tools
 - manage_keys
+
+
+
+
+## ⚡ RUNTIME TRUTH
+
+PERMISSIONS SYSTEMS ARE:
+
+- org-scoped
+
+- hierarchical
+
+- deny-sensitive
+
+- cache-sensitive
+
+- session-dependent
+
+- audit-critical
+
+RULES:
+
+- Clerk handles authentication ONLY
+
+- internal RBAC remains source of truth
+
+- permissions may differ per module
+
+- explicit deny overrides allow
+
+- permission propagation is eventually consistent
+
+- cached permissions may become stale briefly
+
+- role updates require session refresh
+
+SYSTEM TRUTH PRIORITY:
+
+1. Clerk identity
+
+2. internal RBAC mappings
+
+3. role permissions
+
+4. approval policies
+
+5. org isolation rules
+
+6. frontend visibility state
+
+NEVER:
+
+- trust frontend permission state
+
+- use Clerk roles as authorization directly
+
+- infer permissions client-side
+
+- bypass deny rules
+
+- allow stale cached permissions indefinitely
+
+---
+
+## 🔗 CLERK RBAC INTEGRATION
+
+CLERK RESPONSIBILITY:
+
+- authentication
+
+- identity
+
+- sessions
+
+- org memberships
+
+- org role assignment
+
+INTERNAL SYSTEM RESPONSIBILITY:
+
+- permission enforcement
+
+- approval validation
+
+- module-level authorization
+
+- audit logging
+
+- execution governance
+
+- deny overrides
+
+- feature restrictions
+
+RULES:
+
+- Clerk roles MUST map into internal RBAC
+
+- backend APIs MUST validate permissions independently
+
+- Clerk permissions are NOT sufficient alone
+
+- internal modules may require stricter controls
+
+- session refresh required after role changes
+
+---
+
+## 🔄 COMPETITOR LIFECYCLE SEMANTICS
+
+PERMISSION FLOW:
+
+login
+
+→ Clerk identity validation
+
+→ org membership resolution
+
+→ role mapping
+
+→ permission hydration
+
+→ module access validation
+
+→ execution approval checks
+
+→ audit logging
+
+→ cache invalidation
+
+→ session refresh
+
+RULES:
+
+- permission state changes dynamically
+
+- permission caches require invalidation
+
+- org switching affects authorization
+
+- approval capability separate from edit capability
+
+- permissions evolve historically
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- role inheritance
+
+- nested permissions
+
+- module override hierarchy
+
+- permission expiration
+
+- temporary elevated access
+
+- emergency admin access
+
+- cross-org admin handling
+
+- cache invalidation SLA
+
+- permission conflict resolution
+
+- approval escalation hierarchy
+
+- delegated approvals
+
+- role template versioning
+
+- stale session handling
+
+- bulk permission updates
+
+- rollback semantics
+
+- permission simulation mode
+
+REQUIRED BEFORE SCALE:
+
+- canonical RBAC hierarchy
+
+- permission inheritance model
+
+- cache invalidation governance
+
+- approval escalation policy
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- Clerk org role equals system authority
+
+- frontend hiding equals security
+
+- admins should bypass all restrictions
+
+- cached permissions are always fresh
+
+- permission updates propagate instantly
+
+- all modules share same permission semantics
+
+- approval rights imply execution rights
+
+- viewers are harmless
+
+RISKS:
+
+- privilege escalation
+
+- stale access abuse
+
+- cross-org leakage
+
+- approval bypass
+
+- inconsistent authorization
+
+- hidden permission drift
+
+- broken audit reproducibility
+
+- unauthorized automation execution
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- GET /api/v1/internal/permissions/catalog
+
+- GET /api/v1/internal/permissions/audit
+
+- GET /api/v1/internal/roles/templates
+
+- GET /api/v1/internal/roles/history
+
+- POST /api/v1/internal/roles/clone
+
+- POST /api/v1/internal/roles/:id/lock
+
+- POST /api/v1/internal/roles/:id/unlock
+
+- POST /api/v1/internal/permissions/simulate
+
+- POST /api/v1/internal/permissions/refresh
+
+- POST /api/v1/internal/permissions/invalidate-cache
+
+MISSING STATES:
+
+- stale_permissions
+
+- permission_conflict
+
+- org_switch_pending
+
+- approval_required
+
+- inherited_permission
+
+- explicit_deny
+
+- role_locked
+
+- permission_sync_failed
+
+- stale_session
+
+- orphaned_role
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+PERMISSION VALIDATION CONTRACT:
+
+INPUT:
+
+- clerk_user_id
+
+- org_id
+
+- module
+
+- action
+
+OUTPUT:
+
+- allowed
+
+- deny_reason
+
+- effective_permissions
+
+- approval_required
+
+RULES:
+
+- backend-only validation
+
+- explicit deny precedence mandatory
+
+- org isolation enforced
+
+---
+
+ROLE RESOLUTION CONTRACT:
+
+INPUT:
+
+- clerk_user_id
+
+- org_id
+
+OUTPUT:
+
+- role
+
+- permissions[]
+
+- permission_version
+
+RULES:
+
+- deterministic mapping required
+
+- cache invalidation supported
+
+- historical role snapshots preserved
+
+---
+
+APPROVAL CONTRACT:
+
+INPUT:
+
+- requester_id
+
+- module
+
+- action
+
+OUTPUT:
+
+- requires_approval
+
+- approvers[]
+
+- approval_policy
+
+RULES:
+
+- approval logic server-side only
+
+- immutable audit required
+
+---
+
+AUDIT CONTRACT:
+
+INPUT:
+
+- actor_id
+
+- org_id
+
+- action
+
+- module
+
+OUTPUT:
+
+- audit_log
+
+- timestamp
+
+- risk_level
+
+RULES:
+
+- immutable storage required
+
+- all permission mutations logged
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+permission_catalog
+
+permission_groups
+
+permission_denies
+
+permission_cache
+
+permission_audit_logs
+
+permission_versions
+
+role_templates
+
+role_hierarchy
+
+role_change_history
+
+role_assignment_logs
+
+user_permission_overrides
+
+approval_permission_matrix
+
+module_permission_map
+
+org_permission_policies
+
+permission_sync_jobs
+
+permission_cache_invalidation
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- roles tables
+
+- permissions matrix UI
+
+- role search
+
+- filters
+
+- pagination
+
+- role creation forms
+
+- permission toggles
+
+- audit rendering
+
+- loading/error/empty states
+
+- role visualization
+
+- org-scoped rendering
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- RBAC engine
+
+- permission evaluation engine
+
+- deny resolution engine
+
+- approval engine
+
+- authorization middleware
+
+- permission cache orchestration
+
+- session invalidation logic
+
+- cross-org access enforcement
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+PERMISSION GOVERNANCE:
+
+- role changes auditable
+
+- permission versions immutable
+
+- deny rules reproducible
+
+- approval logic centralized
+
+- role mappings historically traceable
+
+SECURITY:
+
+- strict org isolation mandatory
+
+- authorization backend-only
+
+- frontend visibility non-authoritative
+
+- approval rights scoped per module
+
+COMPLIANCE:
+
+- permission history retained
+
+- role assignment immutable historically
+
+- access review reproducible
+
+- audit logs non-editable
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- AI-generated permissions
+
+- autonomous RBAC optimization
+
+- predictive insider-risk scoring
+
+- automatic privilege escalation
+
+- adaptive permissioning
+
+- AI-generated role hierarchies
+
+- self-healing authorization systems
+
+RULE:
+
+- authorization must remain deterministic initially
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- frontend-only permission checks
+
+- localStorage authorization
+
+- hidden admin bypasses
+
+- direct trust in Clerk role claims
+
+- browser-side approval logic
+
+- uncached permission recalculation
+
+- automatic permission escalation
+
+- cross-org role inheritance
+
+- client-side deny resolution
+
+- silent permission mutation
+
+---

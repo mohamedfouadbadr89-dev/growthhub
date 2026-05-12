@@ -854,4 +854,391 @@ THEN:
 REFERENCE:
  [oai_citation:6‡Cometly](https://www.cometly.com/post/marketing-attribution-platforms-ranked?utm_source=chatgpt.com)
 
+
+ PYTHON ANALYTICS EXECUTION LAYER
+
+RUNTIME:
+
+- Python workers
+
+- async analytics jobs
+
+- warehouse-side processing
+
+- vectorized attribution computation
+
+USED FOR:
+
+- attribution recompute
+
+- path analysis
+
+- conversion lag analysis
+
+- cohort contribution analysis
+
+- revenue reconciliation
+
+- anomaly detection
+
+- attribution confidence scoring
+
+RULES:
+
+- Python NEVER runs in frontend
+
+- Python jobs MUST be async
+
+- large attribution windows processed in batches
+
+- analytics outputs MUST persist to DB
+
+- dashboard reads ONLY persisted outputs
+
+NEVER:
+
+- run attribution in browser
+
+- compute journeys client-side
+
+- expose analytics workers publicly
+
+---
+
+## 🔄 ATTRIBUTION CONFIDENCE LIFECYCLE
+
+FLOW:
+
+ingestion
+
+→ normalization
+
+→ identity resolution
+
+→ attribution assignment
+
+→ confidence scoring
+
+→ reconciliation
+
+→ drift detection
+
+→ model validation
+
+RULES:
+
+- low-confidence attribution MUST be flagged
+
+- stale attribution windows MUST invalidate
+
+- incomplete journeys MUST remain traceable
+
+- attribution certainty decays over time
+
+---
+
+## 🧬 EVENT INTEGRITY SEMANTICS
+
+ALL EVENTS MUST INCLUDE:
+
+- org_id
+
+- source
+
+- timestamp
+
+- event_id
+
+- session_id
+
+- ingestion_time
+
+RULES:
+
+- duplicate events MUST be detectable
+
+- invalid timestamps MUST be quarantined
+
+- future timestamps MUST be rejected
+
+- malformed journeys MUST NOT enter attribution engine
+
+RISKS:
+
+- inflated ROAS
+
+- duplicate conversions
+
+- phantom attribution
+
+- corrupted optimization logic
+
+---
+
+## ⚠️ IDENTITY DECAY SEMANTICS
+
+IDENTITY LINKS MAY DECAY DUE TO:
+
+- cookie expiration
+
+- device switching
+
+- privacy restrictions
+
+- ad blockers
+
+- consent rejection
+
+RULES:
+
+- attribution certainty MUST degrade gracefully
+
+- unresolved identity MUST remain observable
+
+- stitched identities MUST be auditable
+
+NEVER:
+
+- assume deterministic identity resolution
+
+- silently merge identities
+
+---
+
+## 📊 CONVERSION LAG MODELING
+
+SYSTEM MUST TRACK:
+
+- click_to_conversion_delay
+
+- impression_to_conversion_delay
+
+- delayed revenue attribution
+
+- attribution aging windows
+
+RULES:
+
+- recent ROAS may be incomplete
+
+- attribution windows MUST remain configurable
+
+- dashboards MUST expose delayed attribution risk
+
+---
+
+## 🧠 COMPETITOR INTELLIGENCE EXPANSION
+
+ADVANCED COMPETITOR CAPABILITIES:
+
+Northbeam:
+
+- blended attribution
+
+- MER modeling
+
+- predictive revenue curves
+
+- identity graph infrastructure
+
+Triple Whale:
+
+- unified ecommerce attribution
+
+- creative-to-revenue linkage
+
+- blended CAC monitoring
+
+Hyros:
+
+- probabilistic attribution
+
+- server-side event recovery
+
+- signal restoration
+
+SegmentStream:
+
+- ML-assisted attribution
+
+- customer path reconstruction
+
+- incrementality-aware optimization
+
+SYSTEM DIRECTION:
+
+- deterministic governance first
+
+- explainability over black-box AI
+
+- warehouse-native attribution
+
+- attribution observability layer
+
+- enterprise reconciliation infrastructure
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS (ADDITIONAL)
+
+POST /api/v1/dashboard/attribution/confidence
+
+POST /api/v1/dashboard/attribution/reconciliation
+
+GET /api/v1/dashboard/attribution/drift
+
+GET /api/v1/dashboard/attribution/windows
+
+POST /api/v1/dashboard/attribution/anomaly-check
+
+GET /api/v1/dashboard/attribution/health
+
+RULES:
+
+- all attribution calculations async
+
+- reconciliation MUST be versioned
+
+- confidence scoring backend-only
+
+- drift detection backend-owned
+
+---
+
+## 🗄️ REQUIRED TABLES (ADDITIONAL)
+
+attribution_confidence
+
+attribution_drift_logs
+
+event_integrity_logs
+
+identity_decay_logs
+
+conversion_lag_metrics
+
+warehouse_sync_state
+
+attribution_reconciliation_versions
+
+journey_integrity_audit
+
+---
+
+## ⚡ EXECUTION BOUNDARIES (ADDITIONAL)
+
+CLAUDE MAY IMPLEMENT:
+
+- attribution health UI
+
+- confidence indicators
+
+- stale-data warnings
+
+- processing states
+
+- attribution drift visualization
+
+- reconciliation history rendering
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- probabilistic identity graph
+
+- server-side tracking recovery
+
+- MMM calculations
+
+- causal inference engine
+
+- revenue forecasting engine
+
+- warehouse stitching logic
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES (ADDITIONAL)
+
+ALL ATTRIBUTION OUTPUTS MUST BE:
+
+- explainable
+
+- reproducible
+
+- auditable
+
+- versioned
+
+RULES:
+
+- attribution snapshots immutable
+
+- recompute history preserved
+
+- attribution drift observable
+
+- reconciliation changes traceable
+
+COMPLIANCE:
+
+- consent-aware processing mandatory
+
+- GDPR-safe identity handling required
+
+- PII isolation enforced
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED (ADDITIONAL)
+
+DEFER:
+
+- causal AI attribution
+
+- autonomous budget shifting
+
+- predictive spend optimization
+
+- cross-platform identity graph AI
+
+- media mix modeling
+
+- incrementality experimentation
+
+- AI budget governance
+
+RULE:
+
+- do NOT fake statistical certainty
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST (ADDITIONAL)
+
+NEVER:
+
+- frontend attribution recompute
+
+- client-side identity stitching
+
+- hidden attribution correction
+
+- silent attribution overrides
+
+- fake confidence scores
+
+- realtime warehouse recompute on UI load
+
+- browser-side journey reconstruction
+
+- unversioned attribution recalculation
+
+RULE:
+
+- attribution is analytical infrastructure
+
+- NOT dashboard cosmetics
+
+---
+
 ✅ DONE

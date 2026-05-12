@@ -802,3 +802,211 @@ SYSTEM SHOULD EVOLVE INTO:
 * institutional creative observability layer
 
 —not مجرد AI gallery/results UI.
+
+## 🧠 INTELLIGENCE AUTHORITY LAYER
+
+AUTHORITATIVE SYSTEMS:
+
+- Python scoring pipelines
+- attribution engine
+- embeddings engine
+- post-launch feedback engine
+
+FRONTEND MUST NEVER:
+
+- invent scores
+- infer confidence
+- approximate predictions
+- fabricate insights
+
+RULE:
+
+all intelligence must originate from backend-authoritative systems only
+
+---
+
+## ⚠️ PREDICTION RELIABILITY LAYER
+
+RULES:
+
+- predictions are probabilistic
+- actual performance overrides predictions
+- confidence must decay over time
+- stale predictions must invalidate
+
+SYSTEM MUST TRACK:
+
+- prediction_accuracy
+- confidence_decay
+- attribution_reconciliation
+- post-launch divergence
+
+---
+
+## 🧠 CREATIVE MEMORY LAYER
+
+SYSTEM MUST PRESERVE:
+
+- winning patterns
+- failed hooks
+- fatigue history
+- survivability history
+- audience resonance history
+- creative lineage
+
+GOAL:
+
+creative system evolves into institutional performance memory
+
+---
+
+## 🐍 PYTHON EXECUTION GOVERNANCE
+
+ALL Python pipelines MUST:
+
+- remain async
+- remain reproducible
+- remain cacheable
+- support rollback
+- support versioning
+
+RULES:
+
+- no blocking inference on page load
+- no direct frontend execution
+- no uncontrolled GPU execution
+- outputs must be persisted before exposure
+
+---
+
+## 🧬 EMBEDDINGS GOVERNANCE
+
+embeddings are used for:
+
+- similarity search
+- creative clustering
+- hook lineage
+- fatigue proximity
+- winner pattern analysis
+
+RULES:
+
+- embeddings are backend-only
+- embeddings must be versioned
+- embeddings must support invalidation
+- frontend MUST NEVER access raw vectors
+
+---
+
+## 📊 ATTRIBUTION INTEGRITY LAYER
+
+RULES:
+
+- creative scoring MUST consider attribution quality
+- low attribution confidence MUST reduce prediction confidence
+- vanity engagement MUST NOT dominate rankings
+
+SYSTEM MUST PRIORITIZE:
+
+- attributed revenue
+- survivability
+- margin efficiency
+- LTV influence
+
+---
+
+## 🧠 SEMANTIC DECAY MODEL
+
+SYSTEM MUST TRACK:
+
+- novelty decay
+- creative saturation
+- semantic fatigue
+- hook repetition
+- audience exhaustion
+
+RULE:
+
+high-performing creatives may still degrade over time
+
+---
+
+## 🧾 REPRODUCIBILITY LAYER
+
+ALL AI outputs MUST BE:
+
+- reproducible
+- versioned
+- traceable
+- explainable
+
+RULES:
+
+- same inputs should reproduce comparable outputs
+- model versions must be logged
+- prompts must remain auditable
+
+---
+
+## 🧠 STRATEGIC POSITIONING
+
+THIS SYSTEM IS NOT:
+
+- AI gallery
+- creative toy
+- auto ad generator
+- autonomous deployment engine
+
+THIS SYSTEM IS:
+
+- creative intelligence infrastructure
+- institutional scoring system
+- attribution-aware optimization engine
+- creative observability platform
+- execution-governed intelligence layer
+
+---
+
+## 🚫 HALLUCINATION PREVENTION
+
+SYSTEM MUST NEVER:
+
+- fabricate performance certainty
+- fabricate attribution confidence
+- fabricate deployment safety
+- fabricate audience fit
+
+RULE:
+
+unknown confidence > fake confidence
+
+---
+
+## 🔄 INTELLIGENCE LIFECYCLE
+
+creative intelligence lifecycle:
+
+generated
+→ analyzed
+→ scored
+→ ranked
+→ validated
+→ deployed
+→ monitored
+→ reconciled
+→ evolved
+→ deprecated
+
+---
+
+## ⚡ RUNTIME ISOLATION
+
+RULES:
+
+- scoring workers isolated from frontend
+- embeddings workers isolated from execution engine
+- generation workers isolated from realtime systems
+
+GOAL:
+
+prevent execution cascade failures

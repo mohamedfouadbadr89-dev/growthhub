@@ -464,3 +464,560 @@ FALLBACK:
 SECURITY:
 
 - org_id + campaign_id isolation
+
+
+## ⚡ RUNTIME TRUTH
+
+CAMPAIGN DETAILS ARE:
+
+- attribution-sensitive
+
+- execution-sensitive
+
+- risk-dependent
+
+- latency-sensitive
+
+- platform-dependent
+
+- approval-dependent
+
+- realtime-volatile
+
+RULES:
+
+- KPI values may change after delayed attribution
+
+- campaign execution effects are not immediate
+
+- risk evaluation may change based on fresh metrics
+
+- adset performance may diverge from campaign performance
+
+- recommendations are probabilistic, not guarantees
+
+- realtime metrics are eventually consistent
+
+- campaign actions may fail at provider level
+
+SYSTEM TRUTH PRIORITY:
+
+1. platform execution result
+
+2. attribution engine
+
+3. campaign metrics
+
+4. adset metrics
+
+5. decision engine
+
+6. recommendations
+
+7. UI aggregates
+
+NEVER:
+
+- assume execution success before provider confirmation
+
+- update KPIs optimistically
+
+- calculate risk in frontend
+
+- auto-apply recommendations
+
+- classify campaign state from partial attribution windows
+
+- trust stale metrics during execution flow
+
+---
+
+## 🔄 COMPETITOR LIFECYCLE
+
+CAMPAIGN DETAIL FLOW:
+
+campaign active
+
+→ metrics accumulation
+
+→ anomaly detection
+
+→ recommendation generation
+
+→ validation layer
+
+→ approval flow
+
+→ execution request
+
+→ provider execution
+
+→ execution result
+
+→ feedback loop
+
+→ updated campaign state
+
+RULES:
+
+- recommendations require historical context
+
+- execution outcomes may lag
+
+- risk evaluation must precede execution
+
+- campaign state transitions are gradual
+
+- provider APIs may partially succeed
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- execution rollback semantics
+
+- attribution reconciliation windows
+
+- recommendation scoring methodology
+
+- action cooldown periods
+
+- budget guardrails
+
+- approval escalation rules
+
+- adset inheritance behavior
+
+- campaign objective normalization
+
+- execution retry strategy
+
+- provider timeout behavior
+
+- anomaly confidence scoring
+
+- campaign saturation semantics
+
+- spend pacing logic
+
+- multi-platform execution mapping
+
+- recommendation conflict resolution
+
+REQUIRED BEFORE SCALE:
+
+- canonical execution lifecycle
+
+- recommendation governance model
+
+- risk scoring framework
+
+- execution rollback policy
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- recommendation = guaranteed improvement
+
+- provider execution succeeds instantly
+
+- campaign metrics update synchronously
+
+- low CPA always means healthy scaling
+
+- adset ROAS reflects campaign health
+
+- blocked execution means failure
+
+- realtime data is complete
+
+- recommendations remain valid indefinitely
+
+RISKS:
+
+- false-positive recommendations
+
+- unsafe scaling
+
+- invalid execution approvals
+
+- stale recommendation execution
+
+- attribution mismatch
+
+- duplicated budget allocation
+
+- inconsistent KPI reporting
+
+- delayed anomaly detection
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- GET /api/v1/campaigns/{id}/trend
+
+- GET /api/v1/campaigns/{id}/alerts
+
+- GET /api/v1/campaigns/{id}/risks
+
+- GET /api/v1/campaigns/{id}/recommendations
+
+- GET /api/v1/campaigns/{id}/executions
+
+- GET /api/v1/campaigns/{id}/adsets
+
+- GET /api/v1/campaigns/{id}/creatives
+
+- GET /api/v1/campaigns/{id}/history
+
+- POST /api/v1/campaigns/{id}/validate-action
+
+- POST /api/v1/campaigns/{id}/request-approval
+
+- POST /api/v1/campaigns/{id}/cancel-action
+
+MISSING FILTERS:
+
+- attribution_window
+
+- lifecycle_state
+
+- adset_status
+
+- creative_type
+
+- risk_level
+
+- recommendation_type
+
+- execution_status
+
+MISSING STATES:
+
+- validating
+
+- awaiting_provider
+
+- partially_executed
+
+- stale_metrics
+
+- delayed_attribution
+
+- approval_required
+
+- execution_failed
+
+- rollback_pending
+
+- anomaly_detected
+
+- awaiting_refresh
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+CAMPAIGN DETAIL CONTRACT:
+
+INPUT:
+
+- campaign_id
+
+- org_id
+
+- attribution_window
+
+OUTPUT:
+
+- summary
+
+- adsets
+
+- creatives
+
+- recommendations
+
+- risks
+
+- execution_state
+
+RULES:
+
+- backend aggregation only
+
+- org isolation mandatory
+
+- deterministic KPI calculation
+
+- realtime-safe outputs required
+
+---
+
+RECOMMENDATION CONTRACT:
+
+INPUT:
+
+- campaign metrics
+
+- adset metrics
+
+- historical trends
+
+- anomaly signals
+
+OUTPUT:
+
+- recommendations[]
+
+- confidence_score
+
+- impact_estimate
+
+RULES:
+
+- recommendations are advisory only
+
+- no automatic execution
+
+- cached outputs mandatory
+
+- backend-only generation
+
+---
+
+EXECUTION VALIDATION CONTRACT:
+
+INPUT:
+
+- action_type
+
+- campaign_id
+
+- org_id
+
+- user_id
+
+OUTPUT:
+
+- validation_passed
+
+- risk_level
+
+- approval_required
+
+- blocking_reasons[]
+
+RULES:
+
+- every execution validated independently
+
+- high-risk actions blocked or escalated
+
+- deterministic validation mandatory
+
+- all validations logged
+
+---
+
+RISK ANALYSIS CONTRACT:
+
+INPUT:
+
+- campaign metrics
+
+- budget delta
+
+- execution history
+
+- anomaly signals
+
+OUTPUT:
+
+- risk_level
+
+- probability
+
+- explanation
+
+RULES:
+
+- backend-only risk evaluation
+
+- cached outputs
+
+- historical comparison required
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+campaign_execution_requests
+
+campaign_execution_results
+
+campaign_recommendation_history
+
+campaign_risk_history
+
+campaign_alerts
+
+campaign_anomalies
+
+campaign_validation_logs
+
+campaign_approval_requests
+
+campaign_execution_queue
+
+campaign_execution_rollbacks
+
+campaign_provider_logs
+
+campaign_trend_snapshots
+
+campaign_realtime_events
+
+campaign_action_history
+
+campaign_signal_scores
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- campaign detail UI
+
+- KPI cards
+
+- recommendation cards
+
+- trend charts
+
+- risk panels
+
+- confirmation modals
+
+- realtime subscriptions
+
+- expandable creatives
+
+- loading/error/empty states
+
+- execution status indicators
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- execution engine
+
+- provider execution logic
+
+- recommendation engine
+
+- anomaly detection engine
+
+- risk scoring engine
+
+- automatic scaling
+
+- automatic budget shifting
+
+- autonomous optimization logic
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+EXECUTION GOVERNANCE:
+
+- every execution auditable
+
+- approval flows immutable historically
+
+- risk evaluations versioned
+
+- recommendations historically traceable
+
+SECURITY:
+
+- org_id + campaign_id isolation mandatory
+
+- backend-only execution authority
+
+- execution permissions validated server-side
+
+- realtime channels scoped per org + campaign
+
+COMPLIANCE:
+
+- execution logs immutable
+
+- approvals traceable
+
+- recommendation generation auditable
+
+- rollback history preserved
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- autonomous execution
+
+- AI-driven budget scaling
+
+- predictive campaign automation
+
+- automatic anomaly correction
+
+- autonomous recommendation application
+
+- AI-generated execution chains
+
+- dynamic provider optimization
+
+- self-adjusting campaign systems
+
+RULE:
+
+- execution must remain human-approved initially
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- frontend execution authority
+
+- optimistic KPI mutation
+
+- browser-side risk scoring
+
+- automatic AI execution on GET
+
+- uncached recommendation recomputation
+
+- hidden execution flows
+
+- direct provider API execution from frontend
+
+- automatic recommendation apply
+
+- cross-org campaign visibility
+
+- frontend-generated execution statuses
+
+---

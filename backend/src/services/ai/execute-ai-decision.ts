@@ -362,7 +362,23 @@ export async function executeAIDecision(
     //     executeAction is the established Phase 4 P2 chain.
     void evaluateRulesForAIDecision(input.org_id, decision_id)
       .then(
-        () => null,
+        (result) => {
+          // Continuation #28 (2026-05-12) — item P observability-parity log.
+          // Symmetric counterpart to the failure-branch logger below; closes
+          // the asymmetric observability gap tracked since #23 (only the
+          // FAILURE branch logged; SUCCESS runs were silent at the [AI]
+          // console stream). NO behavior change; pure observability extension
+          // of the existing #23 hook surface. Logged only when at least one
+          // rule actually fired — silent for the (typical) no-match case so
+          // we don't flood logs for every AI decision that doesn't match a
+          // categorical rule trigger.
+          if (result && result.rulesFired > 0) {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[AI] auto-fire automation rules fired=${result.rulesFired} ai_decision_id=${decision_id} org_id=${input.org_id} trace_id=${trace_id} run_ids=${JSON.stringify(result.runIds)}`,
+            )
+          }
+        },
         (autoFireErr: unknown) => {
           // CONSTITUTION §3 "Fail Loudly" — automation infra failures
           // visible to operators via stdout. Does NOT propagate to caller.

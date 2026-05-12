@@ -2,8 +2,12 @@ import { Hono } from 'hono'
 import { generateState, validateState } from '../../lib/oauth-state.js'
 import { createSecret } from '../../lib/vault.js'
 import { supabaseAdmin } from '../../lib/supabase.js'
+import { ok, fail } from '../../utils/response.js'
 
-type Variables = { userId: string; orgId: string }
+// Continuation #31 (2026-05-12) — PHASE2_ENVELOPE_FOLLOWUP item M resolution.
+// Canonicalized onto Phase 1 envelope per ADJACENT CONTINUATION AUTHORITY.
+// FE apiClient detection-unwrap (#13) absorbs the change transparently.
+type Variables = { userId: string; orgId: string; requestId: string }
 export const connectRouter = new Hono<{ Variables: Variables }>()
 
 const redirectBase = () => process.env.OAUTH_REDIRECT_BASE_URL ?? ''
@@ -49,10 +53,10 @@ connectRouter.post('/start', async (c) => {
   const { platform, shop } = body
 
   if (!['meta', 'google', 'shopify'].includes(platform)) {
-    return c.json({ error: 'Bad Request', message: 'platform must be meta, google, or shopify' }, 400)
+    return fail(c, 'platform must be meta, google, or shopify', 400, { code: 'INVALID_PLATFORM', field: 'platform' })
   }
   if (platform === 'shopify' && !shop) {
-    return c.json({ error: 'Bad Request', message: 'shop is required for Shopify' }, 400)
+    return fail(c, 'shop is required for Shopify', 400, { code: 'MISSING_PARAMETER', field: 'shop' })
   }
 
   const { data: existing } = await supabaseAdmin
@@ -64,7 +68,7 @@ connectRouter.post('/start', async (c) => {
     .maybeSingle()
 
   if (existing) {
-    return c.json({ error: 'Conflict', message: 'Platform already connected for this organization' }, 400)
+    return fail(c, 'Platform already connected for this organization', 409, { code: 'ALREADY_CONNECTED' })
   }
 
   const state = generateState(orgId, platform)
@@ -73,7 +77,7 @@ connectRouter.post('/start', async (c) => {
   else if (platform === 'google') authUrl = buildGoogleAuthUrl(state)
   else authUrl = buildShopifyAuthUrl(state, shop!)
 
-  return c.json({ authUrl, state })
+  return ok(c, { authUrl, state })
 })
 
 // POST /api/v1/integrations/connect/complete
@@ -83,18 +87,18 @@ connectRouter.post('/complete', async (c) => {
   const { platform, code, state, shop } = body
 
   if (!platform || !code || !state) {
-    return c.json({ error: 'Bad Request', message: 'platform, code, and state are required' }, 400)
+    return fail(c, 'platform, code, and state are required', 400, { code: 'MISSING_PARAMETER' })
   }
 
   let stateData: { orgId: string; platform: string }
   try {
     stateData = validateState(state)
   } catch {
-    return c.json({ error: 'Bad Request', message: 'Invalid or expired OAuth state' }, 400)
+    return fail(c, 'Invalid or expired OAuth state', 400, { code: 'INVALID_OAUTH_STATE' })
   }
 
   if (stateData.orgId !== orgId || stateData.platform !== platform) {
-    return c.json({ error: 'Bad Request', message: 'Invalid or expired OAuth state' }, 400)
+    return fail(c, 'Invalid or expired OAuth state', 400, { code: 'INVALID_OAUTH_STATE' })
   }
 
   // Exchange authorization code for token
@@ -130,7 +134,7 @@ connectRouter.post('/complete', async (c) => {
       token = data.refresh_token
     } else {
       // shopify
-      if (!shop) return c.json({ error: 'Bad Request', message: 'shop is required for Shopify' }, 400)
+      if (!shop) return fail(c, 'shop is required for Shopify', 400, { code: 'MISSING_PARAMETER', field: 'shop' })
       const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -146,7 +150,7 @@ connectRouter.post('/complete', async (c) => {
     }
   } catch (err) {
     console.error('OAuth token exchange failed:', err)
-    return c.json({ error: 'Internal Server Error', message: 'OAuth token exchange failed' }, 500)
+    return fail(c, 'OAuth token exchange failed', 502, { code: 'OAUTH_EXCHANGE_FAILED' })
   }
 
   // Store token in Supabase Vault
@@ -155,7 +159,7 @@ connectRouter.post('/complete', async (c) => {
     vaultSecretId = await createSecret(token)
   } catch (err) {
     console.error('Vault secret creation failed:', err)
-    return c.json({ error: 'Internal Server Error', message: 'Failed to store credentials' }, 500)
+    return fail(c, 'Failed to store credentials', 500, { code: 'VAULT_STORE_FAILED' })
   }
 
   // Upsert integration record (handles reconnect case)
@@ -170,7 +174,7 @@ connectRouter.post('/complete', async (c) => {
 
   if (error || !integration) {
     console.error('Integration upsert failed:', error)
-    return c.json({ error: 'Internal Server Error', message: 'Failed to create integration' }, 500)
+    return fail(c, 'Failed to create integration', 500, { code: 'INTEGRATION_UPSERT_FAILED' })
   }
 
   // For Shopify: create the ad_account row using the shop domain
@@ -189,5 +193,5 @@ connectRouter.post('/complete', async (c) => {
       )
   }
 
-  return c.json({ integrationId: integration.id, platform: integration.platform, status: integration.status })
+  return ok(c, { integrationId: integration.id, platform: integration.platform, status: integration.status })
 })

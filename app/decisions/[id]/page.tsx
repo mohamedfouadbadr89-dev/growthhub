@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { ChevronRight, Zap, Lightbulb, Loader2, Sparkles, AlertTriangle, PlayCircle, CheckCircle2 } from "lucide-react";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
 const DECISION_ACTION_MAP: Record<string, Record<string, string>> = {
   ROAS_DROP:           { meta: "00000000-0000-0000-0000-000000000001", google: "00000000-0000-0000-0000-000000000004" },
@@ -112,8 +112,8 @@ export default function DecisionDetailPage() {
       });
       setExecResult(result);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : (err as Error).message ?? "Execution failed";
-      setExecError(msg);
+      // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+      setExecError(formatErrorMessage(err, "Execution failed"));
     } finally {
       setExecuting(false);
     }

@@ -429,4 +429,550 @@ Blocked Actions UI:
   - MUST require confirmation step (modal or override)
 
 
-  
+  ## ⚡ RUNTIME TRUTH
+
+EXECUTION SYSTEMS ARE:
+
+- stateful
+
+- latency-sensitive
+
+- approval-sensitive
+
+- provider-dependent
+
+- risk-constrained
+
+- eventually-consistent
+
+- failure-prone
+
+RULES:
+
+- execution success is not guaranteed
+
+- provider APIs may partially fail
+
+- execution latency varies by platform
+
+- campaign metrics may lag after execution
+
+- realtime events may arrive out of order
+
+- approvals may expire
+
+- risk changes dynamically with live metrics
+
+SYSTEM TRUTH PRIORITY:
+
+1. execution engine result
+
+2. provider confirmation
+
+3. validation layer
+
+4. approval state
+
+5. campaign metrics
+
+6. cached risk scores
+
+7. UI state
+
+NEVER:
+
+- assume execution succeeded before backend confirmation
+
+- mutate UI optimistically for critical actions
+
+- calculate risk in frontend
+
+- bypass validation layer
+
+- trust stale approval state
+
+- execute directly from UI
+
+---
+
+## 🔄 COMPETITOR LIFECYCLE
+
+EXECUTION FLOW:
+
+action suggested
+
+→ risk evaluation
+
+→ validation layer
+
+→ approval check
+
+→ confirmation modal
+
+→ execution queued
+
+→ provider execution
+
+→ execution result
+
+→ realtime update
+
+→ metrics refresh
+
+→ audit logging
+
+RULES:
+
+- execution is asynchronous
+
+- provider confirmation is authoritative
+
+- failed execution may require rollback
+
+- validation precedes execution always
+
+- approvals may block execution flow
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- execution queue priority
+
+- rollback semantics
+
+- execution retries
+
+- provider timeout handling
+
+- approval expiration rules
+
+- concurrency locking
+
+- duplicate execution prevention strategy
+
+- execution cooldown windows
+
+- stale risk invalidation
+
+- provider reconciliation rules
+
+- budget override semantics
+
+- execution batching logic
+
+- execution dependency chains
+
+- action idempotency policy
+
+REQUIRED BEFORE SCALE:
+
+- canonical execution lifecycle
+
+- rollback framework
+
+- provider reconciliation strategy
+
+- execution lock model
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- execution completes instantly
+
+- provider APIs are deterministic
+
+- risk remains static during execution
+
+- validation state remains valid indefinitely
+
+- realtime events arrive sequentially
+
+- partial execution means total failure
+
+- cached insights are current forever
+
+- approval implies successful execution
+
+RISKS:
+
+- duplicate executions
+
+- unsafe scaling
+
+- stale risk approvals
+
+- race conditions
+
+- provider desynchronization
+
+- invalid KPI reporting
+
+- inconsistent campaign states
+
+- execution replay bugs
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- GET /api/v1/actions/:id/status
+
+- GET /api/v1/campaigns/{id}/execution/history
+
+- GET /api/v1/campaigns/{id}/execution/risk
+
+- POST /api/v1/actions/:id/validate
+
+- POST /api/v1/actions/:id/approve
+
+- POST /api/v1/actions/:id/cancel
+
+- POST /api/v1/actions/:id/retry
+
+- POST /api/v1/actions/:id/rollback
+
+MISSING STATES:
+
+- validating
+
+- queued
+
+- executing
+
+- awaiting_provider
+
+- partially_executed
+
+- rollback_required
+
+- rollback_completed
+
+- approval_expired
+
+- stale_risk
+
+- retrying
+
+MISSING FILTERS:
+
+- execution_status
+
+- risk_level
+
+- approval_status
+
+- execution_source
+
+- provider
+
+- action_type
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+EXECUTION CONTRACT:
+
+INPUT:
+
+- action_id
+
+- campaign_id
+
+- org_id
+
+- user_id
+
+- override_reason?
+
+OUTPUT:
+
+- execution_id
+
+- validation_result
+
+- approval_state
+
+- execution_status
+
+RULES:
+
+- backend-only execution authority
+
+- deterministic validation required
+
+- all executions logged
+
+- org isolation mandatory
+
+---
+
+VALIDATION CONTRACT:
+
+INPUT:
+
+- action_type
+
+- campaign_state
+
+- risk_score
+
+- budget_delta
+
+- approval_state
+
+OUTPUT:
+
+- approved
+
+- blocked
+
+- pending_approval
+
+- validation_errors[]
+
+RULES:
+
+- validation required before every execution
+
+- stale validations rejected
+
+- risk-aware validation mandatory
+
+- deterministic outputs only
+
+---
+
+RISK CONTRACT:
+
+INPUT:
+
+- campaign metrics
+
+- execution type
+
+- spend impact
+
+- anomaly signals
+
+OUTPUT:
+
+- risk_level
+
+- risk_score
+
+- blocking_reason?
+
+- override_required
+
+RULES:
+
+- backend-only risk evaluation
+
+- cached + periodically refreshed
+
+- no frontend derivation
+
+---
+
+REALTIME EXECUTION CONTRACT:
+
+EVENTS:
+
+- action_started
+
+- action_validated
+
+- action_executed
+
+- action_failed
+
+- action_rolled_back
+
+RULES:
+
+- backend is source of truth
+
+- realtime events immutable
+
+- UI must reconcile after events
+
+- no optimistic execution assumptions
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+execution_requests
+
+execution_results
+
+execution_validation_logs
+
+execution_risk_snapshots
+
+execution_approvals
+
+execution_rollbacks
+
+execution_retries
+
+execution_provider_logs
+
+execution_locks
+
+execution_realtime_events
+
+execution_state_history
+
+execution_failures
+
+execution_overrides
+
+execution_queue
+
+execution_audit_logs
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- execution UI
+
+- confirmation modals
+
+- risk indicators
+
+- action buttons
+
+- loading states
+
+- disabled states
+
+- realtime subscriptions
+
+- execution timelines
+
+- execution history UI
+
+- error/success states
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- execution engine
+
+- provider execution logic
+
+- risk scoring engine
+
+- rollback engine
+
+- approval engine
+
+- retry orchestration
+
+- concurrency locking
+
+- provider reconciliation
+
+- autonomous execution
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+EXECUTION GOVERNANCE:
+
+- every execution immutable historically
+
+- approvals auditable
+
+- overrides traceable
+
+- risk snapshots versioned
+
+- rollback history preserved
+
+SECURITY:
+
+- org_id + campaign_id scoped execution
+
+- backend-only provider access
+
+- execution permissions enforced server-side
+
+- realtime channels org-scoped
+
+COMPLIANCE:
+
+- all execution attempts logged
+
+- failed executions preserved
+
+- approval decisions immutable
+
+- provider responses auditable
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- autonomous execution
+
+- AI-driven overrides
+
+- automatic rollback decisions
+
+- predictive execution systems
+
+- self-healing execution logic
+
+- autonomous retry orchestration
+
+- dynamic approval bypassing
+
+- AI-generated execution chains
+
+RULE:
+
+- human approval remains authoritative
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- frontend execution authority
+
+- direct provider API calls from browser
+
+- optimistic execution mutation
+
+- automatic AI execution on GET
+
+- hidden execution retries
+
+- uncached risk recomputation
+
+- frontend-generated validation
+
+- execution without audit logs
+
+- bypassed approval flows
+
+- cross-org execution visibility
+
+---

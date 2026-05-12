@@ -2,6 +2,47 @@ import { Hono } from 'hono'
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { dispatchIntelligence } from '../../services/intelligence/index.js'
 
+/**
+ * Decisions router — HARDENED BUT UNUSED per implementation classification model.
+ *
+ * GOVERNANCE STATE (documented via SYSTEM_CONTROL.md continuation #32, 2026-05-12):
+ *   - This router is MOUNTED at `/api/v1/decisions/*` (routes/v1/index.ts:117)
+ *     but a deferredPhase 503 gate at routes/v1/index.ts:90 intercepts EVERY
+ *     request to `/decisions/*` BEFORE this handler runs.
+ *   - Reason: this router queries the legacy `decisions` table + the
+ *     `decision_runs` table — BOTH belong to the Phase 3 anomaly engine
+ *     which is DEPRECATED+DEFERRED per CANONICAL AI SYSTEM resolution.
+ *     The canonical AI surface is `ai_decisions` (separate table, Phase 3
+ *     LINEAR closed); the legacy `decisions` table is malformed in live
+ *     DB and explicitly NOT to be reactivated.
+ *   - `dispatchIntelligence` (line 51 manual trigger path + Inngest path)
+ *     is additionally guarded by the early-return at jobs/inngest.ts
+ *     `generateDecisions` (continuation #29 defense-in-depth).
+ *
+ * WHY THE LEGACY ENVELOPE IS PRESERVED HERE:
+ *   - Code below uses legacy `c.json({error:'...'})` shapes instead of
+ *     canonical `ok()` / `fail()` from `utils/response.ts`.
+ *   - The 503 gate ensures no client ever sees these responses.
+ *   - Canonicalizing the envelope here would touch unreachable code AND
+ *     create confusion about whether the router is active.
+ *   - Per PHASE EXECUTION RULE + IMPLEMENTATION CLASSIFICATION MODEL:
+ *     HARDENED BUT UNUSED surfaces are preserved verbatim until their
+ *     owning phase is unlocked OR they are formally retired.
+ *
+ * IF Phase 3 anomaly engine is EVER unlocked:
+ *   1. Deploy canonical migrations creating `decisions` (rebuilt) +
+ *      `decision_runs` tables
+ *   2. Lift the 503 gate at routes/v1/index.ts:90
+ *   3. Remove the #29 defense-in-depth guard at jobs/inngest.ts
+ *      (generateDecisions function early-return)
+ *   4. Re-register `generateDecisions` (and `dailySyncAll` /
+ *      `syncIntegration` if appropriate) in the `functions = [...]`
+ *      array at jobs/inngest.ts:323
+ *   5. Canonicalize this router onto ok()/fail() per Phase 1 envelope
+ *   6. Update CANONICAL AI SYSTEM resolution in SYSTEM_CONTROL.md
+ *
+ * DO NOT canonicalize envelope here without unlocking the phase first.
+ */
 type Variables = { userId: string; orgId: string }
 
 export const decisionsRouter = new Hono<{ Variables: Variables }>()

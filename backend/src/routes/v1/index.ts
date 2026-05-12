@@ -87,6 +87,16 @@ const deferredPhase = (routerPath: string, phaseLabel: string) =>
 // Migrating these routes onto the canonical envelope is a future
 // Phase-1-cross-cutting patch that requires coordinated frontend
 // changes; deferred so Phase 2 ships without breaking the frontend.
+// Phase 3 anomaly engine remains DEFERRED per CANONICAL AI SYSTEM
+// resolution (SYSTEM_CONTROL.md): the legacy `decisions` / `alerts`
+// surfaces are intentionally orphaned in favor of the canonical
+// `ai_decisions` flow served by /api/v1/ai/* (validated through
+// aiValidator.ts; persisted via persistAIDecision; surfaced through
+// /api/v1/automation/runs JOIN; auto-fired through
+// execute-ai-decision.ts post-persist hook → evaluateRulesForAIDecision).
+// The handlers below are written + validated (HARDENED BUT UNUSED per #32)
+// — the 503 gate is the governance lock, not a missing-implementation
+// state. Lifting requires explicit phase unlock authorization.
 v1.use('/decisions/*',    deferredPhase('/api/v1/decisions',    'Phase 3 anomaly engine (legacy decisions table malformed; decision_runs not deployed)'))
 v1.use('/alerts/*',       deferredPhase('/api/v1/alerts',       'Phase 3 anomaly engine'))
 // Phase 4 Part 2 (automation engine) — UNLOCKED 2026-05-07. Migration

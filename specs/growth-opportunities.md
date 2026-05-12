@@ -1273,5 +1273,691 @@ YES:
 * operational observability engine
 * attribution-aware recommendation system
 
+
+RUNTIME TRUTH LAYER
+
+Actual Runtime Position
+
+growth opportunities page currently behaves as:
+
+* strategic recommendation visualization layer
+* semi-intelligent growth cockpit
+* frontend-simulated prioritization surface
+* static opportunity orchestration UI
+
+NOT YET:
+
+* enterprise growth intelligence engine
+* strategic portfolio orchestration system
+* predictive opportunity intelligence platform
+* governance-safe execution planning layer
+
+⸻
+
+⚠️ CURRENT RUNTIME REALITY
+
+Current implementation still contains:
+
+* frontend opportunity authority
+* static impact calculations
+* local execution simulation
+* client-side prioritization semantics
+* frontend execution completion
+* hardcoded reasoning engine
+* static strategic mapping
+* static portfolio intelligence
+* mock experimentation semantics
+
+Meaning:
+
+UI visually communicates institutional intelligence —
+but runtime behavior still operates at demo-layer semantics.
+
+⸻
+
+🔴 DANGEROUS ASSUMPTIONS
+
+❌ Dangerous Assumption:
+
+Opportunities are operationally trustworthy
+
+Reality:
+
+current opportunities lack:
+
+* attribution confidence validation
+* execution feasibility validation
+* dependency resolution
+* budget governance checks
+* rollout compatibility
+* organizational conflict analysis
+* margin impact verification
+* strategic sequencing validation
+
+Meaning:
+recommendations LOOK intelligent —
+but execution semantics are still unsafe.
+
+⸻
+
+❌ Dangerous Assumption:
+
+Execute buttons are harmless simulations
+
+Reality:
+
+current execution state:
+
+* bypasses actions engine
+* bypasses governance validation
+* bypasses rollout orchestration
+* bypasses audit logging
+* bypasses reversibility checks
+* bypasses automation conflicts
+
+This creates false operational semantics.
+
+⸻
+
+❌ Dangerous Assumption:
+
+Strategic Mapping reflects actual intelligence
+
+Reality:
+
+matrix coordinates are static frontend visuals.
+
+Missing:
+
+* execution risk weighting
+* confidence weighting
+* revenue weighting
+* organizational complexity
+* operational dependencies
+* attribution quality
+* execution probability
+* saturation sensitivity
+
+Without backend intelligence:
+matrix becomes decorative.
+
+⸻
+
+❌ Dangerous Assumption:
+
+Portfolio Summary is meaningful
+
+Reality:
+
+summary currently lacks:
+
+* risk-adjusted opportunity value
+* attribution-aware upside
+* execution feasibility
+* sequencing constraints
+* operational capacity modeling
+* predicted decay
+* dependency penalties
+
+Without these:
+portfolio metrics become cosmetic.
+
+⸻
+
+🧬 MISSING ENTERPRISE SEMANTICS
+
+Current page still lacks:
+
+⸻
+
+1. Opportunity Confidence Intelligence
+
+Current UI exposes:
+
+* uplift
+* projected growth
+* confidence %
+
+Missing:
+
+* attribution confidence
+* execution confidence
+* rollout safety confidence
+* dependency confidence
+* prediction certainty
+* organizational feasibility
+
+Enterprise systems REQUIRE confidence explainability.
+
+⸻
+
+2. Strategic Dependency Modeling
+
+Current opportunities are isolated.
+
+Missing:
+
+* execution dependency graph
+* sequencing constraints
+* campaign interdependencies
+* budget dependency mapping
+* audience conflict propagation
+* creative coupling analysis
+
+Without dependency intelligence:
+execution ordering becomes unsafe.
+
+⸻
+
+3. Opportunity Decay Intelligence
+
+Missing:
+
+* urgency decay
+* timing sensitivity
+* opportunity expiration windows
+* seasonal decay
+* competitive decay
+* saturation acceleration impact
+
+Without decay modeling:
+prioritization becomes historically stale.
+
+⸻
+
+4. Attribution Integrity Layer
+
+Current projections imply:
+
+trustworthy revenue forecasting.
+
+Reality:
+
+missing:
+
+* modeled attribution confidence
+* blended attribution integrity
+* signal degradation visibility
+* delayed conversion reconciliation
+* incrementality sensitivity
+* post-iOS reliability adjustments
+
+Without attribution integrity:
+growth forecasting becomes unstable.
+
+⸻
+
+5. Execution Governance Semantics
+
+Missing:
+
+* reversible execution lineage
+* rollback safety
+* rollout monitoring
+* staged deployment
+* execution checkpointing
+* blast-radius estimation
+
+Enterprise orchestration REQUIRES execution governance.
+
+⸻
+
+🧠 COMPETITOR LIFECYCLE ANALYSIS
+
+Madgicx
+
+Strong at:
+
+* AI recommendations
+* automation workflows
+* media-buying optimizations
+* growth suggestions
+
+Weak at:
+
+* governance semantics
+* portfolio intelligence
+* strategic observability
+* dependency modeling
+* execution explainability
+
+Your direction already exceeds Madgicx in:
+
+* operational semantics
+* institutional architecture
+* governance-first execution direction
+* attribution-aware orchestration
+
+⸻
+
+Bïrch
+
+Strong at:
+
+* automation
+* budget shifting
+* optimization execution
+
+Weak at:
+
+* enterprise intelligence semantics
+* strategic observability
+* lifecycle orchestration
+* recommendation explainability
+
+Bïrch is execution-centric.
+
+Your direction is:
+intelligence-centric.
+
+Different category evolution.
+
+⸻
+
+Revealbot
+
+Strong at:
+
+* automation
+* rule systems
+* operational workflows
+
+Weak at:
+
+* predictive intelligence
+* portfolio orchestration
+* strategic prioritization
+* governance semantics
+
+Revealbot optimizes execution.
+
+You are evolving toward:
+growth intelligence infrastructure.
+
+⸻
+
+Triple Whale
+
+Strong at:
+
+* ecommerce attribution
+* blended reporting
+* performance visibility
+
+Weak at:
+
+* opportunity orchestration
+* strategic intelligence
+* operational governance
+* realtime prioritization
+
+Triple Whale is observability-first.
+
+Your direction is:
+observability + orchestration.
+
+⸻
+
+Northbeam
+
+Strong at:
+
+* attribution science
+* MMM
+* incrementality
+
+Weak at:
+
+* operational opportunity intelligence
+* execution governance
+* strategic orchestration UX
+
+Northbeam is measurement infrastructure.
+
+You are evolving toward:
+decision infrastructure.
+
+⸻
+
+🧱 REQUIRED BACKEND CONTRACTS
+
+Opportunity API MUST additionally expose:
+
+type OpportunityConfidence = {
+execution_confidence: number
+attribution_confidence: number
+prediction_confidence: number
+rollout_confidence: number
+}
+
+⸻
+
+Opportunity MUST expose:
+
+type OpportunityMetadata = {
+projected_incremental_revenue: number
+expected_payback_days: number
+implementation_complexity: number
+execution_risk: “low” | “medium” | “high”
+rollback_safe: boolean
+}
+
+⸻
+
+Strategic Mapping MUST expose:
+
+type OpportunityMatrixPosition = {
+impact_score: number
+effort_score: number
+risk_weight: number
+confidence_weight: number
+}
+
+⸻
+
+Portfolio Summary MUST expose:
+
+type PortfolioIntelligence = {
+total_upside: number
+risk_adjusted_upside: number
+projected_margin_impact: number
+execution_capacity_score: number
+}
+
+⸻
+
+🗄️ REQUIRED TABLES
+
+REQUIRED:
+
+growth_execution_history
+
+Tracks:
+
+* executions
+* validations
+* rollbacks
+* monitoring outcomes
+* execution conflicts
+
+⸻
+
+opportunity_dependency_graph
+
+Tracks:
+
+* opportunity sequencing
+* conflicts
+* dependencies
+* shared resources
+* blocked opportunities
+
+⸻
+
+opportunity_forecasts
+
+Tracks:
+
+* predicted growth
+* attribution-adjusted projections
+* decay models
+* timing sensitivity
+* risk forecasts
+
+⸻
+
+opportunity_feedback
+
+Tracks:
+
+* dismissed opportunities
+* false positives
+* successful executions
+* failed strategies
+* confidence calibration
+
+⸻
+
+portfolio_health_history
+
+Tracks:
+
+* opportunity coverage evolution
+* execution maturity
+* risk-adjusted portfolio changes
+* strategic progression
+
+⸻
+
+⚠️ SPEC GAPS
+
+Missing:
+
+execution idempotency
+
+Need:
+
+execution_hash
+
+Otherwise:
+duplicate opportunity executions may occur.
+
+⸻
+
+Missing:
+
+realtime event versioning
+
+Need:
+
+event_version
+event_timestamp
+
+Otherwise:
+stale realtime updates may overwrite fresh portfolio state.
+
+⸻
+
+Missing:
+
+opportunity decay semantics
+
+Need:
+
+expires_at
+urgency_score
+decay_velocity
+
+Otherwise:
+stale opportunities may remain prioritized.
+
+⸻
+
+Missing:
+
+attribution degradation visibility
+
+Need:
+
+attribution_integrity_score
+
+Otherwise:
+growth forecasts may rely on corrupted attribution.
+
+⸻
+
+🔴 EXECUTION BOUNDARIES
+
+Frontend MAY:
+
+* render opportunities
+* render reasoning
+* render portfolio summaries
+* request action creation
+* render execution states
+* render validation outcomes
+* subscribe realtime updates
+
+Frontend MUST NEVER:
+
+* calculate opportunity scores
+* calculate portfolio value
+* infer impact rankings
+* infer strategic priority
+* infer execution feasibility
+* generate opportunities
+* simulate execution completion
+* calculate matrix positioning
+
+⸻
+
+🛡️ GOVERNANCE BOUNDARIES
+
+Backend MUST remain authoritative for:
+
+* opportunity generation
+* scoring
+* prioritization
+* portfolio intelligence
+* predictive modeling
+* execution validation
+* attribution integrity
+* strategic sequencing
+* realtime orchestration
+
+⸻
+
+🧠 REALTIME SAFETY RISKS
+
+Current realtime direction still lacks:
+
+* duplicate event collapsing
+* ordering guarantees
+* incremental reconciliation
+* stale event invalidation
+* optimistic rollback protection
+
+Without this:
+
+growth intelligence state can diverge from operational truth.
+
+⸻
+
+🧬 WHAT CLAUDE CAN SAFELY IMPLEMENT
+
+Claude CAN safely implement:
+
+* React Query integration
+* Supabase realtime subscriptions
+* org-scoped fetching
+* loading/error/empty states
+* safe cache reconciliation
+* polling fallback
+* execution request deduplication
+* backend-authoritative rendering
+* optimistic mutation prevention
+
+⸻
+
+⛔ WHAT MUST REMAIN DEFERRED
+
+Requires real infrastructure:
+
+* predictive opportunity forecasting
+* strategic dependency graph engine
+* portfolio simulation layer
+* scenario modeling
+* opportunity decay ML
+* execution orchestration engine
+* attribution calibration systems
+* risk-adjusted forecasting
+* incrementality modeling
+
+⸻
+
+🚫 WHAT SHOULD NEVER EXIST
+
+NEVER ALLOW:
+
+❌ frontend-generated opportunities
+
+Reason:
+
+breaks intelligence authority.
+
+⸻
+
+❌ client-side opportunity scoring
+
+Reason:
+
+creates inconsistent prioritization.
+
+⸻
+
+❌ optimistic execution completion
+
+Reason:
+
+creates orchestration desync.
+
+⸻
+
+❌ direct execution from opportunity cards
+
+Reason:
+
+unsafe operational mutations.
+
+⸻
+
+❌ fallback AI opportunity generation
+
+Reason:
+
+creates governance inconsistency.
+
+⸻
+
+❌ frontend strategic mapping calculations
+
+Reason:
+
+breaks backend authority.
+
+⸻
+
+❌ direct campaign launch from growth layer
+
+Reason:
+
+violates orchestration boundaries.
+
+⸻
+
+🧠 TRUE SYSTEM CATEGORY
+
+This system is evolving toward:
+
+enterprise growth intelligence + strategic orchestration + execution governance platform
+
+NOT:
+
+* AI recommendation widget
+* campaign automation panel
+* ad optimization dashboard
+* media-buying shortcut tool
+* AI growth hack generator
+
+That positioning is structurally stronger because it combines:
+
+* attribution intelligence
+* operational observability
+* governance-safe execution
+* strategic orchestration
+* portfolio intelligence
+* predictive opportunity systems
+* backend-authoritative decision infrastructure
+
 ✅ DONE
 
