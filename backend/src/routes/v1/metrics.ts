@@ -1,7 +1,19 @@
 import { Hono } from 'hono'
 import { supabaseAdmin } from '../../lib/supabase.js'
+import { ok, fail } from '../../utils/response.js'
 
-type Variables = { userId: string; orgId: string }
+// Continuation #31 (2026-05-12) — PHASE2_ENVELOPE_FOLLOWUP item M resolution.
+// Phase 2 routes canonicalized onto the Phase 1 canonical envelope per
+// ADJACENT CONTINUATION AUTHORITY ("wiring already-existing contracts" +
+// "expanding existing canonical APIs"). FE apiClient detection-unwrap
+// (#13) absorbs the change transparently: pre-conversion bodies passed
+// through raw; post-conversion bodies auto-unwrap on `success` key. FE
+// consumers see identical post-unwrap results. No behavior change.
+//
+// requestId declared in Variables type so the Phase 1 envelope helpers
+// (ok/fail) can read c.get('requestId') for the request_id field —
+// matches the established pattern in history.ts / campaigns.ts / etc.
+type Variables = { userId: string; orgId: string; requestId: string }
 export const metricsRouter = new Hono<{ Variables: Variables }>()
 
 function isValidDate(s: string): boolean {
@@ -32,10 +44,7 @@ metricsRouter.get('/summary', async (c) => {
   const to = c.req.query('to')
 
   if (!from || !to || !isValidDate(from) || !isValidDate(to)) {
-    return c.json(
-      { error: 'Bad Request', message: 'from and to query parameters are required (YYYY-MM-DD)' },
-      400
-    )
+    return fail(c, 'from and to query parameters are required (YYYY-MM-DD)', 400, { code: 'INVALID_QUERY' })
   }
 
   const { data, error } = await supabaseAdmin
@@ -45,10 +54,15 @@ metricsRouter.get('/summary', async (c) => {
     .gte('date', from)
     .lte('date', to)
 
-  if (error) return c.json({ error: 'Internal Server Error' }, 500)
+  // CONSTITUTION §3 + #4 hardening pattern (matches history.ts/campaigns.ts):
+  // throw DB errors → app.onError(errorHandler) emits sanitized canonical
+  // 500 body with request_id; full error captured in Sentry + stdout [err].
+  if (error) {
+    throw new Error(`metrics/summary lookup failed: ${error.message}`)
+  }
 
   const agg = aggregateRows(data ?? [])
-  return c.json({ ...agg, dateRange: { from, to } })
+  return ok(c, { ...agg, dateRange: { from, to } })
 })
 
 // GET /api/v1/metrics/channels
@@ -58,10 +72,7 @@ metricsRouter.get('/channels', async (c) => {
   const to = c.req.query('to')
 
   if (!from || !to || !isValidDate(from) || !isValidDate(to)) {
-    return c.json(
-      { error: 'Bad Request', message: 'from and to query parameters are required (YYYY-MM-DD)' },
-      400
-    )
+    return fail(c, 'from and to query parameters are required (YYYY-MM-DD)', 400, { code: 'INVALID_QUERY' })
   }
 
   const { data, error } = await supabaseAdmin
@@ -71,7 +82,9 @@ metricsRouter.get('/channels', async (c) => {
     .gte('date', from)
     .lte('date', to)
 
-  if (error) return c.json({ error: 'Internal Server Error' }, 500)
+  if (error) {
+    throw new Error(`metrics/channels lookup failed: ${error.message}`)
+  }
 
   const byPlatform: Record<string, { spend: number; impressions: number; clicks: number; conversions: number; revenue: number }> = {}
 
@@ -95,5 +108,5 @@ metricsRouter.get('/channels', async (c) => {
     roas: m.spend > 0 ? Math.round((m.revenue / m.spend) * 100) / 100 : 0,
   }))
 
-  return c.json(channels)
+  return ok(c, channels)
 })

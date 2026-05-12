@@ -401,10 +401,37 @@ automationRouter.get('/runs', async (c) => {
   // were fired manually (no ai_decision_id) or against pre-Path-F decisions
   // (NULL category) yield ai_decisions=null / category=null respectively —
   // both render as "no category" in any consumer. No schema/index changes.
+  //
+  // Continuation #34 (2026-05-12) — confidence_score field added to the
+  // same ai_decisions JOIN to close the confidence-display gap that was
+  // explicitly tagged at #22 ("Confidence Score per entry would require
+  // ai_decisions JOIN — separate hardening pass"). The JOIN was already
+  // in place since #24; adding confidence_score is a single-token
+  // extension. FE history page (#33 → #34) now displays both fields.
+  //
+  // Continuation #37 (2026-05-12) — reasoning_steps JSONB array added to
+  // the same JOIN to close the Detailed Explanation panel gap explicitly
+  // tagged at #22 ("Detailed Explanation mock — no per-run AI explanation
+  // endpoint"). That deferral premise was already resolved by #24/#34:
+  // the JOIN exists; the AI Output Contract guarantees reasoning_steps
+  // on every persisted ai_decisions row (validated in aiValidator.ts).
+  // Single-token extension; payload size is bounded by the validator
+  // (Array<{step, insight}>). Manual-fired runs (ai_decision_id NULL)
+  // and pre-contract decisions yield null → FE falls back to mock.
+  //
+  // Continuation #38 (2026-05-12) — actions_library(name, platform,
+  // action_type) added as a sibling nested-select on the existing
+  // automation_runs.action_template_id FK (NOT NULL per Phase 4 Part 2
+  // migration — every run links to a concrete action template). Closes
+  // the action-name visibility gap in the history feed: prior to #38,
+  // the page showed only the rule name (which describes the trigger
+  // logic) but never surfaced WHICH action template was actually
+  // dispatched. Same single-token nested-select pattern as #24/#34/#37;
+  // no schema change, no migration, no index change.
   let query = supabaseAdmin
     .from('automation_runs')
     .select(
-      'id, org_id, automation_rule_id, ai_decision_id, action_template_id, status, result_data, error_message, executed_at, automation_rules(name), ai_decisions(category)',
+      'id, org_id, automation_rule_id, ai_decision_id, action_template_id, status, result_data, error_message, executed_at, automation_rules(name), ai_decisions(category, confidence_score, reasoning_steps), actions_library(name, platform, action_type)',
       { count: 'exact' },
     )
     .eq('org_id', orgId)

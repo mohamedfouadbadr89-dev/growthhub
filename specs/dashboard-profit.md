@@ -1107,6 +1107,422 @@ REFERENCE:
 
  [oai_citation:7‡linkedin.com](https://www.linkedin.com/company/northbeam?utm_source=chatgpt.com)
 
+## 💰 FINANCIAL TRUTH LAYER
 
+PROFITABILITY IS:
+
+- delayed
+
+- reconciliation-sensitive
+
+- attribution-dependent
+
+- operationally incomplete in realtime
+
+RULES:
+
+- realized profit MUST remain separate from projected profit
+
+- gross margin MUST remain separate from net margin
+
+- operational costs may arrive asynchronously
+
+- refunds alter historical profitability
+
+NEVER:
+
+- treat realtime revenue as finalized profit
+
+- merge estimated and verified profitability silently
+
+---
+
+## 🔄 FINANCIAL LIFECYCLE SEMANTICS
+
+FLOW:
+
+traffic
+
+→ attribution
+
+→ conversion
+
+→ payment authorization
+
+→ revenue recognition
+
+→ refund validation
+
+→ operational allocation
+
+→ contribution margin
+
+→ net profitability
+
+→ finance reconciliation
+
+→ executive reporting
+
+RULES:
+
+- profitability evolves over time
+
+- refunds retroactively impact margins
+
+- operational allocations versioned separately
+
+- finalized accounting differs from realtime dashboards
+
+---
+
+## ⚠️ REFUND + REVERSAL SEMANTICS
+
+REFUNDS MAY IMPACT:
+
+- revenue
+
+- contribution margin
+
+- CAC recovery
+
+- cohort profitability
+
+- payback period
+
+RULES:
+
+- partial refunds supported
+
+- refund lineage auditable
+
+- reversed transactions immutable
+
+- historical profitability recomputed safely
+
+RISKS:
+
+- inflated margin reporting
+
+- inaccurate CAC recovery
+
+- distorted profitability trends
+
+---
+
+## ⚠️ OPERATIONAL COST ALLOCATION SEMANTICS
+
+COST TYPES:
+
+- realtime spend
+
+- delayed logistics
+
+- warehouse allocation
+
+- payroll allocation
+
+- SaaS overhead
+
+- agency fees
+
+- infrastructure costs
+
+RULES:
+
+- operational allocations versioned
+
+- estimated allocations flagged
+
+- delayed costs visible
+
+- finance reconciliation mandatory
+
+NEVER:
+
+- assume operational costs finalized in realtime
+
+- allocate overhead silently
+
+---
+
+## ⚠️ ATTRIBUTION-DRIVEN PROFITABILITY SEMANTICS
+
+CHANNEL PROFITABILITY DEPENDS ON:
+
+- attribution model
+
+- CAC allocation
+
+- refund linkage
+
+- blended operational allocation
+
+RULES:
+
+- channel profit is model-sensitive
+
+- profitability confidence visible
+
+- attribution recalculation auditable
+
+NEVER:
+
+- treat ROAS as profit
+
+- treat attributed revenue as accounting truth
+
+---
+
+## 📊 PROFIT CONFIDENCE SEMANTICS
+
+PROFIT CONFIDENCE DEPENDS ON:
+
+- refund completeness
+
+- operational sync status
+
+- attribution stability
+
+- delayed finance ingestion
+
+- reconciliation freshness
+
+RULES:
+
+- incomplete profit windows flagged
+
+- low-confidence profitability visible
+
+- stale financial snapshots detectable
+
+SYSTEM MUST TRACK:
+
+- reconciliation lag
+
+- refund drift
+
+- operational sync delay
+
+- attribution mismatch
+
+- forecast variance
+
+---
+
+## 🧠 COMPETITOR INTELLIGENCE EXPANSION
+
+ADVANCED COMPETITOR CAPABILITIES:
+
+Triple Whale:
+
+- blended MER profitability
+
+- realtime contribution margin
+
+Northbeam:
+
+- attribution-aware profitability
+
+- executive financial visibility
+
+Peel Insights:
+
+- SKU-level profitability analysis
+
+Polar Analytics:
+
+- warehouse-native finance reporting
+
+Lifetimely:
+
+- cohort profitability intelligence
+
+SYSTEM DIRECTION:
+
+- finance-grade profitability infrastructure
+
+- attribution-aware executive intelligence
+
+- explainable contribution economics
+
+- deterministic financial analytics
+
+- reconciliation-safe reporting
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS (ADDITIONAL)
+
+GET /api/v1/dashboard/profit/reconciliation
+
+GET /api/v1/dashboard/profit/confidence
+
+GET /api/v1/dashboard/profit/refund-impact
+
+GET /api/v1/dashboard/profit/operational-lag
+
+GET /api/v1/dashboard/profit/margin-health
+
+POST /api/v1/dashboard/profit/reallocate-costs
+
+POST /api/v1/dashboard/profit/recompute-profitability
+
+RULES:
+
+- all profitability recomputes async only
+
+- immutable financial snapshots required
+
+- reconciliation backend-owned only
+
+---
+
+## 🗄️ REQUIRED TABLES (ADDITIONAL)
+
+profitability_confidence
+
+refund_lineage
+
+financial_versions
+
+margin_health
+
+operational_lag_tracking
+
+cost_allocation_versions
+
+finance_sync_status
+
+executive_profit_snapshots
+
+contribution_profitability
+
+profitability_drift_logs
+
+reconciliation_versions
+
+financial_integrity_audit
+
+---
+
+## ⚡ EXECUTION BOUNDARIES (ADDITIONAL)
+
+CLAUDE MAY IMPLEMENT:
+
+- executive finance dashboards
+
+- profitability trend visualizations
+
+- margin confidence indicators
+
+- refund impact UI
+
+- operational lag warnings
+
+- reconciliation status badges
+
+- realtime finance subscriptions
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- accounting engines
+
+- ERP reconciliation logic
+
+- financial forecasting systems
+
+- operational allocation engines
+
+- autonomous pricing optimization
+
+- balance-sheet calculations
+
+- tax reconciliation systems
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES (ADDITIONAL)
+
+ALL FINANCIAL OUTPUTS MUST BE:
+
+- reproducible
+
+- auditable
+
+- versioned
+
+- reconciliation-safe
+
+RULES:
+
+- margin methodology immutable
+
+- operational allocations logged
+
+- profitability recomputes auditable
+
+- attribution-linked finance traceable
+
+COMPLIANCE:
+
+- finance exports audited
+
+- org-level financial isolation mandatory
+
+- immutable financial history required
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED (ADDITIONAL)
+
+DEFER:
+
+- AI profitability forecasting
+
+- autonomous budget optimization
+
+- AI-driven pricing optimization
+
+- predictive finance engines
+
+- reinforcement scaling systems
+
+- autonomous operational allocation
+
+RULE:
+
+- do NOT fake accounting precision
+
+- do NOT simulate finance certainty
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST (ADDITIONAL)
+
+NEVER:
+
+- frontend profit calculations
+
+- browser-side financial logic
+
+- uncached profitability recompute
+
+- fake margin projections
+
+- silent refund mutation
+
+- localStorage finance caching
+
+- hidden operational allocations
+
+- automatic AI-generated profitability
+
+RULE:
+
+- profitability is financial infrastructure
+
+- NOT a frontend visualization layer
+
+---
  
 ✅ DONE

@@ -8,7 +8,7 @@ import {
   ArrowLeft, Bell, HelpCircle, ShoppingCart, TrendingUp, Eye,
   Sparkles, CheckCircle2, Zap, Settings2, Check, X, Search, Cloud,
 } from "lucide-react"
-import { apiClient, ApiError } from "@/lib/api-client"
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client"
 
 // Phase 6 Sub-pass B (continuation #13, 2026-05-08): wires "Save Draft" to
 // `POST /api/v1/campaigns` (canonical envelope). "Launch" remains UNWIRED —
@@ -154,8 +154,8 @@ export default function CreateCampaignPage() {
       // Brief success affordance before navigating to the new campaign's detail page.
       setTimeout(() => { router.push(`/campaigns/${created.id}`) }, 700)
     } catch (err) {
-      const e = err as ApiError | Error
-      setDraftError(e.message || "Failed to save draft")
+      // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+      setDraftError(formatErrorMessage(err, "Failed to save draft"))
     } finally {
       setSavingDraft(false)
     }

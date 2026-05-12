@@ -1191,5 +1191,598 @@ REFERENCE:
  [oai_citation:9‡Motion](https://motionapp.com/blog/ad-fatigue?utm_source=chatgpt.com)
 
  
+ CREATIVE INTELLIGENCE TRUTH LAYER
+
+CREATIVES ARE:
+
+- probabilistic
+
+- audience-dependent
+
+- placement-sensitive
+
+- lifecycle-driven
+
+- attribution-sensitive
+
+RULES:
+
+- creative performance changes over time
+
+- creatives decay gradually
+
+- audience fatigue differs by placement
+
+- attribution windows distort realtime ROAS
+
+NEVER:
+
+- treat winning creatives as permanent winners
+
+- derive creative status in frontend
+
+- classify fatigue from one metric only
+
+- merge platform metrics blindly
+
+---
+
+## 🔄 CREATIVE LIFECYCLE SEMANTICS
+
+CREATIVE FLOW:
+
+creative upload
+
+→ platform delivery
+
+→ impression accumulation
+
+→ hook engagement
+
+→ thumb-stop evaluation
+
+→ click engagement
+
+→ conversion attribution
+
+→ fatigue monitoring
+
+→ score recalculation
+
+→ lifecycle transition
+
+→ refresh / scale / retire
+
+LIFECYCLE STATES:
+
+- draft
+
+- testing
+
+- learning
+
+- scaling
+
+- mature
+
+- saturated
+
+- fatigue
+
+- retired
+
+RULES:
+
+- lifecycle transitions are gradual
+
+- creatives require historical context
+
+- scoring changes historically
+
+- attribution impacts lifecycle state
+
+---
+
+## ⚠️ PLATFORM NORMALIZATION SEMANTICS
+
+PLATFORMS:
+
+- Meta
+
+- TikTok
+
+- Google
+
+- YouTube
+
+- LinkedIn
+
+RULES:
+
+- CTR differs by platform
+
+- hook rate differs by format
+
+- thumb-stop behavior differs by feed
+
+- attribution windows differ per platform
+
+SYSTEM MUST TRACK:
+
+- placement normalization
+
+- platform weighting
+
+- attribution windows
+
+- engagement quality
+
+- feed behavior differences
+
+NEVER:
+
+- compare raw metrics cross-platform blindly
+
+- use universal CTR thresholds
+
+- treat placements equally
+
+---
+
+## ⚠️ CREATIVE FATIGUE SEMANTICS
+
+FATIGUE SIGNALS:
+
+- CTR decay
+
+- ROAS decline
+
+- rising CPC
+
+- hook degradation
+
+- frequency saturation
+
+- conversion decline
+
+- engagement collapse
+
+RULES:
+
+- fatigue is gradual
+
+- fatigue != creative failure
+
+- creatives may recover after refresh
+
+- hook decay may precede ROAS decay
+
+- frequency is lagging indicator
+
+SYSTEM MUST TRACK:
+
+- fatigue confidence
+
+- fatigue trend
+
+- saturation velocity
+
+- recovery potential
+
+- audience exhaustion
+
+NEVER:
+
+- pause creatives automatically
+
+- classify fatigue from ROAS alone
+
+- assume fatigue irreversible
+
+---
+
+## ⚠️ CREATIVE VERSIONING SEMANTICS
+
+CREATIVE VARIANTS MAY DIFFER BY:
+
+- hook
+
+- CTA
+
+- thumbnail
+
+- caption
+
+- audio
+
+- opening frame
+
+- format
+
+- placement
+
+RULES:
+
+- variants linked historically
+
+- creative lineage preserved
+
+- inheritance relationships versioned
+
+- duplicate variants deduplicated
+
+SYSTEM MUST TRACK:
+
+- parent creative
+
+- derived variants
+
+- iteration velocity
+
+- refresh lineage
+
+- variant performance drift
+
+---
+
+## ⚠️ ATTRIBUTION SEMANTICS
+
+CREATIVE PERFORMANCE DEPENDS ON:
+
+- attribution model
+
+- conversion windows
+
+- platform reporting delay
+
+- blended attribution
+
+- incrementality
+
+RULES:
+
+- ROAS is attribution-sensitive
+
+- realtime metrics incomplete
+
+- delayed conversions alter rankings
+
+- attribution windows standardized
+
+NEVER:
+
+- trust platform ROAS blindly
+
+- compare incomplete windows
+
+- mix realized + projected attribution silently
+
+---
+
+## ⚠️ AI SEMANTICS
+
+AI CREATIVE FEATURES ARE:
+
+- advisory only
+
+- confidence-sensitive
+
+- non-deterministic
+
+RULES:
+
+- creative scoring remains deterministic initially
+
+- AI recommendations separated from metrics
+
+- AI outputs cached + auditable
+
+NEVER:
+
+- auto-generate creative scores
+
+- auto-classify fatigue via AI
+
+- auto-scale creatives autonomously
+
+- mutate statuses using AI
+
+---
+
+## 📊 CREATIVE CONFIDENCE SEMANTICS
+
+CONFIDENCE DEPENDS ON:
+
+- attribution completeness
+
+- spend threshold
+
+- event completeness
+
+- conversion stability
+
+- audience sample size
+
+- placement coverage
+
+RULES:
+
+- low-confidence creatives flagged
+
+- incomplete attribution visually marked
+
+- insufficient spend excluded from ranking
+
+SYSTEM MUST TRACK:
+
+- attribution completeness
+
+- data freshness
+
+- scoring confidence
+
+- spend sufficiency
+
+- sync health
+
+---
+
+## 🧠 COMPETITOR INTELLIGENCE EXPANSION
+
+ADVANCED COMPETITOR CAPABILITIES:
+
+Motion:
+
+- fatigue lifecycle intelligence
+
+Segwise:
+
+- creative analytics scoring
+
+Marpipe:
+
+- multivariate creative testing
+
+VidMob:
+
+- creative intelligence infrastructure
+
+Pencil:
+
+- AI-assisted creative iteration
+
+Triple Whale:
+
+- attribution-linked creative analytics
+
+AppsFlyer:
+
+- creative-level attribution analysis
+
+SYSTEM DIRECTION:
+
+- deterministic creative analytics
+
+- attribution-aware scoring
+
+- explainable fatigue intelligence
+
+- creative lifecycle infrastructure
+
+- realtime creative observability
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS (ADDITIONAL)
+
+GET /api/v1/dashboard/creatives/fatigue-analysis
+
+GET /api/v1/dashboard/creatives/confidence
+
+GET /api/v1/dashboard/creatives/lifecycle
+
+GET /api/v1/dashboard/creatives/variants
+
+GET /api/v1/dashboard/creatives/platform-normalization
+
+GET /api/v1/dashboard/creatives/attribution-health
+
+POST /api/v1/dashboard/creatives/recompute
+
+POST /api/v1/dashboard/creatives/refresh-status
+
+POST /api/v1/dashboard/creatives/export
+
+RULES:
+
+- all scoring backend-only
+
+- recomputes async only
+
+- attribution-aware calculations mandatory
+
+---
+
+## 🗄️ REQUIRED TABLES (ADDITIONAL)
+
+creative_variants
+
+creative_lineage
+
+creative_fatigue_scores
+
+creative_confidence
+
+creative_lifecycle_history
+
+creative_platform_normalization
+
+creative_attribution_windows
+
+creative_performance_snapshots
+
+creative_refresh_history
+
+creative_audience_overlap
+
+creative_scoring_versions
+
+creative_health
+
+creative_quality_scores
+
+creative_export_logs
+
+creative_recompute_jobs
+
+creative_sync_audit
+
+---
+
+## ⚡ EXECUTION BOUNDARIES (ADDITIONAL)
+
+CLAUDE MAY IMPLEMENT:
+
+- creative galleries
+
+- performance cards
+
+- fatigue indicators
+
+- lifecycle badges
+
+- trend charts
+
+- platform filters
+
+- creative tables
+
+- export actions
+
+- realtime subscriptions
+
+- loading/error/empty states
+
+- creative comparison UI
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- fatigue prediction engines
+
+- attribution reconciliation
+
+- autonomous scaling systems
+
+- creative scoring engines
+
+- AI-generated creative optimization
+
+- platform bid optimization
+
+- creative semantic analysis
+
+- automated ad duplication
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES (ADDITIONAL)
+
+CREATIVE GOVERNANCE:
+
+- scoring formulas versioned
+
+- fatigue methodology auditable
+
+- attribution windows standardized
+
+- creative lineage immutable
+
+SECURITY:
+
+- org-level isolation mandatory
+
+- platform credentials server-side only
+
+- asset access permission-scoped
+
+COMPLIANCE:
+
+- creative audit history immutable
+
+- export logs retained
+
+- recalculation history preserved
+
+- creative ownership traceable
+
+RULES:
+
+- all scoring deterministic
+
+- all recalculations logged
+
+- all platform syncs audited
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED (ADDITIONAL)
+
+DEFER:
+
+- AI creative generation
+
+- autonomous fatigue prediction
+
+- multimodal creative analysis
+
+- AI-generated hooks
+
+- automated scaling systems
+
+- autonomous budget allocation
+
+- AI-generated creative briefs
+
+- semantic visual analysis
+
+RULE:
+
+- analytics first
+
+- generation later
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST (ADDITIONAL)
+
+NEVER:
+
+- frontend ROAS calculations
+
+- frontend fatigue scoring
+
+- browser-side attribution logic
+
+- auto-generated creative statuses
+
+- uncached scoring recomputes
+
+- fake creative metrics
+
+- hidden score manipulation
+
+- direct platform API calls from frontend
+
+- automatic scaling execution
+
+- AI mutation during GET requests
+
+RULE:
+
+- creative intelligence is backend-owned
+
+- NOT frontend-derived
+
+---
 
 ✅ DONE

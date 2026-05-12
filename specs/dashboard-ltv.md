@@ -1085,5 +1085,419 @@ REFERENCE:
 
  [oai_citation:7‡northbeam.io](https://www.northbeam.io/case-study/targeting-high-value-customers-and-subscriptions-for-sustainable-growth-at-petmeds?utm_source=chatgpt.com)
 
+
+## 💰 UNIT ECONOMICS TRUTH LAYER
+
+LTV IS:
+
+- modeled
+
+- delayed
+
+- cohort-relative
+
+- attribution-sensitive
+
+CAC IS:
+
+- attribution-dependent
+
+- non-static
+
+- reconciliation-sensitive
+
+RULES:
+
+- realized LTV MUST remain separate from projected LTV
+
+- immature cohorts MUST display uncertainty
+
+- profitability changes over time
+
+- payback windows evolve continuously
+
+NEVER:
+
+- present projected profitability as finalized truth
+
+- compare mature and immature cohorts equally
+
+---
+
+## 🔄 PROFITABILITY LIFECYCLE SEMANTICS
+
+FLOW:
+
+acquisition
+
+→ attributed CAC
+
+→ activation
+
+→ first purchase
+
+→ repeat purchase
+
+→ retention stabilization
+
+→ cumulative LTV
+
+→ payback achievement
+
+→ profitability maturity
+
+→ forecast stabilization
+
+RULES:
+
+- LTV evolves over time
+
+- profitability maturity must be observable
+
+- refund-adjusted profitability required
+
+- projected profitability versioned separately
+
+---
+
+## ⚠️ FINANCIAL RECONCILIATION SEMANTICS
+
+ALL LTV METRICS MUST SUPPORT:
+
+- gross revenue
+
+- net revenue
+
+- refunded revenue
+
+- subscription revenue
+
+- recurring revenue
+
+- attributed revenue
+
+RULES:
+
+- refunds MUST recompute realized LTV
+
+- canceled subscriptions MUST impact profitability
+
+- reconciliation snapshots immutable
+
+- historical LTV must remain auditable
+
+RISKS:
+
+- inflated profitability
+
+- distorted CAC recovery
+
+- incorrect board reporting
+
+- invalid scaling decisions
+
+---
+
+## ⚠️ ATTRIBUTION VOLATILITY SEMANTICS
+
+CAC MAY CHANGE DUE TO:
+
+- attribution recompute
+
+- delayed conversions
+
+- identity stitching
+
+- platform reporting corrections
+
+- refund adjustments
+
+RULES:
+
+- CAC snapshots versioned
+
+- attribution changes auditable
+
+- profitability confidence visible
+
+NEVER:
+
+- assume CAC is fixed
+
+- silently overwrite profitability history
+
+---
+
+## 🧬 SUBSCRIPTION LIFECYCLE SEMANTICS
+
+SUBSCRIPTION STATES:
+
+trial
+
+→ active
+
+→ renewed
+
+→ downgraded
+
+→ upgraded
+
+→ churned
+
+→ resurrected
+
+RULES:
+
+- subscription LTV tracked independently
+
+- renewals attributed historically
+
+- resurrection events versioned
+
+- churn-adjusted LTV mandatory
+
+---
+
+## 📊 FORECAST CONFIDENCE SEMANTICS
+
+PROJECTED LTV MUST INCLUDE:
+
+- confidence_score
+
+- maturity_score
+
+- attribution_confidence
+
+- revenue_completeness
+
+RULES:
+
+- low-confidence forecasts flagged
+
+- immature cohorts weighted lower
+
+- forecast drift tracked historically
+
+SYSTEM MUST TRACK:
+
+- forecast error delta
+
+- realized vs projected divergence
+
+- retention decay impact
+
+- CAC instability
+
+---
+
+## 🧠 COMPETITOR INTELLIGENCE EXPANSION
+
+ADVANCED COMPETITOR CAPABILITIES:
+
+Northbeam:
+
+- blended profitability intelligence
+
+- attribution-aware LTV
+
+Triple Whale:
+
+- MER + profitability overlays
+
+- blended economics tracking
+
+Lifetimely:
+
+- cohort payback intelligence
+
+- subscription economics
+
+Segmetrics:
+
+- funnel-linked customer value
+
+Polar Analytics:
+
+- finance-grade warehouse analytics
+
+SYSTEM DIRECTION:
+
+- explainable profitability
+
+- deterministic cohort economics
+
+- warehouse-native financial analytics
+
+- attribution-aware forecasting
+
+- retention-linked profitability
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS (ADDITIONAL)
+
+GET /api/v1/dashboard/ltv/reconciliation
+
+GET /api/v1/dashboard/ltv/maturity
+
+GET /api/v1/dashboard/ltv/forecast-history
+
+GET /api/v1/dashboard/ltv/profitability-health
+
+POST /api/v1/dashboard/ltv/refund-adjustment
+
+POST /api/v1/dashboard/ltv/subscription-recompute
+
+RULES:
+
+- all forecasts async-generated
+
+- profitability snapshots immutable
+
+- reconciliation backend-owned only
+
+---
+
+## 🗄️ REQUIRED TABLES (ADDITIONAL)
+
+profitability_snapshots
+
+ltv_maturity
+
+forecast_drift_logs
+
+forecast_versions
+
+refund_reconciliation
+
+subscription_ltv
+
+subscription_events
+
+cac_versions
+
+profitability_health
+
+forecast_confidence
+
+unit_economics_audit_logs
+
+---
+
+## ⚡ EXECUTION BOUNDARIES (ADDITIONAL)
+
+CLAUDE MAY IMPLEMENT:
+
+- profitability dashboards
+
+- maturity indicators
+
+- forecast confidence badges
+
+- payback visualization
+
+- profitability segmentation UI
+
+- trend rendering
+
+- stale forecast warnings
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- financial forecasting engines
+
+- attribution reconciliation systems
+
+- probabilistic profitability models
+
+- subscription valuation engines
+
+- churn prediction infrastructure
+
+- warehouse finance pipelines
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES (ADDITIONAL)
+
+ALL PROFITABILITY OUTPUTS MUST BE:
+
+- reproducible
+
+- auditable
+
+- versioned
+
+- explainable
+
+RULES:
+
+- LTV methodology centrally managed
+
+- CAC methodology immutable per version
+
+- profitability recomputes logged
+
+- forecast changes traceable
+
+COMPLIANCE:
+
+- financial exports auditable
+
+- anonymized customer aggregation mandatory
+
+- no raw customer economics exposed
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED (ADDITIONAL)
+
+DEFER:
+
+- autonomous budget allocation
+
+- AI profitability optimization
+
+- reinforcement-based scaling
+
+- predictive spend automation
+
+- probabilistic pricing optimization
+
+- autonomous CAC bidding systems
+
+RULE:
+
+- do NOT fake predictive financial certainty
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST (ADDITIONAL)
+
+NEVER:
+
+- frontend profitability calculations
+
+- browser-side CAC computation
+
+- realtime full LTV recompute on page load
+
+- uncached projected LTV
+
+- fake profitability forecasts
+
+- localStorage financial caching
+
+- hidden forecast mutation
+
+- silent profitability recalculation
+
+RULE:
+
+- LTV is financial intelligence infrastructure
+
+- NOT a visual reporting widget
+
+---
  
 ✅ DONE

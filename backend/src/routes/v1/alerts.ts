@@ -1,6 +1,37 @@
 import { Hono } from 'hono'
 import { supabaseAdmin } from '../../lib/supabase.js'
 
+/**
+ * Alerts router — HARDENED BUT UNUSED per implementation classification model.
+ *
+ * GOVERNANCE STATE (documented via SYSTEM_CONTROL.md continuation #32, 2026-05-12):
+ *   - This router is MOUNTED at `/api/v1/alerts/*` (routes/v1/index.ts:118)
+ *     but a deferredPhase 503 gate at routes/v1/index.ts:91 intercepts
+ *     EVERY request to `/alerts/*` BEFORE this handler runs.
+ *   - Reason: this router queries the `alerts` table which belongs to the
+ *     Phase 3 anomaly engine — DEPRECATED+DEFERRED per CANONICAL AI SYSTEM
+ *     resolution. The `alerts` table is not in canonical migrations; the
+ *     Phase 3 anomaly engine is not to be reactivated without explicit
+ *     re-architecture authorization.
+ *
+ * WHY THE LEGACY ENVELOPE IS PRESERVED HERE:
+ *   - Code below uses legacy `c.json({error:'...'})` shapes instead of
+ *     canonical `ok()` / `fail()` from `utils/response.ts`.
+ *   - The 503 gate ensures no client ever sees these responses.
+ *   - Canonicalizing the envelope here would touch unreachable code AND
+ *     create confusion about whether the router is active.
+ *   - Per PHASE EXECUTION RULE + IMPLEMENTATION CLASSIFICATION MODEL:
+ *     HARDENED BUT UNUSED surfaces are preserved verbatim until their
+ *     owning phase is unlocked OR they are formally retired.
+ *
+ * IF Phase 3 anomaly engine is EVER unlocked:
+ *   1. Deploy canonical migration creating `alerts` table
+ *   2. Lift the 503 gate at routes/v1/index.ts:91
+ *   3. Canonicalize this router onto ok()/fail() per Phase 1 envelope
+ *   4. Update CANONICAL AI SYSTEM resolution in SYSTEM_CONTROL.md
+ *
+ * DO NOT canonicalize envelope here without unlocking the phase first.
+ */
 type Variables = { userId: string; orgId: string }
 
 export const alertsRouter = new Hono<{ Variables: Variables }>()

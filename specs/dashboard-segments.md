@@ -1006,4 +1006,486 @@ REFERENCE:
 
  [oai_citation:10‡northbeam.io](https://www.northbeam.io/blog/user-segmentation-strategies-in-marketing-audience-personalization?utm_source=chatgpt.com)
 
+
+ CUSTOMER INTELLIGENCE TRUTH LAYER
+
+SEGMENTATION IS:
+
+- identity-sensitive
+
+- event-driven
+
+- lifecycle-dependent
+
+- attribution-aware
+
+- probabilistic over time
+
+RULES:
+
+- users may belong to multiple segments
+
+- segment membership changes historically
+
+- audience freshness impacts campaign quality
+
+- churn risk is probabilistic, NOT deterministic
+
+NEVER:
+
+- treat segments as static truth
+
+- overwrite historical memberships
+
+- silently merge anonymous identities
+
+- infer missing users automatically
+
+---
+
+## 🔄 AUDIENCE LIFECYCLE SEMANTICS
+
+FLOW:
+
+identity ingestion
+
+→ event collection
+
+→ behavioral aggregation
+
+→ RFM scoring
+
+→ lifecycle assignment
+
+→ value classification
+
+→ churn evaluation
+
+→ audience eligibility
+
+→ campaign targeting
+
+→ retention monitoring
+
+→ profitability linkage
+
+RULES:
+
+- segment state evolves continuously
+
+- lifecycle state versioned
+
+- campaign eligibility freshness-sensitive
+
+- attribution affects audience value
+
+---
+
+## ⚠️ IDENTITY RESOLUTION SEMANTICS
+
+IDENTITY SOURCES:
+
+- email
+
+- device_id
+
+- session_id
+
+- customer_id
+
+- attribution identifiers
+
+- CRM mapping
+
+RULES:
+
+- identity stitching backend-only
+
+- anonymous users isolated until resolved
+
+- user merges auditable
+
+- cross-device mapping versioned
+
+RISKS:
+
+- duplicate audiences
+
+- inflated segment counts
+
+- broken attribution
+
+- incorrect campaign targeting
+
+NEVER:
+
+- merge users silently
+
+- resolve identity in frontend
+
+- trust browser-only identifiers
+
+---
+
+## ⚠️ SEGMENT OVERLAP SEMANTICS
+
+USERS MAY EXIST IN:
+
+- VIP + churn_risk
+
+- returning + high_value
+
+- new + high_intent
+
+- dormant + profitable
+
+RULES:
+
+- segments are NOT mutually exclusive
+
+- lifecycle separate from profitability
+
+- engagement separate from value
+
+- churn separate from inactivity
+
+SYSTEM MUST TRACK:
+
+- overlap percentage
+
+- audience duplication
+
+- conflicting classifications
+
+- segment freshness
+
+---
+
+## ⚠️ CAMPAIGN ELIGIBILITY SEMANTICS
+
+CAMPAIGN TARGETING DEPENDS ON:
+
+- consent status
+
+- audience freshness
+
+- lifecycle state
+
+- engagement recency
+
+- attribution quality
+
+RULES:
+
+- stale audiences blocked
+
+- deleted users removed
+
+- consent-aware segmentation mandatory
+
+- sync operations auditable
+
+NEVER:
+
+- auto-launch campaigns from frontend
+
+- target unresolved identities
+
+- sync stale audiences silently
+
+---
+
+## ⚠️ AI INSIGHT SEMANTICS
+
+AI SEGMENT INSIGHTS ARE:
+
+- advisory only
+
+- non-deterministic
+
+- confidence-sensitive
+
+- operationally delayed
+
+RULES:
+
+- AI insights MUST remain separated from deterministic segmentation
+
+- campaign launches require explicit user action
+
+- AI recommendations cached + auditable
+
+NEVER:
+
+- auto-trigger retention flows
+
+- mutate segments using AI
+
+- generate fake churn certainty
+
+---
+
+## 📊 SEGMENT CONFIDENCE SEMANTICS
+
+CONFIDENCE DEPENDS ON:
+
+- identity resolution quality
+
+- event completeness
+
+- attribution freshness
+
+- session continuity
+
+- behavioral coverage
+
+RULES:
+
+- low-confidence audiences flagged
+
+- stale segments visually marked
+
+- incomplete identities isolated
+
+SYSTEM MUST TRACK:
+
+- segment freshness
+
+- identity confidence
+
+- event lag
+
+- sync health
+
+- overlap drift
+
+---
+
+## 🧠 COMPETITOR INTELLIGENCE EXPANSION
+
+ADVANCED COMPETITOR CAPABILITIES:
+
+Customer.io:
+
+- lifecycle-triggered audiences
+
+Klaviyo:
+
+- realtime retention segmentation
+
+Segment:
+
+- identity graph orchestration
+
+Hull:
+
+- audience synchronization infrastructure
+
+Triple Whale:
+
+- profitability-linked segments
+
+Northbeam:
+
+- attribution-aware audience intelligence
+
+SYSTEM DIRECTION:
+
+- deterministic audience infrastructure
+
+- explainable lifecycle intelligence
+
+- attribution-linked segmentation
+
+- realtime audience observability
+
+- executive-grade customer intelligence
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS (ADDITIONAL)
+
+GET /api/v1/dashboard/segment/confidence
+
+GET /api/v1/dashboard/segment/overlap-analysis
+
+GET /api/v1/dashboard/segment/freshness
+
+GET /api/v1/dashboard/segment/identity-health
+
+GET /api/v1/dashboard/segment/churn-confidence
+
+POST /api/v1/dashboard/segment/rebuild
+
+POST /api/v1/dashboard/segment/launch-campaign
+
+POST /api/v1/dashboard/segment/sync-audience
+
+RULES:
+
+- all recomputes async only
+
+- identity resolution backend-owned
+
+- audience sync fully auditable
+
+---
+
+## 🗄️ REQUIRED TABLES (ADDITIONAL)
+
+segment_confidence
+
+segment_overlap_analysis
+
+audience_sync_jobs
+
+identity_resolution_logs
+
+segment_freshness
+
+segment_rebuild_jobs
+
+campaign_segment_links
+
+segment_conflict_logs
+
+behavioral_scores
+
+churn_scores
+
+segment_health_audit
+
+audience_export_logs
+
+identity_graph_versions
+
+---
+
+## ⚡ EXECUTION BOUNDARIES (ADDITIONAL)
+
+CLAUDE MAY IMPLEMENT:
+
+- audience dashboards
+
+- segment cards
+
+- lifecycle visualizations
+
+- overlap charts
+
+- freshness indicators
+
+- confidence badges
+
+- realtime subscriptions
+
+- export flows
+
+- launch campaign buttons
+
+- loading/error/empty states
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- identity stitching engines
+
+- probabilistic audience resolution
+
+- AI-generated lifecycle mutation
+
+- autonomous campaign orchestration
+
+- predictive churn AI engines
+
+- automatic audience generation
+
+- realtime recompute orchestration
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES (ADDITIONAL)
+
+AUDIENCE GOVERNANCE:
+
+- segment definitions immutable
+
+- lifecycle methodology versioned
+
+- audience exports audited
+
+- campaign launches logged
+
+SECURITY:
+
+- org-level audience isolation mandatory
+
+- RBAC for campaign actions
+
+- sync permissions enforced
+
+COMPLIANCE:
+
+- consent-aware targeting required
+
+- deleted users removable
+
+- export history immutable
+
+- identity merges auditable
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED (ADDITIONAL)
+
+DEFER:
+
+- AI-generated audience creation
+
+- autonomous lifecycle optimization
+
+- predictive churn AI
+
+- lookalike modeling
+
+- autonomous retention systems
+
+- generative personalization
+
+- AI-driven campaign orchestration
+
+RULE:
+
+- segmentation remains deterministic initially
+
+- do NOT fake predictive certainty
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST (ADDITIONAL)
+
+NEVER:
+
+- frontend segmentation logic
+
+- browser-side RFM scoring
+
+- uncached audience recomputes
+
+- silent identity merges
+
+- fake churn predictions
+
+- automatic campaign launches
+
+- direct SQL audience access from frontend
+
+- AI mutation on page load
+
+RULE:
+
+- segmentation is customer infrastructure
+
+- NOT a frontend marketing widget
+
+---
 ✅ DONE

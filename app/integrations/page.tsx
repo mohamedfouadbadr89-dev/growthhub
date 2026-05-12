@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 import {
   Globe,
   MousePointerClick,
@@ -101,7 +101,8 @@ export default function IntegrationsPage() {
       const data = await apiClient<Integration[]>("/api/v1/integrations", token);
       setIntegrations(data ?? []);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load integrations");
+      // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+      setLoadError(formatErrorMessage(e, "Failed to load integrations"));
     } finally {
       setLoading(false);
     }
@@ -128,8 +129,8 @@ export default function IntegrationsPage() {
       );
       window.location.href = authUrl;
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to start connection";
-      setToast({ msg, type: "error" });
+      // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+      setToast({ msg: formatErrorMessage(err, "Failed to start connection"), type: "error" });
     }
   };
 
@@ -155,9 +156,11 @@ export default function IntegrationsPage() {
       setToast({ msg: "Sync queued! Data will update shortly.", type: "success" });
       setTimeout(fetchIntegrations, 3000);
     } catch (err) {
+      // Special-case 409 friendly text preserved; non-409 path uses
+      // formatErrorMessage to surface ApiError.requestId (continuation #36).
       const msg = err instanceof ApiError && err.status === 409
         ? "A sync is already in progress."
-        : "Failed to queue sync. Please try again.";
+        : formatErrorMessage(err, "Failed to queue sync. Please try again.");
       setToast({ msg, type: "error" });
     } finally {
       setSyncing((s) => ({ ...s, [id]: false }));

@@ -786,4 +786,628 @@ Current system direction:
 * root cause visibility
 * governance-aware remediation
 * realtime operational diagnostics
+
+
+RUNTIME TRUTH LAYER
+
+Actual Runtime Position
+
+alerts page currently behaves as:
+
+* semi-static operational monitoring surface
+* frontend-local interaction layer
+* partially simulated enterprise observability UI
+* isolated remediation visibility panel
+
+NOT YET:
+
+* authoritative anomaly orchestration system
+* enterprise-grade observability engine
+* execution-governed operational intelligence platform
+
+⸻
+
+⚠️ CURRENT RUNTIME REALITY
+
+Current implementation still contains:
+
+* local React state authority
+* mock alerts authority
+* frontend filtering authority
+* frontend suppression authority
+* frontend expansion persistence
+* static system health metrics
+* static frequency analytics
+* non-authoritative execution semantics
+
+Meaning:
+
+the UI visually appears enterprise-grade —
+but runtime semantics are still frontend-demo-grade.
+
+⸻
+
+🔴 DANGEROUS ASSUMPTIONS
+
+❌ Dangerous Assumption:
+
+alerts are operationally safe because UI looks mature
+
+Reality:
+
+system currently lacks:
+
+* execution locking
+* remediation validation
+* correlated anomaly protection
+* realtime reconciliation safety
+* stale event invalidation
+* duplicate execution prevention
+* remediation conflict detection
+* dependency propagation handling
+
+⸻
+
+❌ Dangerous Assumption:
+
+frontend filters are harmless
+
+Reality:
+
+frontend filtering can create:
+
+* stale operational visibility
+* hidden critical alerts
+* inconsistent realtime state
+* incorrect anomaly counts
+* conflicting severity rendering
+
+Backend MUST remain authoritative.
+
+⸻
+
+❌ Dangerous Assumption:
+
+Execute Suggestion button is operationally safe
+
+Reality:
+
+without backend orchestration:
+
+* duplicate remediation may occur
+* rollback state may not exist
+* remediation conflicts may occur
+* platform instability may worsen
+* invalid execution timing may occur
+
+⸻
+
+🧬 MISSING SEMANTICS
+
+Current page still lacks:
+
+1. Alert Confidence Propagation
+
+Current UI shows:
+
+* severity
+* remediation
+* root cause
+
+But missing:
+
+* anomaly confidence
+* attribution confidence
+* remediation confidence
+* execution reliability
+* propagation certainty
+
+Competitors also mostly fail here.
+
+This becomes major differentiation layer.
+
+⸻
+
+2. Correlated Anomaly Intelligence
+
+Currently alerts are isolated cards.
+
+Missing:
+
+* cascading failures
+* shared root causes
+* correlated degradation chains
+* dependency-aware escalation
+* upstream/downstream signal linkage
+
+This is where enterprise systems separate from dashboards.
+
+⸻
+
+3. Execution Dependency Semantics
+
+Current remediation layer lacks:
+
+* dependency mapping
+* execution prerequisites
+* rollback compatibility
+* cooldown windows
+* execution readiness scoring
+
+Meaning:
+execution semantics are visually implied —
+but operationally undefined.
+
+⸻
+
+4. Platform Health Weighting
+
+Current stability score is static.
+
+Missing:
+
+* weighted platform degradation
+* attribution instability weighting
+* realtime sync quality
+* API pressure contribution
+* auth integrity weighting
+
+Without this:
+system stability becomes cosmetic.
+
+⸻
+
+5. Alert Lineage
+
+Missing:
+
+* originating signal
+* anomaly ancestry
+* execution history linkage
+* remediation outcome history
+* escalation lineage
+
+Enterprise governance REQUIRES lineage.
+
+⸻
+
+🧠 COMPETITOR LIFECYCLE ANALYSIS
+
+Madgicx
+
+Strong at:
+
+* ad optimization workflows
+* rule automation
+* media buying visibility
+
+Weak at:
+
+* operational governance
+* remediation traceability
+* execution lineage
+* anomaly explainability
+
+Your system already exceeds Madgicx in:
+
+* governance semantics
+* operational positioning
+* execution-awareness
+* backend-authoritative direction
+
+⸻
+
+Braze
+
+Braze strength:
+
+* event orchestration
+* realtime customer lifecycle logic
+* messaging reliability semantics
+
+Braze advantage:
+
+* orchestration maturity
+* event-driven architecture
+* execution guarantees
+
+Your gap vs Braze:
+
+* orchestration infrastructure maturity
+* event replay systems
+* execution durability
+* distributed governance
+
+⸻
+
+Triple Whale
+
+Strong at:
+
+* attribution visibility
+* blended metrics
+* ecommerce observability
+
+Weak at:
+
+* operational remediation semantics
+* execution governance
+* rollback intelligence
+* anomaly orchestration
+
+Your direction already exceeds Triple Whale strategically.
+
+⸻
+
+Northbeam
+
+Strong at:
+
+* attribution modeling
+* measurement science
+* media mix visibility
+
+Weak at:
+
+* operational intelligence UX
+* remediation orchestration
+* realtime governance visibility
+
+Northbeam is attribution-first.
+
+Your direction is:
+operations-intelligence-first.
+
+Different category evolution.
+
+⸻
+
+Lifetimely
+
+Strong at:
+
+* LTV analytics
+* retention visibility
+* cohort economics
+
+Weak at:
+
+* anomaly governance
+* execution orchestration
+* operational diagnostics
+
+Not direct competitor architecturally.
+
+⸻
+
+AdCreative.ai
+
+Strong at:
+
+* AI creative generation
+* creative scoring
+* rapid asset iteration
+
+Weak at:
+
+* enterprise observability
+* operational governance
+* backend-authoritative intelligence
+
+Different system category entirely.
+
+⸻
+
+Markifact
+
+Closer to:
+
+* marketing intelligence operations
+* observability direction
+* blended analytics governance
+
+Still weak at:
+
+* realtime orchestration
+* execution lineage
+* rollback-aware remediation
+
+⸻
+
+🧱 REQUIRED BACKEND CONTRACTS
+
+Alerts API MUST additionally expose:
+
+type AlertExecutionState = {
+execution_readiness: number
+rollback_available: boolean
+cooldown_active: boolean
+approval_required: boolean
+conflict_detected: boolean
+}
+
+⸻
+
+Root Cause MUST expose:
+
+type RootCauseMetadata = {
+confidence: number
+affected_entities: number
+propagation_risk: number
+anomaly_cluster_id?: string
+}
+
+⸻
+
+Platform Health MUST expose:
+
+type PlatformHealthState = {
+platform: string
+reliability_score: number
+api_latency: number
+attribution_health: number
+sync_health: number
+}
+
+⸻
+
+🗄️ REQUIRED TABLES
+
+REQUIRED:
+
+alert_execution_history
+
+Tracks:
+
+* remediation executions
+* rollback attempts
+* execution failures
+* execution duration
+
+⸻
+
+alert_correlations
+
+Tracks:
+
+* anomaly relationships
+* cascading failures
+* duplicate collapse groups
+
+⸻
+
+platform_health_snapshots
+
+Tracks:
+
+* API degradation
+* auth failures
+* sync quality
+* latency evolution
+
+⸻
+
+alert_lineage
+
+Tracks:
+
+* parent anomaly
+* downstream alerts
+* escalation chains
+
+⸻
+
+⚠️ SPEC GAPS
+
+Missing:
+
+execution cooldown semantics
+
+Need:
+
+cooldown_until
+
+Otherwise:
+duplicate remediations possible.
+
+⸻
+
+Missing:
+
+remediation idempotency
+
+Need:
+
+execution_hash
+
+Otherwise:
+same remediation may execute multiple times.
+
+⸻
+
+Missing:
+
+stale alert expiration rules
+
+Need:
+
+expires_at
+stale_after
+
+Otherwise:
+resolved operational failures remain visually active.
+
+⸻
+
+Missing:
+
+realtime event ordering guarantees
+
+Need:
+
+event_version
+event_timestamp
+
+Otherwise:
+older events may overwrite newer state.
+
+⸻
+
+🔴 EXECUTION BOUNDARIES
+
+Frontend MAY:
+
+* render alerts
+* render remediation state
+* request execution
+* request ignore
+* subscribe realtime
+* render validation results
+
+Frontend MUST NEVER:
+
+* calculate anomaly confidence
+* infer remediation readiness
+* infer rollback safety
+* calculate health score
+* generate recommendations
+* mutate alert state optimistically
+
+⸻
+
+🛡️ GOVERNANCE BOUNDARIES
+
+Backend MUST remain authoritative for:
+
+* anomaly generation
+* remediation logic
+* execution validation
+* rollback validation
+* platform health
+* realtime orchestration
+* suppression logic
+* conflict detection
+* execution lineage
+
+⸻
+
+✅ WHAT CLAUDE CAN SAFELY IMPLEMENT
+
+Claude CAN safely implement:
+
+* React Query integration
+* Supabase realtime subscriptions
+* runtime-safe cache reconciliation
+* loading states
+* empty states
+* error boundaries
+* org-scoped API integration
+* backend-authoritative rendering
+* stale event reconciliation
+* optimistic-state prevention
+* polling fallback orchestration
+
+⸻
+
+⛔ WHAT MUST REMAIN DEFERRED
+
+Deferred Systems
+
+Because these require real infrastructure:
+
+* distributed event replay
+* anomaly graph engine
+* dependency topology engine
+* execution conflict engine
+* rollback orchestration engine
+* approval workflow orchestration
+* realtime propagation engine
+* attribution integrity scoring
+* anomaly clustering ML systems
+
+⸻
+
+🚫 WHAT SHOULD NEVER EXIST
+
+NEVER ALLOW:
+
+❌ frontend-generated alerts
+
+Reason:
+
+breaks governance integrity
+
+⸻
+
+❌ frontend AI remediation generation
+
+Reason:
+
+breaks execution safety
+
+⸻
+
+❌ realtime auto-remediation from UI
+
+Reason:
+
+creates uncontrolled operational mutations
+
+⸻
+
+❌ optimistic remediation execution
+
+Reason:
+
+can desync operational truth
+
+⸻
+
+❌ client-side anomaly scoring
+
+Reason:
+
+creates inconsistent intelligence surfaces
+
+⸻
+
+❌ “if missing generate AI”
+
+Reason:
+
+creates hidden AI cost explosions
+
+⸻
+
+❌ direct provider API access from frontend
+
+Reason:
+
+breaks enterprise security model
+
+⸻
+
+❌ frontend rollback simulation
+
+Reason:
+
+unsafe operational semantics
+
+⸻
+
+🧠 TRUE SYSTEM CATEGORY
+
+This system is evolving toward:
+
+enterprise marketing operations observability + execution governance platform
+
+NOT:
+
+* ads dashboard
+* reporting UI
+* AI recommendation app
+* automation toy
+* analytics frontend
+
+That positioning is significantly higher-level than most competitors structurally.
 ✅ DONE

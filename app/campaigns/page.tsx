@@ -7,7 +7,7 @@ import {
   Search, Plus, Calendar, MoreHorizontal, ChevronDown, ChevronRight,
   Pause, Play, Copy, TrendingUp, X, CheckCircle2, AlertCircle, Sparkles,
 } from "lucide-react";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
 // Phase 6 Sub-pass B (continuation #13, 2026-05-08): wired to canonical
 // `GET /api/v1/campaigns` (backend/src/routes/v1/campaigns.ts). Backend
@@ -130,8 +130,8 @@ export default function CampaignsPage() {
         if (!cancelled) setCampaigns(data.campaigns);
       } catch (err) {
         if (!cancelled) {
-          const e = err as ApiError | Error;
-          setError(e.message || "Failed to load campaigns");
+          // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+          setError(formatErrorMessage(err, "Failed to load campaigns"));
         }
       } finally {
         if (!cancelled) setLoading(false);

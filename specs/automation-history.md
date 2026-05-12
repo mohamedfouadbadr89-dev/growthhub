@@ -456,3 +456,531 @@ RULE:
 
 - system MUST learn continuously
 
+
+## ⚡ RUNTIME TRUTH
+
+AUTOMATION HISTORY SYSTEMS ARE:
+
+- append-only
+
+- audit-critical
+
+- execution-linked
+
+- risk-aware
+
+- eventually-consistent
+
+- feedback-driven
+
+- organization-scoped
+
+RULES:
+
+- automation logs are source of truth
+
+- execution history is immutable
+
+- AI explanations are secondary metadata
+
+- execution state may evolve asynchronously
+
+- approval state must remain historically accurate
+
+- failed executions are equally important as successful ones
+
+- realtime feeds may lag provider state briefly
+
+SYSTEM TRUTH PRIORITY:
+
+1. execution logs
+
+2. validation state
+
+3. approval state
+
+4. execution result
+
+5. automation workflow state
+
+6. AI explanation cache
+
+7. UI rendering
+
+NEVER:
+
+- edit execution history
+
+- infer missing execution states
+
+- auto-generate fake explanations
+
+- mutate logs from frontend
+
+- trust frontend state as source of truth
+
+- overwrite historical approvals
+
+---
+
+## 🔄 COMPETITOR LIFECYCLE SEMANTICS
+
+AUTOMATION FLOW:
+
+decision generated
+
+→ strategy evaluation
+
+→ workflow trigger
+
+→ validation checks
+
+→ approval checks
+
+→ execution dispatch
+
+→ execution result
+
+→ logging
+
+→ feedback scoring
+
+→ strategy refinement
+
+RULES:
+
+- workflows evolve over time
+
+- failures affect future confidence
+
+- execution quality influences strategy
+
+- realtime updates are event-driven
+
+- AI explanations are delayed enrichments
+
+---
+
+## ⚠️ MISSING SEMANTICS
+
+CURRENT SPEC DOES NOT DEFINE:
+
+- workflow retry lineage
+
+- execution replay protection
+
+- partial execution semantics
+
+- rollback lineage
+
+- multi-step workflow dependencies
+
+- execution cancellation tracking
+
+- delayed provider confirmation handling
+
+- execution reconciliation policy
+
+- strategy decay rules
+
+- feedback scoring normalization
+
+- anomaly sensitivity thresholds
+
+- confidence degradation logic
+
+- execution deduplication policy
+
+- approval expiration behavior
+
+- workflow pause recovery
+
+- historical strategy snapshots
+
+REQUIRED BEFORE SCALE:
+
+- canonical workflow execution model
+
+- execution reconciliation framework
+
+- feedback scoring governance
+
+- automation reliability standards
+
+---
+
+## ⚠️ DANGEROUS ASSUMPTIONS
+
+NEVER ASSUME:
+
+- successful execution means positive impact
+
+- skipped actions are harmless
+
+- provider responses are final immediately
+
+- automation confidence remains static
+
+- AI explanations are authoritative
+
+- realtime events arrive in order
+
+- workflows behave deterministically forever
+
+- execution history is complete instantly
+
+RISKS:
+
+- inaccurate automation confidence
+
+- hidden execution failures
+
+- duplicated executions
+
+- false-positive anomaly alerts
+
+- stale strategy scoring
+
+- invalid rollback assumptions
+
+- incorrect operational decisions
+
+- audit inconsistency
+
+---
+
+## 🧩 SPEC GAPS
+
+MISSING API CONTRACTS:
+
+- GET /api/v1/automation/history/stats
+
+- GET /api/v1/automation/history/anomalies
+
+- GET /api/v1/automation/history/quality-score
+
+- GET /api/v1/automation/history/feedback
+
+- GET /api/v1/automation/history/:id/logs
+
+- GET /api/v1/automation/history/:id/approval
+
+- POST /api/v1/automation/history/:id/retry
+
+- POST /api/v1/automation/history/:id/pause
+
+- POST /api/v1/automation/history/:id/resume
+
+- POST /api/v1/automation/history/:id/rollback
+
+MISSING STATES:
+
+- awaiting_approval
+
+- rollback_triggered
+
+- partial_execution
+
+- execution_reconciled
+
+- stale_feedback
+
+- anomaly_detected
+
+- strategy_paused
+
+- retry_pending
+
+- delayed_provider_confirmation
+
+- low_confidence_execution
+
+---
+
+## 🌐 REQUIRED BACKEND CONTRACTS
+
+AUTOMATION HISTORY CONTRACT:
+
+INPUT:
+
+- org_id
+
+- workflow_id
+
+- filters
+
+OUTPUT:
+
+- execution_history[]
+
+- validation_state
+
+- approval_state
+
+- execution_metadata
+
+RULES:
+
+- immutable logs required
+
+- org isolation mandatory
+
+- pagination required
+
+---
+
+AI EXPLANATION CONTRACT:
+
+INPUT:
+
+- decision_id
+
+- cached_result
+
+- execution_context
+
+OUTPUT:
+
+- explanation
+
+- recommendation
+
+- confidence_score
+
+RULES:
+
+- POST-only execution
+
+- cached explanations mandatory
+
+- AI NEVER auto-triggered
+
+---
+
+EXECUTION FEEDBACK CONTRACT:
+
+INPUT:
+
+- execution_result
+
+- impact
+
+- stability
+
+- failure_rate
+
+OUTPUT:
+
+- execution_quality_score
+
+- strategy_signal
+
+- anomaly_signal
+
+RULES:
+
+- deterministic scoring required
+
+- failed executions weighted negatively
+
+- feedback stored historically
+
+---
+
+ANOMALY DETECTION CONTRACT:
+
+INPUT:
+
+- execution_frequency
+
+- failure_rate
+
+- impact
+
+- workflow_behavior
+
+OUTPUT:
+
+- anomaly_detected
+
+- severity
+
+- pause_recommended
+
+RULES:
+
+- backend-only evaluation
+
+- historical context required
+
+- auto-pause policy auditable
+
+---
+
+## 🗄️ REQUIRED TABLES
+
+automation_execution_history
+
+automation_feedback_scores
+
+automation_quality_scores
+
+automation_anomalies
+
+automation_execution_metadata
+
+automation_approval_history
+
+automation_validation_history
+
+automation_pause_events
+
+automation_retry_history
+
+automation_realtime_events
+
+automation_strategy_feedback
+
+automation_confidence_history
+
+automation_rollback_history
+
+automation_execution_windows
+
+automation_execution_metrics
+
+automation_alert_links
+
+---
+
+## ⚡ EXECUTION BOUNDARIES
+
+CLAUDE MAY IMPLEMENT:
+
+- automation history tables
+
+- expandable rows
+
+- realtime feed UI
+
+- filters
+
+- pagination
+
+- export actions
+
+- AI insight panels
+
+- confidence indicators
+
+- execution badges
+
+- loading/error/empty states
+
+- anomaly indicators
+
+CLAUDE MUST NOT IMPLEMENT:
+
+- execution authority
+
+- anomaly detection engine
+
+- feedback scoring engine
+
+- auto-pause orchestration
+
+- rollback orchestration
+
+- execution reconciliation engine
+
+- workflow retry engine
+
+- AI execution systems
+
+---
+
+## 🛡️ GOVERNANCE BOUNDARIES
+
+AUTOMATION GOVERNANCE:
+
+- execution history immutable
+
+- approvals historically preserved
+
+- validation logs auditable
+
+- AI explanations traceable
+
+- feedback scoring reproducible
+
+SECURITY:
+
+- strict org isolation mandatory
+
+- backend-only execution authority
+
+- AI explanations permission-scoped
+
+- approval states protected
+
+COMPLIANCE:
+
+- audit logs retained
+
+- execution lineage immutable
+
+- rollback history preserved
+
+- anomaly triggers traceable
+
+---
+
+## ⏸️ WHAT MUST REMAIN DEFERRED
+
+DEFER:
+
+- autonomous workflow optimization
+
+- AI-driven execution changes
+
+- self-healing automations
+
+- adaptive anomaly thresholds
+
+- AI-generated workflow creation
+
+- autonomous rollback execution
+
+- automatic strategy mutation
+
+RULE:
+
+- automation governance must remain deterministic initially
+
+---
+
+## 🚫 WHAT SHOULD NEVER EXIST
+
+NEVER:
+
+- editable automation history
+
+- frontend execution mutation
+
+- automatic AI execution
+
+- hidden retry execution
+
+- uncached AI explanations
+
+- fake execution logs
+
+- frontend anomaly scoring
+
+- cross-org workflow visibility
+
+- silent workflow mutation
+
+- AI-triggered execution actions
+
+---

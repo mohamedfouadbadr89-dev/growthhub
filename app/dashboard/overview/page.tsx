@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
 interface MetricsSummary {
   spend: number;
@@ -98,7 +98,8 @@ export default function DashboardOverview() {
       );
       setMetrics(data);
     } catch (e) {
-      setMetricsError(e instanceof Error ? e.message : "Something went wrong");
+      // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+      setMetricsError(formatErrorMessage(e, "Something went wrong"));
     } finally {
       setMetricsLoading(false);
     }
@@ -119,7 +120,8 @@ export default function DashboardOverview() {
       if (e instanceof ApiError && e.status === 404) {
         setCampaigns([]);
       } else {
-        setCampaignsError(e instanceof Error ? e.message : "Something went wrong");
+        // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+        setCampaignsError(formatErrorMessage(e, "Something went wrong"));
       }
     } finally {
       setCampaignsLoading(false);

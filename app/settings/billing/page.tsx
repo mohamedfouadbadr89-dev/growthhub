@@ -16,7 +16,7 @@ import {
   Trash2,
   Save,
 } from "lucide-react";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
 // Phase 7 Sub-pass B (continuation #19, 2026-05-09): wired to canonical
 // `GET /api/v1/billing/plan`, `PATCH /api/v1/billing/plan`,
@@ -88,8 +88,9 @@ export default function BillingPage() {
       const data = await apiClient<BillingState>("/api/v1/billing/plan", token);
       setBilling(data);
     } catch (err) {
-      const e = err as ApiError | Error;
-      setLoadError(e.message || "Failed to load billing state");
+      // Continuation #35: formatErrorMessage surfaces ApiError.requestId
+      // (from #34) so operators can quote it to support for backend log pivot.
+      setLoadError(formatErrorMessage(err, "Failed to load billing state"));
     } finally {
       setLoading(false);
     }
@@ -124,8 +125,7 @@ export default function BillingPage() {
       setByokInput("");
       await load();
     } catch (err) {
-      const e = err as ApiError | Error;
-      setByokError(e.message || "Failed to save BYOK key");
+      setByokError(formatErrorMessage(err, "Failed to save BYOK key"));
     } finally {
       setByokSaving(false);
     }
@@ -172,8 +172,7 @@ export default function BillingPage() {
       // optional credit grant.
       window.location.href = result.checkout_url;
     } catch (err) {
-      const e = err as ApiError | Error;
-      setUpgradeError(e.message || "Failed to start checkout");
+      setUpgradeError(formatErrorMessage(err, "Failed to start checkout"));
       setUpgrading(false);
     }
   }
@@ -192,8 +191,7 @@ export default function BillingPage() {
       );
       await load();
     } catch (err) {
-      const e = err as ApiError | Error;
-      setByokError(e.message || "Failed to remove BYOK key");
+      setByokError(formatErrorMessage(err, "Failed to remove BYOK key"));
     } finally {
       setByokDeleting(false);
     }
