@@ -3,6 +3,11 @@ import { supabaseAdmin } from '../../lib/supabase.js'
 import { createSecret, deleteSecret } from '../../lib/vault.js'
 import { getStripeClient } from '../../lib/stripe.js'
 import { ok, fail } from '../../utils/response.js'
+// Continuation #42 — operator-visible AI consumption metrics per
+// AI_OPERATING_MODEL.md §7 line 331. Reads the same effective-limit
+// resolution used by the budget enforcer for parity.
+import { getEffectiveLimit } from '../../services/ai/budget-enforcer.js'
+import type { AIUsageOperationType } from '../../services/ai/usage-tracker.js'
 
 /**
  * /api/v1/billing routes — Phase 7 Sub-pass A1c.
@@ -71,6 +76,133 @@ billingRouter.get('/plan', async (c) => {
     plan_type: data.plan_type,
     credits_balance: data.credits_balance,
     has_byok_key: data.vault_byok_openrouter_secret_id !== null,
+  })
+})
+
+// ─── GET /billing/usage ─────────────────────────────────────────────
+// Continuation #42 — operator-visible AI consumption metrics per
+// AI_OPERATING_MODEL.md §7 line 331 ("operator-visible consumption
+// metrics"). Closes the third pillar of LLM Cost Governance alongside
+// per-org rate limits (#41) + AI usage tracking (#40).
+//
+// Aggregates `ai_usage_ledger` for the current UTC day grouped by
+// operation_type, joins each row with the effective daily limit
+// resolved through the budget-enforcer's chain (org_ai_limits row →
+// env var → DAILY_LIMIT_DEFAULTS). Result shape lets the frontend
+// (already-wired `app/settings/billing/page.tsx`) render usage bars
+// without re-deriving anything client-side.
+//
+// LTD reporting: limits are still surfaced even for LTD orgs (which
+// bypass the enforcement gate per the budget-enforcer LTD bypass) so
+// operators can see "you'd be at X/Y if you were on subscription".
+// `plan_type` is included in the response so the FE can render a
+// "not enforced" badge for LTD users.
+//
+// READ-ONLY. NO mutations. Returns canonical envelope.
+billingRouter.get('/usage', async (c) => {
+  const orgId = c.get('orgId')
+  // Continuation #44 — request_id captured up-front so [billing-usage]
+  // warn lines (below) carry the same correlator as [req]/[err]/[AI]
+  // chains for grep parity across observability sinks.
+  const requestId = c.get('requestId') ?? 'no-request-id'
+
+  // Plan type — required for the FE to badge LTD-bypass state.
+  const { data: org, error: orgErr } = await supabaseAdmin
+    .from('organizations')
+    .select('plan_type')
+    .eq('org_id', orgId)
+    .single()
+  if (orgErr) {
+    throw new Error(`organizations lookup failed: ${orgErr.message}`)
+  }
+  if (!org) {
+    return fail(c, 'Organization not found', 404, { code: 'NOT_FOUND' })
+  }
+  const planType = (org.plan_type as string) ?? 'subscription'
+
+  // UTC day boundary — matches the count semantics used inside
+  // checkAIBudget (ai_usage_ledger.created_at is TIMESTAMPTZ stored UTC).
+  const startOfDayUTC = new Date()
+  startOfDayUTC.setUTCHours(0, 0, 0, 0)
+  const startIso = startOfDayUTC.toISOString()
+
+  // Enumerate every operation type so the response always carries the
+  // full operation_type matrix even for operations the org has not used
+  // today. FE renders these with `used=0, remaining=limit`. Keeping the
+  // list in code (rather than deriving from the migration's CHECK
+  // constraint) is intentional — the FE needs a stable surface and the
+  // AIUsageOperationType type already enumerates it.
+  const OPERATION_TYPES: AIUsageOperationType[] = [
+    'ai_decision_generate',
+    'ai_execute',
+    'creative_copy',
+    'creative_image',
+    'daily_digest',
+    'conversational_query',
+    'strategic_recommendation',
+  ]
+
+  // Per-op-type aggregate. Parallel queries keep latency bounded
+  // (single round-trip per op_type rather than O(types) sequentially).
+  // Each row is independent — no aggregation joins needed.
+  const usageEntries = await Promise.all(
+    OPERATION_TYPES.map(async (op) => {
+      const [{ count, error: countErr }, limit] = await Promise.all([
+        supabaseAdmin
+          .from('ai_usage_ledger')
+          .select('*', { count: 'exact', head: true })
+          .eq('org_id', orgId)
+          .eq('operation_type', op)
+          .gte('created_at', startIso),
+        getEffectiveLimit(orgId, op),
+      ])
+
+      // Same fail-open posture as checkAIBudget: a count-query failure
+      // surfaces as used=0 with a loud warn rather than aborting the
+      // whole /usage response. Operators see "0 of N" rather than a
+      // 500. The warn line tags [billing-usage] for grep parity with
+      // the budget enforcer's [ai-budget] line.
+      if (countErr) {
+        console.warn(
+          `[billing-usage][req=${requestId}] count query failed ` +
+            `org=${orgId} op=${op} error=${countErr.message}`,
+        )
+      }
+
+      const used = count ?? 0
+      return {
+        operation_type: op,
+        used,
+        limit,
+        remaining: Math.max(0, limit - used),
+      }
+    }),
+  )
+
+  // Continuation #44 — Cache-Control on /billing/usage.
+  //   `private` — operator-scoped data; CDNs / shared proxies MUST NOT cache.
+  //   `max-age=30` — counts change as ops complete; 30s freshness is well
+  //                  below the operator-perceptible refresh cadence and
+  //                  noticeably reduces backend load on busy pages without
+  //                  hiding fresh data for long. Aligns with the UTC-day
+  //                  boundary semantics (worst-case staleness is ~30s).
+  c.header('Cache-Control', 'private, max-age=30')
+
+  return ok(c, {
+    org_id: orgId,
+    plan_type: planType,
+    // Per AI_OPERATING_MODEL.md §7 line 333 + the budget-enforcer LTD
+    // bypass: subscription orgs are enforced; LTD orgs are not (BYOK).
+    // Surfaced so the FE can render a different badge / message.
+    enforcement_active: planType !== 'ltd',
+    window: {
+      start: startIso,
+      // UTC midnight of the next day (inclusive endpoint when the
+      // operator's local time is past midnight UTC).
+      end: new Date(startOfDayUTC.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+      timezone: 'UTC',
+    },
+    usage: usageEntries,
   })
 })
 
@@ -199,9 +331,12 @@ billingRouter.post('/byok', async (c) => {
 
   if (updateErr) {
     // Persistence failed — try to clean up the orphaned Vault secret.
+    // Continuation #49 — request_id correlation (Variables type already
+    // declares requestId since the existing /billing routes hardening).
+    const reqId = c.get('requestId') ?? 'no-request-id'
     await deleteSecret(newSecretId).catch((cleanupErr) => {
       console.error(
-        `[billing] orphaned Vault secret ${newSecretId} for org=${orgId} after persistence failure; manual cleanup required: ${(cleanupErr as Error).message}`,
+        `[billing][req=${reqId}] orphaned Vault secret ${newSecretId} for org=${orgId} after persistence failure; manual cleanup required: ${(cleanupErr as Error).message}`,
       )
     })
     throw new Error(`organizations BYOK update failed: ${updateErr.message}`)
@@ -211,9 +346,11 @@ billingRouter.post('/byok', async (c) => {
   //    not fatal — the NEW secret is already live and the org row points
   //    at it).
   if (oldSecretId) {
+    // Continuation #49 — request_id correlation (see above).
+    const reqId = c.get('requestId') ?? 'no-request-id'
     await deleteSecret(oldSecretId).catch((cleanupErr) => {
       console.error(
-        `[billing] failed to delete prior Vault secret ${oldSecretId} for org=${orgId}: ${(cleanupErr as Error).message}`,
+        `[billing][req=${reqId}] failed to delete prior Vault secret ${oldSecretId} for org=${orgId}: ${(cleanupErr as Error).message}`,
       )
     })
   }

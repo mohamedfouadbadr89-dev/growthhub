@@ -4,6 +4,8 @@ import { getBrandKit } from './brand-kit.js'
 import { generateAdCopy } from './copy-generation.js'
 import { generateAdImages } from './image-generation.js'
 import { uploadImage } from './storage.js'
+// Continuation #40 — ai_usage_ledger ingestion per AI_OPERATING_MODEL.md §7+§12.
+import { recordAIUsage } from '../ai/usage-tracker.js'
 
 export const CREDIT_COSTS: Record<'copy' | 'image', number> = { copy: 2, image: 10 }
 
@@ -189,6 +191,27 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
           () => null,
         )
 
+      // Continuation #40 — AI_OPERATING_MODEL.md §7 + §12 classification
+      // ledger. Sibling fire-and-forget to log_ai_usage above. Records the
+      // operation as 'creative_copy' (Tier 3 per AI_OPERATING_MODEL.md §3).
+      // ai_decision_id is null because creative generation writes to
+      // creative_generations, not ai_decisions. credit_cost reflects the
+      // upstream deduction (CREDIT_COSTS.copy = 2) — recorded for analytics
+      // without re-deducting (the deduction already happened in
+      // routes/v1/creatives.ts before runGeneration was dispatched).
+      recordAIUsage({
+        org_id: orgId,
+        operation_type: 'creative_copy',
+        credit_cost: CREDIT_COSTS.copy,
+        ai_decision_id: null,
+        request_id: null,
+        metadata: {
+          model: copyModel,
+          generation_id: generationId,
+          source_roas: sourceRoas,
+        },
+      })
+
     } else {
       const images = await generateAdImages({
         campaignName: campaignName ?? 'Campaign',
@@ -234,6 +257,23 @@ export async function runGeneration(req: GenerationRequest): Promise<void> {
           () => null,
           () => null,
         )
+
+      // Continuation #40 — sibling ledger row to the copy branch above.
+      // Operation classified as 'creative_image' (Tier 3 per
+      // AI_OPERATING_MODEL.md §3). credit_cost reflects CREDIT_COSTS.image
+      // (10) deducted upstream in routes/v1/creatives.ts.
+      recordAIUsage({
+        org_id: orgId,
+        operation_type: 'creative_image',
+        credit_cost: CREDIT_COSTS.image,
+        ai_decision_id: null,
+        request_id: null,
+        metadata: {
+          model: imageModel,
+          generation_id: generationId,
+          source_roas: sourceRoas,
+        },
+      })
     }
 
     if (creativesToInsert.length === 0) {
