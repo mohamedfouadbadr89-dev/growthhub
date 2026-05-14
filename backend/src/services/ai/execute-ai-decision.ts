@@ -54,6 +54,14 @@
 import { validateAIResponse, AIValidationError, type AIResponse } from '../../utils/aiValidator.js'
 import { logAIInteraction, newTraceId } from '../../utils/aiLogger.js'
 import { persistAIDecision } from './persistence.js'
+import { recordAIUsage, type AIUsageOperationType } from './usage-tracker.js'
+// Continuation #51 — approval enqueue rule. Runs in parallel to the
+// existing #23/#24 auto-fire chain; operator-disjoint category lists
+// prevent double-execution (see services/approvals/enqueue.ts header).
+import {
+  shouldEnqueueForApproval,
+  enqueueAIDecisionForApproval,
+} from '../approvals/enqueue.js'
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { evaluateRulesForAIDecision } from '../execution/automation-engine.js'
 
@@ -75,6 +83,44 @@ export interface ExecuteAIDecisionInput {
   model: string
   /** Free-form label for what kind of AI call this is. e.g. "decision-explanation". */
   kind?: string
+  /**
+   * Continuation #40 — AI_OPERATING_MODEL.md §7 (LLM Cost Governance)
+   * + §12 (ai_usage_ledger).
+   *
+   * Operation-type classification for the post-persist `ai_usage_ledger`
+   * recording. Routes pass this verbatim (e.g., 'ai_decision_generate'
+   * from /ai/decisions/generate, 'ai_execute' from /ai/execute) so the
+   * ledger can answer per-tier / per-operation analytics queries like
+   * "how many AI decisions did this org generate this month?".
+   *
+   * Optional for backwards-compatibility: callers that omit it cause the
+   * ledger row to be SKIPPED (no insert). Both current /ai routes pass
+   * it explicitly; future non-HTTP orchestration paths (e.g., Tier 2
+   * daily digest cron) will pass 'daily_digest'.
+   *
+   * The existing `log_ai_usage` provider-observability call (fire-and-
+   * forget at line ~287) is UNCHANGED — both substrates coexist by
+   * design (see usage-tracker.ts header comment).
+   */
+  operation_type?: AIUsageOperationType
+  /**
+   * Continuation #45 — credits actually deducted by the route handler
+   * before this call. Threaded into the ai_usage_ledger row so the
+   * ledger records ACCURATE per-row credit_cost (vs the literal 0 used
+   * at #40). Closes the consistency gap with `creative-generator.ts`
+   * which already records `CREDIT_COSTS.copy` / `CREDIT_COSTS.image`
+   * verbatim into the ledger.
+   *
+   * Optional — for LTD orgs the route handler passes 0 (no credits
+   * deducted; BYOK). For subscription orgs the route handler passes
+   * the AI_CALL_COST constant it used with deduct_credits.
+   *
+   * Future continuations may derive cost from provider-side token
+   * counting (currently log_ai_usage passes 0 for that too); the
+   * ledger column is INTEGER ≥ 0 and accepts whatever the caller
+   * threads through.
+   */
+  credits_deducted?: number
   /**
    * Prompt payload as it was sent to the provider. Recorded verbatim
    * in the "request" log entry — JSONB on disk, so any JSON shape works.
@@ -302,6 +348,42 @@ export async function executeAIDecision(
         () => null,
       )
 
+    // ── 7b. operation-type classification ledger (Continuation #40) ──
+    // AI_OPERATING_MODEL.md §7 + §12 substrate. Fire-and-forget INSERT
+    // into ai_usage_ledger keyed by operation_type. Coexists with the
+    // log_ai_usage call above — different concerns, both observability-
+    // only, neither replaces the other (see usage-tracker.ts header).
+    //
+    // Skipped silently when caller did not classify the operation
+    // (operation_type omitted from input). Both current /ai routes pass
+    // it; future Tier 2 (daily_digest) / Tier 3 (conversational_query)
+    // entry points will pass theirs.
+    //
+    // credit_cost recorded as 0 here — the per-call deduction lives in
+    // the route handler (deduct_credits RPC pre-AI-call); the ledger is
+    // the AUDIT record of what operation happened, not the gate. A
+    // future continuation may thread the deducted amount through input
+    // for cleaner accounting; for now 0 means "see the route handler /
+    // org credits column for actual deduction".
+    if (input.operation_type) {
+      recordAIUsage({
+        org_id: input.org_id,
+        operation_type: input.operation_type,
+        // Continuation #45 — thread actual deducted credits through.
+        // Closes the inconsistency where creative-generator records the
+        // real CREDIT_COSTS while this path recorded literal 0. Defaults
+        // to 0 when caller omits (LTD orgs / future non-billing callers).
+        credit_cost: input.credits_deducted ?? 0,
+        ai_decision_id: decision_id,
+        request_id: input.request_id ?? null,
+        metadata: {
+          model: input.model,
+          kind: input.kind ?? null,
+          trace_id,
+        },
+      })
+    }
+
     // ── 8. auto-fire automation rules (Phase 4/6 bridge, continuation #23) ──
     //
     // Operator-authorized post-persist hook. Closes the Decision → Action
@@ -373,21 +455,62 @@ export async function executeAIDecision(
           // we don't flood logs for every AI decision that doesn't match a
           // categorical rule trigger.
           if (result && result.rulesFired > 0) {
+            // Continuation #49 — request_id correlation. input.request_id is
+            // the outer HTTP correlator; trace_id is the per-AI-flow id;
+            // both belong in the auto-fire log line for grep parity with
+            // [req]/[err]/[exec]/[AI] chain (same pattern as #48 fixes).
             // eslint-disable-next-line no-console
             console.log(
-              `[AI] auto-fire automation rules fired=${result.rulesFired} ai_decision_id=${decision_id} org_id=${input.org_id} trace_id=${trace_id} run_ids=${JSON.stringify(result.runIds)}`,
+              `[AI][req=${input.request_id ?? 'no-request-id'}] auto-fire automation rules fired=${result.rulesFired} ai_decision_id=${decision_id} org_id=${input.org_id} trace_id=${trace_id} run_ids=${JSON.stringify(result.runIds)}`,
             )
           }
         },
         (autoFireErr: unknown) => {
           // CONSTITUTION §3 "Fail Loudly" — automation infra failures
           // visible to operators via stdout. Does NOT propagate to caller.
+          // Continuation #49 — request_id correlation (see above).
           // eslint-disable-next-line no-console
           console.error(
-            `[AI] auto-fire automation rules failed for ai_decision_id=${decision_id} org_id=${input.org_id} trace_id=${trace_id}: ${(autoFireErr as Error)?.message ?? 'unknown'}`,
+            `[AI][req=${input.request_id ?? 'no-request-id'}] auto-fire automation rules failed for ai_decision_id=${decision_id} org_id=${input.org_id} trace_id=${trace_id}: ${(autoFireErr as Error)?.message ?? 'unknown'}`,
           )
         },
       )
+
+    // ── 9. approval-queue enqueue (Continuation #51) ────────────────
+    //
+    // Operator-authorized at #51 with explicit constraints:
+    //   - reuse existing approval_queue schema (#43)
+    //   - preserve auto-fire path unchanged
+    //   - approval path must remain parallel, not replacing existing
+    //     execution flow
+    //   - threshold/risk logic must be config-driven or isolated
+    //
+    // Parallel to the auto-fire hook above (#23/#24). Both run on every
+    // persisted AI decision; they do NOT coordinate. The operator
+    // controls disjointness between APPROVAL_REQUIRED_CATEGORIES (this
+    // module's env config) and automation_rules.trigger_type values
+    // (auto-fire chain) to avoid double-execution.
+    //
+    // Empty-default config (services/approvals/enqueue.ts) means the
+    // rule is INACTIVE out of the box — no behavior change vs pre-#51
+    // until operator sets APPROVAL_REQUIRED_CATEGORIES env var. This
+    // satisfies the "approval path must remain parallel, not
+    // replacing existing execution flow" constraint at the default
+    // configuration level: with the env unset, the auto-fire chain
+    // runs as before and no approval_queue rows are added.
+    //
+    // Fire-and-forget — same observability-only contract as recordAIUsage
+    // (#40) and the auto-fire hook above. Failures soft-warn via
+    // [approvals-enqueue][req=...] prefix; never poison the AI pipeline
+    // caller. CONSTITUTION §3 "Fail Loudly" preserved via the warn line.
+    if (shouldEnqueueForApproval(validated)) {
+      enqueueAIDecisionForApproval({
+        org_id: input.org_id,
+        ai_decision_id: decision_id,
+        category: validated.category!, // non-empty per shouldEnqueueForApproval gate
+        request_id: input.request_id ?? null,
+      })
+    }
 
     return { trace_id, decision_id, response: validated }
   } catch (err) {

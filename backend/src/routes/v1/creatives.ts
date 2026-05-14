@@ -4,6 +4,9 @@ import { inngest } from '../../jobs/inngest.js'
 import { resolveApiKey, CREDIT_COSTS } from '../../services/creatives/creative-generator.js'
 import { getSignedUrls, getSignedUrl } from '../../services/creatives/storage.js'
 import { ok, fail } from '../../utils/response.js'
+// Continuation #41 — AI budget enforcement (AI_OPERATING_MODEL.md §7+§10).
+// Continuation #42 — secondsUntilUtcMidnight for RFC-7231 Retry-After header.
+import { checkAIBudget, secondsUntilUtcMidnight } from '../../services/ai/budget-enforcer.js'
 
 type Variables = { userId: string; orgId: string }
 
@@ -74,6 +77,36 @@ creativesRouter.post('/generate', async (c) => {
 
   if (generation_type !== 'copy' && generation_type !== 'image') {
     return fail(c, 'generation_type must be "copy" or "image"', 400, { code: 'INVALID_TYPE', field: 'generation_type' })
+  }
+
+  // ─── Continuation #41 — Pre-flight daily-cap budget enforcement ─────
+  // AI_OPERATING_MODEL.md §7 + §10 MVP item 6. operation_type derived
+  // from request body (`copy` → 'creative_copy', `image` → 'creative_image').
+  // Runs BEFORE the credit gate so over-cap requests do not deduct + refund.
+  // LTD orgs bypass per the same pattern as the credit gate below. Fail-
+  // OPEN on infrastructure error (see services/ai/budget-enforcer.ts).
+  const creativeOp = generation_type === 'copy' ? 'creative_copy' : 'creative_image'
+  const budget = await checkAIBudget(orgId, creativeOp)
+  if (!budget.allowed) {
+    // Continuation #42 — rate-limit headers (see routes/v1/ai.ts for rationale).
+    const retryAfter = secondsUntilUtcMidnight()
+    c.header('Retry-After', String(retryAfter))
+    c.header('X-RateLimit-Limit', String(budget.limit))
+    c.header('X-RateLimit-Remaining', String(budget.remaining))
+    c.header('X-RateLimit-Reset', String(retryAfter))
+    return fail(
+      c,
+      `AI daily budget exceeded for operation '${creativeOp}': ` +
+        `${budget.used}/${budget.limit} requests used today`,
+      429,
+      {
+        code: 'RATE_LIMITED',
+        operation_type: creativeOp,
+        used: budget.used,
+        limit: budget.limit,
+        retry_after_seconds: retryAfter,
+      },
+    )
   }
 
   // --- Billing gate (synchronous, before Inngest dispatch) ---
@@ -151,6 +184,12 @@ creativesRouter.post('/generate', async (c) => {
     return fail(c, 'Failed to queue generation job', 500, { code: 'INTERNAL' })
   }
 
+  // Continuation #44 — success-response rate-limit headers (see
+  // routes/v1/ai.ts for rationale). Skipped on LTD bypass.
+  if (!budget.bypassed) {
+    c.header('X-RateLimit-Limit', String(budget.limit))
+    c.header('X-RateLimit-Remaining', String(Math.max(0, budget.remaining - 1)))
+  }
   return ok(c, { generation_id: job.id }, 202)
 })
 

@@ -32,6 +32,14 @@ import {
 } from '../../services/ai/execute-ai-decision.js'
 import { ok, fail } from '../../utils/response.js'
 import { supabaseAdmin } from '../../lib/supabase.js'
+// Continuation #41 — AI budget enforcement (AI_OPERATING_MODEL.md §7+§10).
+// Continuation #42 — secondsUntilUtcMidnight for RFC-7231 Retry-After header.
+import { checkAIBudget, secondsUntilUtcMidnight } from '../../services/ai/budget-enforcer.js'
+// Continuation #53 — development-only mock AI provider (gated by
+// MOCK_AI=true + NODE_ENV != production). Lets operators verify the
+// full pipeline (validate → persist → enqueue → approve/reject) without
+// burning OpenRouter credits. See services/ai/mock-provider.ts header.
+import { isMockAIEnabled, buildMockProviderCall } from '../../services/ai/mock-provider.js'
 
 // Phase 7 Sub-pass A1b (continuation #17): fixed per-call AI credit cost.
 // Mirrors the `CREDIT_COSTS` pattern in services/creatives/creative-generator.ts
@@ -105,49 +113,99 @@ aiRouter.post('/decisions/generate', async (c) => {
       : process.env.OPENROUTER_DEFAULT_MODEL || 'google/gemini-2.0-flash-001'
   const finalKind = typeof kind === 'string' ? kind : 'decision'
 
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) {
-    return fail(c, 'OPENROUTER_API_KEY is not configured', 500, { phase: 'transport' })
-  }
-  const client = getOpenRouterClient(apiKey)
+  // Continuation #53 — mock AI provider gate. When MOCK_AI=true AND
+  // NODE_ENV != production (double-gated in services/ai/mock-provider.ts),
+  // skip the OpenRouter client construction and bypass the API-key
+  // requirement. The downstream pipeline (validator → persist → enqueue)
+  // runs verbatim against the deterministic mock output.
+  const useMock = isMockAIEnabled()
 
-  // Same AI Output Contract system prompt as /execute. The validator
-  // (utils/aiValidator) rejects anything that doesn't match exactly.
-  // Path F (2026-05-09): optional top-level "category" string added.
-  // Maps to automation_rules.trigger_type for the auto-fire hook
-  // (services/ai/execute-ai-decision.ts:308). Omit when no categorical
-  // label applies — fallback shim still extracts from result.category.
-  const systemPrompt =
-    'You are an AI decision engine for a growth-operations platform. ' +
-    'Respond ONLY with a single JSON object that matches this exact contract: ' +
-    '{"type":"dashboard"|"insight"|"decision",' +
-    '"result": <any JSON value>,' +
-    '"confidence_score": <number between 0 and 1 inclusive>,' +
-    '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...],' +
-    '"category"?: <optional non-empty string label such as ROAS_DROP, SPEND_SPIKE, CONVERSION_DROP, SCALING_OPPORTUNITY>}. ' +
-    '"reasoning_steps" must contain at least one entry. ' +
-    '"category" is optional; include it when the decision corresponds to a recognizable categorical signal that an automation rule could trigger on; omit it otherwise. ' +
-    'Do not include markdown, code fences, prose, or any keys other than the five above.'
-
-  const userContent =
-    typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
-
-  const providerCall = async (): Promise<unknown> => {
-    const completion = await client.chat.completions.create({
-      model: finalModel,
-      temperature: 0.3,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      response_format: { type: 'json_object' },
-    })
-    const content = completion.choices[0]?.message?.content ?? ''
-    try {
-      return JSON.parse(content)
-    } catch {
-      return content
+  let providerCall: () => Promise<unknown>
+  if (useMock) {
+    providerCall = buildMockProviderCall({ prompt, kind: finalKind })
+  } else {
+    const apiKey = process.env.OPENROUTER_API_KEY
+    if (!apiKey) {
+      return fail(c, 'OPENROUTER_API_KEY is not configured', 500, { phase: 'transport' })
     }
+    const client = getOpenRouterClient(apiKey)
+
+    // Same AI Output Contract system prompt as /execute. The validator
+    // (utils/aiValidator) rejects anything that doesn't match exactly.
+    // Path F (2026-05-09): optional top-level "category" string added.
+    // Maps to automation_rules.trigger_type for the auto-fire hook
+    // (services/ai/execute-ai-decision.ts:308). Omit when no categorical
+    // label applies — fallback shim still extracts from result.category.
+    const systemPrompt =
+      'You are an AI decision engine for a growth-operations platform. ' +
+      'Respond ONLY with a single JSON object that matches this exact contract: ' +
+      '{"type":"dashboard"|"insight"|"decision",' +
+      '"result": <any JSON value>,' +
+      '"confidence_score": <number between 0 and 1 inclusive>,' +
+      '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...],' +
+      '"category"?: <optional non-empty string label such as ROAS_DROP, SPEND_SPIKE, CONVERSION_DROP, SCALING_OPPORTUNITY>}. ' +
+      '"reasoning_steps" must contain at least one entry. ' +
+      '"category" is optional; include it when the decision corresponds to a recognizable categorical signal that an automation rule could trigger on; omit it otherwise. ' +
+      'Do not include markdown, code fences, prose, or any keys other than the five above.'
+
+    const userContent =
+      typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
+
+    providerCall = async (): Promise<unknown> => {
+      const completion = await client.chat.completions.create({
+        model: finalModel,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        response_format: { type: 'json_object' },
+      })
+      const content = completion.choices[0]?.message?.content ?? ''
+      try {
+        return JSON.parse(content)
+      } catch {
+        return content
+      }
+    }
+  }
+
+  // ─── Continuation #41 — Pre-flight daily-cap budget enforcement ─────
+  // AI_OPERATING_MODEL.md §7 (LLM Cost Governance) + §10 MVP item 6.
+  // Counts ai_usage_ledger rows for (org_id, 'ai_decision_generate') in
+  // the current UTC day; rejects with 429 RATE_LIMITED when the env-var-
+  // driven daily cap is met. LTD orgs bypass (BYOK; same skip pattern as
+  // the credit gate below). Fail-OPEN on infrastructure error to avoid
+  // poisoning the AI path on observability-layer faults (see
+  // services/ai/budget-enforcer.ts header).
+  //
+  // Runs BEFORE deduct_credits so an over-cap request does not consume
+  // a credit + then refund (cleaner accounting + cheaper-to-fail).
+  const budget = await checkAIBudget(org_id, 'ai_decision_generate')
+  if (!budget.allowed) {
+    // Continuation #42 — standards-compliant rate-limit headers.
+    // RFC 7231 §7.1.3 Retry-After (delta-seconds form) + draft-ietf-
+    // httpapi-ratelimit-headers X-RateLimit-* legacy form for broader
+    // client compatibility. Reset is UTC midnight (matches enforcer
+    // day-boundary semantics).
+    const retryAfter = secondsUntilUtcMidnight()
+    c.header('Retry-After', String(retryAfter))
+    c.header('X-RateLimit-Limit', String(budget.limit))
+    c.header('X-RateLimit-Remaining', String(budget.remaining))
+    c.header('X-RateLimit-Reset', String(retryAfter))
+    return fail(
+      c,
+      `AI daily budget exceeded for operation 'ai_decision_generate': ` +
+        `${budget.used}/${budget.limit} requests used today`,
+      429,
+      {
+        code: 'RATE_LIMITED',
+        operation_type: 'ai_decision_generate',
+        used: budget.used,
+        limit: budget.limit,
+        retry_after_seconds: retryAfter,
+      },
+    )
   }
 
   // Phase 7 Sub-pass A1b credit gate. Mirrors creatives.ts:80-101.
@@ -196,7 +254,25 @@ aiRouter.post('/decisions/generate', async (c) => {
       kind: finalKind,
       prompt,
       providerCall,
+      // Continuation #40 — AI_OPERATING_MODEL.md §7 ai_usage_ledger
+      // classification. /ai/decisions/generate maps to the
+      // 'ai_decision_generate' operation type for per-tier analytics.
+      operation_type: 'ai_decision_generate',
+      // Continuation #45 — thread actual deducted credits into the
+      // ledger row (0 for LTD orgs; AI_CALL_COST for subscription orgs).
+      // Closes #40 consistency gap with creative-generator.ts.
+      credits_deducted: creditsDeducted,
     })
+    // Continuation #44 — success-response rate-limit headers. Lets API
+    // clients see remaining capacity preemptively (vs only learning on a
+    // 429). Skipped for LTD bypass since enforcement does not apply (BYOK
+    // pattern). Remaining is decremented to reflect THIS request's impact
+    // on the ledger (recordAIUsage fires-and-forget post-persist — see
+    // execute-ai-decision.ts line ~287).
+    if (!budget.bypassed) {
+      c.header('X-RateLimit-Limit', String(budget.limit))
+      c.header('X-RateLimit-Remaining', String(Math.max(0, budget.remaining - 1)))
+    }
     // Legacy-compatible response: {type, result, confidence_score} are at
     // the original depth. Additive Phase 3 fields appended. Path F (2026-
     // 05-09) — optional `category` surfaced when present so frontend
@@ -292,54 +368,93 @@ aiRouter.post('/execute', async (c) => {
   // 3. Provider-call thunk. Built once per request, called once by
   //    executeAIDecision. The handler itself does not log or measure;
   //    that is the orchestration function's job.
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) {
-    return fail(c, 'OPENROUTER_API_KEY is not configured', 500, { phase: 'transport' })
-  }
-  const client = getOpenRouterClient(apiKey)
+  //
+  // Continuation #53 — mock AI provider gate (mirrors /decisions/generate
+  // above). When MOCK_AI=true AND NODE_ENV != production, skip the
+  // OpenRouter client construction and bypass the API-key requirement.
+  // Downstream pipeline runs verbatim against the deterministic mock.
+  const useMock = isMockAIEnabled()
 
-  // System prompt that demands the AI Output Contract from the model:
-  //   { type, result, confidence_score, reasoning_steps, category? }
-  // The validator will reject anything else with a structured detail.
-  // Path F (2026-05-09): optional top-level "category" string added.
-  // Maps to automation_rules.trigger_type for the auto-fire hook
-  // (services/ai/execute-ai-decision.ts:308). Omit when no categorical
-  // label applies — fallback shim still extracts from result.category.
-  const systemPrompt =
-    'You are an AI decision engine for a growth-operations platform. ' +
-    'Respond ONLY with a single JSON object that matches this exact contract: ' +
-    '{"type":"dashboard"|"insight"|"decision",' +
-    '"result": <any JSON value>,' +
-    '"confidence_score": <number between 0 and 1 inclusive>,' +
-    '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...],' +
-    '"category"?: <optional non-empty string label such as ROAS_DROP, SPEND_SPIKE, CONVERSION_DROP, SCALING_OPPORTUNITY>}. ' +
-    '"reasoning_steps" must contain at least one entry. ' +
-    '"category" is optional; include it when the decision corresponds to a recognizable categorical signal that an automation rule could trigger on; omit it otherwise. ' +
-    'Do not include markdown, code fences, prose, or any keys other than the five above.'
-
-  const userContent =
-    typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
-
-  const providerCall = async (): Promise<unknown> => {
-    const completion = await client.chat.completions.create({
-      model: finalModel,
-      temperature: 0.3,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      response_format: { type: 'json_object' },
-    })
-    const content = completion.choices[0]?.message?.content ?? ''
-    // If the model produced parseable JSON, hand the parsed object to the
-    // validator. If not, hand the raw string through — the validator will
-    // reject it with a structured detail (and the "raw" log entry inside
-    // executeAIDecision will preserve whatever the model actually said).
-    try {
-      return JSON.parse(content)
-    } catch {
-      return content
+  let providerCall: () => Promise<unknown>
+  if (useMock) {
+    providerCall = buildMockProviderCall({ prompt, kind: finalKind })
+  } else {
+    const apiKey = process.env.OPENROUTER_API_KEY
+    if (!apiKey) {
+      return fail(c, 'OPENROUTER_API_KEY is not configured', 500, { phase: 'transport' })
     }
+    const client = getOpenRouterClient(apiKey)
+
+    // System prompt that demands the AI Output Contract from the model:
+    //   { type, result, confidence_score, reasoning_steps, category? }
+    // The validator will reject anything else with a structured detail.
+    // Path F (2026-05-09): optional top-level "category" string added.
+    // Maps to automation_rules.trigger_type for the auto-fire hook
+    // (services/ai/execute-ai-decision.ts:308). Omit when no categorical
+    // label applies — fallback shim still extracts from result.category.
+    const systemPrompt =
+      'You are an AI decision engine for a growth-operations platform. ' +
+      'Respond ONLY with a single JSON object that matches this exact contract: ' +
+      '{"type":"dashboard"|"insight"|"decision",' +
+      '"result": <any JSON value>,' +
+      '"confidence_score": <number between 0 and 1 inclusive>,' +
+      '"reasoning_steps": [{"step": <non-empty string>, "insight": <non-empty string>}, ...],' +
+      '"category"?: <optional non-empty string label such as ROAS_DROP, SPEND_SPIKE, CONVERSION_DROP, SCALING_OPPORTUNITY>}. ' +
+      '"reasoning_steps" must contain at least one entry. ' +
+      '"category" is optional; include it when the decision corresponds to a recognizable categorical signal that an automation rule could trigger on; omit it otherwise. ' +
+      'Do not include markdown, code fences, prose, or any keys other than the five above.'
+
+    const userContent =
+      typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
+
+    providerCall = async (): Promise<unknown> => {
+      const completion = await client.chat.completions.create({
+        model: finalModel,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        response_format: { type: 'json_object' },
+      })
+      const content = completion.choices[0]?.message?.content ?? ''
+      // If the model produced parseable JSON, hand the parsed object to the
+      // validator. If not, hand the raw string through — the validator will
+      // reject it with a structured detail (and the "raw" log entry inside
+      // executeAIDecision will preserve whatever the model actually said).
+      try {
+        return JSON.parse(content)
+      } catch {
+        return content
+      }
+    }
+  }
+
+  // ─── Continuation #41 — Pre-flight daily-cap budget enforcement ─────
+  // Same gate pattern as /decisions/generate above. operation_type
+  // differentiates the two routes for per-tier analytics (both currently
+  // produce ai_decisions rows but are distinct operator entry points).
+  const budget = await checkAIBudget(org_id, 'ai_execute')
+  if (!budget.allowed) {
+    // Continuation #42 — rate-limit headers (see /decisions/generate above).
+    const retryAfter = secondsUntilUtcMidnight()
+    c.header('Retry-After', String(retryAfter))
+    c.header('X-RateLimit-Limit', String(budget.limit))
+    c.header('X-RateLimit-Remaining', String(budget.remaining))
+    c.header('X-RateLimit-Reset', String(retryAfter))
+    return fail(
+      c,
+      `AI daily budget exceeded for operation 'ai_execute': ` +
+        `${budget.used}/${budget.limit} requests used today`,
+      429,
+      {
+        code: 'RATE_LIMITED',
+        operation_type: 'ai_execute',
+        used: budget.used,
+        limit: budget.limit,
+        retry_after_seconds: retryAfter,
+      },
+    )
   }
 
   // 4. Phase 7 Sub-pass A1b credit gate (mirrors /decisions/generate above).
@@ -385,7 +500,21 @@ aiRouter.post('/execute', async (c) => {
       kind: finalKind,
       prompt,
       providerCall,
+      // Continuation #40 — AI_OPERATING_MODEL.md §7 ai_usage_ledger
+      // classification. /ai/execute maps to the 'ai_execute' operation
+      // type for per-tier analytics (distinct from /ai/decisions/generate
+      // even though both currently produce ai_decisions rows).
+      operation_type: 'ai_execute',
+      // Continuation #45 — thread actual deducted credits into the
+      // ledger row. Closes #40 consistency gap with creative-generator.ts.
+      credits_deducted: creditsDeducted,
     })
+    // Continuation #44 — success-response rate-limit headers (see
+    // /decisions/generate above for rationale).
+    if (!budget.bypassed) {
+      c.header('X-RateLimit-Limit', String(budget.limit))
+      c.header('X-RateLimit-Remaining', String(Math.max(0, budget.remaining - 1)))
+    }
     return ok(c, {
       decision_id: result.decision_id,
       response: result.response,

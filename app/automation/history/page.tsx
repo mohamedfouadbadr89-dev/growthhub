@@ -30,9 +30,12 @@ import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 //   - Confidence Score per entry → #34 (ai_decisions(confidence_score) JOIN)
 //   - Detailed Explanation panel → #37 (ai_decisions(reasoning_steps) JOIN;
 //     AI Output Contract guarantees at least one step on every persisted
-//     ai_decisions row — see backend/src/utils/aiValidator.ts). Falls back
-//     to the original ROAS-threshold mock copy when the active entry has
-//     no linked ai_decision (manual run) or pre-contract rows.
+//     ai_decisions row — see backend/src/utils/aiValidator.ts). #45
+//     replaced the original fictional-numbers mock fallback with an
+//     honest empty-state per AI_OPERATING_MODEL.md §11 ("MUST NEVER hide
+//     execution reasoning") + §5 ("fail loudly, never silently"):
+//     manual runs and pre-contract rows now show an explicit no-reasoning
+//     message instead of fabricated ROAS metrics.
 //   - Action template name + platform shown in collapsed row badge AND in
 //     the expanded section chip row → #38 (actions_library JOIN via the
 //     non-nullable FK automation_runs.action_template_id).
@@ -814,9 +817,17 @@ export default function DecisionHistoryPage() {
                       as `step: insight`. AI Output Contract guarantees a
                       non-empty array (validated upstream in aiValidator.ts)
                       so when reasoningSteps is non-null it is also non-empty.
-                      Falls back to the original ROAS-threshold mock copy
-                      when activeEntry has no linked ai_decision (manual run)
-                      or for pre-contract rows. */}
+
+                      Continuation #45: when reasoningSteps is null (manual
+                      run with no linked ai_decision, or pre-contract row),
+                      render an HONEST empty-state instead of fictional mock
+                      copy. Per AI_OPERATING_MODEL.md §11 hard rules ("MUST
+                      NEVER hide execution reasoning") + §5 ("fail loudly,
+                      never silently") — presenting fictional metrics
+                      (previously: "ROAS threshold ... 3.5 ... 3.8") as
+                      italicized AI reasoning could mislead a less-careful
+                      operator into treating those numbers as real. The
+                      empty-state copy is explicit about the data absence. */}
                   {activeEntry.reasoningSteps && activeEntry.reasoningSteps.length > 0 ? (
                     <ol className="space-y-2 text-sm text-slate-300 leading-relaxed font-body">
                       {activeEntry.reasoningSteps.map((rs, i) => (
@@ -830,12 +841,10 @@ export default function DecisionHistoryPage() {
                       ))}
                     </ol>
                   ) : (
-                    <p className="text-sm text-slate-300 leading-relaxed italic font-body">
-                      "This rule triggered because the{" "}
-                      <span className="text-white font-semibold underline decoration-primary decoration-2 underline-offset-4">
-                        ROAS threshold
-                      </span>{" "}
-                      was consistently met. Your target of 3.5 was exceeded at 3.8 over the 72h window — a reliable signal."
+                    <p className="text-sm text-slate-400 leading-relaxed font-body">
+                      No AI reasoning recorded for this run. Manual runs and
+                      pre-contract decisions do not produce
+                      <span className="text-white font-mono"> reasoning_steps</span>.
                     </p>
                   )}
                 </div>

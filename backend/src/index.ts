@@ -17,6 +17,15 @@ import { stripeWebhook } from './routes/webhooks/stripe.js'
 import { fail } from './utils/response.js'
 import { setAILogSink, type AILogEntry } from './utils/aiLogger.js'
 import { persistAILog } from './services/ai/persistence.js'
+// Continuation #52 — approval enqueue rule config validator. Called once
+// at startup after env fail-fast + LIVE-flag misconfig checks. Non-fatal
+// warns only; preserves empty-default inactive behavior.
+import { validateApprovalEnqueueConfig } from './services/approvals/enqueue.js'
+// Continuation #53 — development-only mock AI provider startup warn.
+// Loud alert when MOCK_AI=true + NODE_ENV != production. Silent in
+// production (double-gated). Operators must NEVER see this line in
+// production logs.
+import { warnIfMockAIEnabled } from './services/ai/mock-provider.js'
 
 // ─── Process-level error handlers ─────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -152,6 +161,26 @@ if (liveMisconfig.length > 0) {
   )
   process.exit(1)
 }
+
+// ─── Approval enqueue rule config validation (Continuation #52) ──────────
+//
+// Non-fatal startup validation of the three #51 env vars
+// (APPROVAL_REQUIRED_CATEGORIES / APPROVAL_MIN_CONFIDENCE /
+// APPROVAL_ENQUEUE_NEEDS_REVIEW_ONLY). Emits [STARTUP][approvals] warns
+// on malformed values; never blocks boot. Empty-default inactive
+// behavior is preserved (silent when all three are unset).
+//
+// Placement: after the fatal env-presence + LIVE-flag-mismatch checks
+// above, before app + route setup below. Operators see the warns at
+// boot in PM2 / journald / k8s logs, alongside any [STARTUP][FATAL]
+// lines. See services/approvals/enqueue.ts header for the full
+// validation rationale + constraint compliance map.
+validateApprovalEnqueueConfig()
+
+// Continuation #53 — mock AI provider startup warn. Loud alert when
+// MOCK_AI=true + NODE_ENV != production. Silent in production. See
+// services/ai/mock-provider.ts header for production-safety analysis.
+warnIfMockAIEnabled()
 
 type Variables = { userId: string; orgId: string; requestId: string }
 

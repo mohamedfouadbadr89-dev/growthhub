@@ -1,498 +1,521 @@
 "use client";
 
-// Continuation #120 (2026-05-14) — Phase γ Layer 7 (Approval Intelligence)
-// per `specs/approval-intelligence.md`. Operator-facing queue of
-// auto-fire-blocked rule attempts. Reads the EXISTING `/api/v1/automation/
-// runs?status=skipped` endpoint — the approval-policy gate now persists
-// each blocked attempt as a status='skipped' row with structured
-// `result_data.skip_reason='approval_required'` (Phase γ BE extension in
-// automation-engine.ts).
+// Continuation #54 — approval queue FE consumer.
+// Wires the #50/#51 BE chain to operator-facing UI:
+//   - GET  /api/v1/approvals?state=pending  (#50 list)
+//   - POST /api/v1/approvals/:id/approve    (#50 approve → dispatch)
+//   - POST /api/v1/approvals/:id/reject     (#50 reject + optional note)
 //
-// "Approve & Fire" reuses the EXISTING manual-rule-execute endpoint
-// (POST /api/v1/automation/rules/:id/execute) — that path bypasses the
-// auto-fire approval gate by design (manual = implicit operator approval).
-// NO new endpoint, NO new execution path, NO executor bypass.
+// Authorized under the operator's broad autonomous-continuation grant
+// (operator-facing functionality + approval workflow UX priorities).
+// Sits at /automation/approvals as a sibling to /automation/history
+// (already-wired surface), inheriting /app/automation/layout.tsx.
 //
-// The centralized `actionRequiresApproval(action_type)` policy remains
-// the SOLE source of truth. This page DISPLAYS the policy verdict only;
-// it never independently determines approval eligibility.
+// NOT TOUCHED:
+//   - /app/dashboard/automation/decision-center/page.tsx — operator-
+//     authored Stitch mock with different UX paradigm (streams/feed/
+//     clusters); preserving operator design choice.
+//   - The 4 HARD-LOCK Phase 6 shells (NEXT ACTION line 344) — not
+//     touched.
+//   - Existing /app/automation/page.tsx redirect (preserved verbatim).
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import Link from "next/link";
 import {
-  ShieldAlert, AlertCircle, RefreshCw, CheckCircle2, EyeOff, Brain,
-  AlertTriangle, Filter, Search, ArrowRight, Clock,
+  Sparkles,
+  Lightbulb,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  RefreshCw,
+  AlertCircle,
+  Loader2,
+  Inbox,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
-interface ApiAutomationRun {
+// Shape mirrors backend SELECT at routes/v1/approvals.ts:78–86 (#50 list
+// handler). Nested JOINs from approval_queue → ai_decisions + actions_library
+// (FK to actions_library nullable; null when notification-only approval
+// per #51 enqueue rule's default action_template_id=NULL).
+interface ApprovalListEntry {
   id: string;
-  org_id: string;
-  automation_rule_id: string | null;
-  ai_decision_id: string | null;
+  ai_decision_id: string;
   action_template_id: string | null;
-  status: "pending" | "success" | "failed" | "skipped";
-  result_data: Record<string, unknown> | null;
-  error_message: string | null;
-  executed_at: string | null;
-  automation_rules?: { name: string } | null;
-  ai_decisions?: {
+  action_params: Record<string, unknown>;
+  state: "pending" | "approved" | "rejected" | "expired" | "executed";
+  operator_note: string | null;
+  operator_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  ai_decisions: {
     category: string | null;
     confidence_score: number | null;
     reasoning_steps: Array<{ step: string; insight: string }> | null;
   } | null;
-  actions_library?: { name: string; platform: string; action_type: string } | null;
+  actions_library: {
+    name: string;
+    platform: string;
+    action_type: string;
+  } | null;
 }
 
-// Time-window presets (hours).
-const HOUR_PRESETS = [24, 72, 168, 720] as const;
-type HourPreset = (typeof HOUR_PRESETS)[number];
-
-function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return "—";
-  if (ms < 60_000) return "just now";
-  const m = Math.floor(ms / 60_000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+interface ApprovalListResponse {
+  approvals: ApprovalListEntry[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
-function platformDotColor(platform: string | null | undefined): string {
-  switch (platform?.toLowerCase()) {
-    case "meta":    return "#0668E1";
-    case "google":  return "#4285F4";
-    case "shopify": return "#5E8E3E";
-    default:        return "#3d618c";
-  }
+interface ApproveResponse {
+  id: string;
+  new_state: "approved" | "executed";
+  history_id?: string;
+}
+
+interface RejectResponse {
+  id: string;
+  new_state: "rejected";
+}
+
+function formatTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function ApprovalsPage() {
   const { getToken } = useAuth();
 
-  const [runs, setRuns] = useState<ApiAutomationRun[]>([]);
+  const [entries, setEntries] = useState<ApprovalListEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [hours, setHours] = useState<HourPreset>(168);
-  const [actionTypeFilter, setActionTypeFilter] = useState<string>("");
-  const [search, setSearch] = useState("");
+  // Per-row in-flight state — keyed by approval id so multiple rows can
+  // be acted on concurrently without UI confusion. Value is the action
+  // ("approve"|"reject") currently in flight for that row.
+  const [inFlight, setInFlight] = useState<Record<string, "approve" | "reject">>({});
+  const [rowError, setRowError] = useState<Record<string, string>>({});
 
-  // Track which rows have been approved/fired or dismissed during this
-  // session. Approval calls the existing manual-fire endpoint which
-  // creates a NEW automation_runs row (status=success or failed); the
-  // original skipped row stays in the audit history. Dismiss is purely
-  // client-side hide (no persistence — re-appears next page load).
-  const [firingId, setFiringId] = useState<string | null>(null);
-  const [firedKeys, setFiredKeys] = useState<Set<string>>(new Set());
-  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
-  const [fireMessage, setFireMessage] = useState<
-    | { kind: "success"; text: string }
-    | { kind: "error";   text: string }
-    | null
-  >(null);
+  // Per-row expand for the reject-with-note flow.
+  const [rejectExpanded, setRejectExpanded] = useState<Record<string, boolean>>({});
+  const [rejectNotes, setRejectNotes] = useState<Record<string, string>>({});
 
-  // `nowTick` advances every 30s for the sliding window — react-hooks/
-  // purity rule forbids Date.now() in render.
-  const [nowTick, setNowTick] = useState<number>(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNowTick(Date.now()), 30_000);
-    return () => clearInterval(t);
-  }, []);
+  // Per-row expand for the reasoning_steps section (collapsed by default
+  // when array length > 2, expanded inline otherwise).
+  const [reasoningExpanded, setReasoningExpanded] = useState<Record<string, boolean>>({});
 
-  async function fetchSkipped() {
-    setRefreshing(true);
+  const fetchApprovals = useCallback(async () => {
+    setLoading(true);
     setLoadError(null);
     try {
       const token = await getToken();
       if (!token) throw new ApiError(401, "Sign in required");
-      const data = await apiClient<{ runs: ApiAutomationRun[]; total: number }>(
-        "/api/v1/automation/runs?status=skipped&limit=100",
+      const data = await apiClient<ApprovalListResponse>(
+        "/api/v1/approvals?state=pending&limit=50",
         token,
       );
-      setRuns(data.runs);
+      setEntries(data.approvals ?? []);
     } catch (err) {
-      setLoadError(formatErrorMessage(err, "Failed to load pending approvals"));
+      setLoadError(formatErrorMessage(err, "Failed to load approvals"));
     } finally {
-      setRefreshing(false);
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const token = await getToken();
-        if (!token) throw new ApiError(401, "Sign in required");
-        const data = await apiClient<{ runs: ApiAutomationRun[]; total: number }>(
-          "/api/v1/automation/runs?status=skipped&limit=100",
-          token,
-        );
-        if (!cancelled) setRuns(data.runs);
-      } catch (err) {
-        if (!cancelled) setLoadError(formatErrorMessage(err, "Failed to load pending approvals"));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
   }, [getToken]);
 
-  async function approveAndFire(run: ApiAutomationRun) {
-    if (!run.automation_rule_id) {
-      setFireMessage({ kind: "error", text: "Rule id missing — cannot fire" });
-      return;
-    }
-    setFiringId(run.id);
-    setFireMessage(null);
-    try {
-      const token = await getToken();
-      if (!token) throw new ApiError(401, "Sign in required");
-      // EXISTING endpoint — manual fire bypasses the auto-fire approval
-      // gate by design (operator triggering = implicit approval). NO
-      // new endpoint, NO new execution path. Pass ai_decision_id so
-      // the new run links to the originating AI signal for audit.
-      const body: Record<string, unknown> = {};
-      if (run.ai_decision_id) body.ai_decision_id = run.ai_decision_id;
-      const result = await apiClient<{ rules_fired: number; run_ids: string[] }>(
-        `/api/v1/automation/rules/${run.automation_rule_id}/execute`,
-        token,
-        { method: "POST", body: JSON.stringify(body) },
-      );
-      setFireMessage({
-        kind: "success",
-        text: `Approved & fired "${run.automation_rules?.name ?? "rule"}" — ${result.rules_fired} run${result.rules_fired === 1 ? "" : "s"} created`,
-      });
-      setFiredKeys((prev) => {
-        const next = new Set(prev);
-        next.add(run.id);
-        return next;
-      });
-      // Refresh the pending queue so newly-cleared items disappear if
-      // backend dedupe leaves the original skipped row in place
-      // (current implementation keeps it as audit history).
-      void fetchSkipped();
-    } catch (err) {
-      setFireMessage({ kind: "error", text: formatErrorMessage(err, "Approval execution failed") });
-    } finally {
-      setFiringId(null);
-    }
-  }
+  useEffect(() => {
+    fetchApprovals();
+  }, [fetchApprovals]);
 
-  function dismiss(run: ApiAutomationRun) {
-    setDismissedKeys((prev) => {
-      const next = new Set(prev);
-      next.add(run.id);
+  function clearRowError(id: string) {
+    setRowError((prev) => {
+      const next = { ...prev };
+      delete next[id];
       return next;
     });
   }
 
-  // Filter (action_type from result_data, time window, search)
-  const filtered = useMemo(() => {
-    const cutoff = nowTick - hours * 60 * 60 * 1000;
-    return runs.filter((r) => {
-      if (firedKeys.has(r.id) || dismissedKeys.has(r.id)) return false;
-      // Skip-reason scope — by design the queue is approval_required only,
-      // but a future status='skipped' might exist for other reasons.
-      const skipReason = (r.result_data as { skip_reason?: string } | null)?.skip_reason;
-      if (skipReason !== "approval_required") return false;
-      // Action type filter (read from result_data.action_type).
-      if (actionTypeFilter) {
-        const at = (r.result_data as { action_type?: string } | null)?.action_type;
-        if (at !== actionTypeFilter) return false;
+  async function handleApprove(id: string) {
+    if (inFlight[id]) return;
+    clearRowError(id);
+    setInFlight((prev) => ({ ...prev, [id]: "approve" }));
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      const result = await apiClient<ApproveResponse>(
+        `/api/v1/approvals/${id}/approve`,
+        token,
+        { method: "POST" },
+      );
+      // Optimistic removal from the pending list; the next fetch will
+      // confirm. On dispatch failure the BE leaves state='approved'
+      // (per dispatcher #50) — caller still sees row gone from
+      // ?state=pending list, which is correct.
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+      // Soft signal in console for operator debugging — execution rows
+      // also appear in /automation/history once decision_history writes
+      // complete via executeAction.
+      // eslint-disable-next-line no-console
+      console.log(
+        `[approvals] approved ${id} → new_state=${result.new_state}` +
+          (result.history_id ? ` history_id=${result.history_id}` : ""),
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        // Race: someone else (or operator) already acted on this row.
+        // Refresh to reflect current truth.
+        setRowError((prev) => ({
+          ...prev,
+          [id]: "Already actioned by another operator — refreshing.",
+        }));
+        await fetchApprovals();
+      } else {
+        setRowError((prev) => ({
+          ...prev,
+          [id]: formatErrorMessage(err, "Approve failed"),
+        }));
       }
-      // Time window
-      const ts = r.executed_at ? new Date(r.executed_at).getTime() : 0;
-      if (!Number.isFinite(ts) || ts < cutoff) return false;
-      // Search
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const hay = `${r.automation_rules?.name ?? ""} ${r.actions_library?.name ?? ""} ${r.ai_decisions?.category ?? ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [runs, hours, actionTypeFilter, search, firedKeys, dismissedKeys, nowTick]);
-
-  // Build the action_type filter options dynamically from loaded data —
-  // single source of truth remains the centralized backend policy; we
-  // just show which protected types appear in the queue.
-  const actionTypeOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of runs) {
-      const at = (r.result_data as { action_type?: string } | null)?.action_type;
-      if (at) set.add(at);
+    } finally {
+      setInFlight((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
-    return Array.from(set).sort();
-  }, [runs]);
+  }
+
+  async function handleReject(id: string) {
+    if (inFlight[id]) return;
+    clearRowError(id);
+    const note = (rejectNotes[id] ?? "").trim();
+    setInFlight((prev) => ({ ...prev, [id]: "reject" }));
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      const body = note.length > 0 ? JSON.stringify({ note }) : undefined;
+      const result = await apiClient<RejectResponse>(
+        `/api/v1/approvals/${id}/reject`,
+        token,
+        {
+          method: "POST",
+          ...(body ? { body } : {}),
+        },
+      );
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+      // eslint-disable-next-line no-console
+      console.log(`[approvals] rejected ${id} → new_state=${result.new_state}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setRowError((prev) => ({
+          ...prev,
+          [id]: "Already actioned by another operator — refreshing.",
+        }));
+        await fetchApprovals();
+      } else {
+        setRowError((prev) => ({
+          ...prev,
+          [id]: formatErrorMessage(err, "Reject failed"),
+        }));
+      }
+    } finally {
+      setInFlight((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  }
 
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-amber-600 font-body">
-            Approval Intelligence
+          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">
+            Automation
           </p>
           <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-sans leading-none mb-1">
-            Pending Approvals
+            Approval Queue
           </h1>
-          <p className="text-muted-foreground font-body mt-2 max-w-2xl">
-            Auto-fire attempts blocked by the centralized approval policy. Each row is a
-            spend-increasing or launch-capable action that the AI wanted to fire but requires
-            your explicit approval to execute.
+          <p className="text-muted-foreground font-body">
+            AI suggestions awaiting operator approval before dispatch
           </p>
         </div>
-        <div className="flex items-center gap-3 self-start md:self-auto">
-          <span className="text-[11px] text-muted-foreground font-body">
-            <span className="font-bold text-foreground">{filtered.length}</span> pending in window
-          </span>
-          <button
-            onClick={() => void fetchSkipped()}
-            disabled={refreshing || loading}
-            className="inline-flex items-center gap-2 bg-surface-container-high text-foreground px-4 py-2 rounded-xl font-bold text-xs hover:bg-surface-container-highest transition-all font-body disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
-            {refreshing ? "Refreshing…" : "Refresh"}
-          </button>
-        </div>
-      </div>
-
-      {/* Policy reference banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-        <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
-        <div className="text-sm font-body min-w-0">
-          <p className="font-bold text-amber-800 mb-1">Centralized approval policy</p>
-          <p className="text-amber-700 leading-relaxed">
-            Spend-increasing (e.g. <code className="text-amber-900">meta.increase_budget</code>) and launch-capable
-            (e.g. <code className="text-amber-900">meta.create_campaign</code>, <code className="text-amber-900">google.create_campaign</code>)
-            action types are gated from auto-firing. Single source of truth lives in
-            <code className="text-amber-900 mx-1">automation-engine.ts:actionRequiresApproval</code>.
-            Manual approval via this page calls the existing
-            <code className="text-amber-900 mx-1">POST /api/v1/automation/rules/:id/execute</code>
-            endpoint — implicit operator approval, full audit chain preserved.
-          </p>
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      <div className="bg-surface-container-low rounded-2xl p-4 flex flex-wrap items-center gap-4">
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search rule, action, category…"
-            className="bg-white border border-border/40 rounded-xl py-2.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 font-body w-64"
-          />
-        </div>
-        <div className="h-5 w-px bg-border" />
-        <div className="flex bg-surface-container-high p-1 rounded-xl gap-0.5">
-          {HOUR_PRESETS.map((h) => (
-            <button
-              key={h}
-              onClick={() => setHours(h)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all font-body ${
-                hours === h ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {h < 168 ? `${h / 24}d` : h === 168 ? "7d" : "30d"}
-            </button>
-          ))}
-        </div>
-        <div className="h-5 w-px bg-border" />
-        <select
-          value={actionTypeFilter}
-          onChange={(e) => setActionTypeFilter(e.target.value)}
-          className="bg-white border border-border rounded-xl text-xs font-bold text-foreground py-2 pl-3 pr-8 focus:outline-none focus:ring-2 focus:ring-primary/30 font-body cursor-pointer"
+        <button
+          onClick={fetchApprovals}
+          disabled={loading}
+          className="inline-flex items-center gap-2 bg-surface-container-high text-foreground px-6 py-2.5 rounded-full font-bold text-sm hover:bg-surface-container-highest transition-all font-body self-start md:self-auto disabled:opacity-60"
         >
-          <option value="">All action types</option>
-          {actionTypeOptions.map((at) => (
-            <option key={at} value={at}>{at}</option>
-          ))}
-        </select>
-        <div className="ml-auto flex items-center gap-2 text-[11px] font-body text-muted-foreground">
-          <Filter size={12} />
-          <span><span className="font-bold text-foreground">{filtered.length}</span> of {runs.length}</span>
-        </div>
+          <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+          Refresh
+        </button>
       </div>
 
-      {loadError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-body flex items-center gap-2">
-          <AlertCircle size={16} />
-          {loadError}
+      {/* Load error */}
+      {loadError && !loading && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-2xl px-5 py-4 flex items-start gap-3">
+          <AlertCircle size={18} className="shrink-0 mt-0.5" />
+          <span>{loadError}</span>
         </div>
       )}
 
-      {fireMessage && (
-        <div
-          className={`rounded-xl px-4 py-3 text-sm font-body flex items-center gap-2 ${
-            fireMessage.kind === "success"
-              ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-              : "bg-red-50 border border-red-200 text-red-700"
-          }`}
-        >
-          {fireMessage.kind === "success" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-          {fireMessage.text}
+      {/* Loading skeleton */}
+      {loading && (
+        <div className="space-y-4">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="bg-surface-container-low rounded-2xl p-6 animate-pulse h-32"
+            />
+          ))}
         </div>
       )}
 
-      {/* Queue */}
-      {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-32 bg-surface-container-low rounded-xl animate-pulse" />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="bg-surface-container-low rounded-2xl p-12 text-center">
-          <CheckCircle2 size={28} className="text-emerald-500 mx-auto mb-3" />
-          <p className="text-foreground font-body font-bold mb-1">No pending approvals</p>
-          <p className="text-[11px] text-muted-foreground font-body opacity-70">
-            The approval policy hasn&apos;t blocked any auto-fire attempts in this window.
+      {/* Empty state */}
+      {!loading && !loadError && entries.length === 0 && (
+        <div className="bg-surface-container-low rounded-2xl p-16 text-center space-y-3">
+          <Inbox size={36} className="mx-auto text-muted-foreground" />
+          <h3 className="text-lg font-bold text-foreground font-sans">
+            No pending approvals
+          </h3>
+          <p className="text-sm text-muted-foreground font-body max-w-md mx-auto">
+            AI decisions matching the operator-configured approval policy will
+            appear here for review. Set <span className="font-mono">APPROVAL_REQUIRED_CATEGORIES</span> in backend env to activate the enqueue rule.
           </p>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((r) => {
-            const ruleName = r.automation_rules?.name ?? "Unknown rule";
-            const actionName = r.actions_library?.name ?? "Action";
-            const actionType = (r.result_data as { action_type?: string } | null)?.action_type ?? r.actions_library?.action_type ?? null;
-            const platform = r.actions_library?.platform ?? null;
-            const dotColor = platformDotColor(platform);
-            const category = r.ai_decisions?.category;
-            const confidence = r.ai_decisions?.confidence_score;
-            const firstReasoning = r.ai_decisions?.reasoning_steps?.[0];
-            const isFiring = firingId === r.id;
+      )}
+
+      {/* Approval list */}
+      {!loading && entries.length > 0 && (
+        <div className="space-y-4">
+          {entries.map((entry) => {
+            const action = inFlight[entry.id];
+            const isExpanded = !!reasoningExpanded[entry.id];
+            const isRejectOpen = !!rejectExpanded[entry.id];
+            const err = rowError[entry.id];
+            const category = entry.ai_decisions?.category ?? null;
+            const confidenceRaw = entry.ai_decisions?.confidence_score ?? null;
+            const confidence = confidenceRaw !== null ? Math.round(confidenceRaw * 100) : null;
+            const reasoning = entry.ai_decisions?.reasoning_steps ?? [];
+            const visibleReasoning = isExpanded ? reasoning : reasoning.slice(0, 2);
+
             return (
               <div
-                key={r.id}
-                className="bg-white border border-border/40 rounded-2xl p-5"
+                key={entry.id}
+                className="bg-white border border-border rounded-2xl p-6 space-y-4 shadow-sm"
               >
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      {platform && (
-                        <span
-                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-surface-container-high text-foreground font-body"
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dotColor }} />
-                          {platform}
-                        </span>
-                      )}
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 font-body"
-                        title="Auto-fire blocked by centralized approval policy"
-                      >
-                        <ShieldAlert size={10} />
-                        Approval required
+                {/* Top row: signal chips + timestamp */}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {category && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold font-body bg-primary/10 text-primary">
+                        <Lightbulb size={11} />
+                        {category}
                       </span>
-                      {category && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary font-body">
-                          {category}
-                        </span>
-                      )}
-                      <span className="text-[10px] font-body text-muted-foreground inline-flex items-center gap-1">
-                        <Clock size={10} />
-                        {relTime(r.executed_at)}
+                    )}
+                    {confidence !== null && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold font-body bg-emerald-50 text-emerald-700">
+                        <CheckCircle2 size={11} />
+                        {confidence}% confidence
                       </span>
-                    </div>
-                    <h3 className="font-sans font-bold text-foreground text-base mb-0.5">
-                      {ruleName}
-                    </h3>
-                    <p className="text-sm font-body text-muted-foreground">
-                      <span className="text-foreground font-bold">{actionName}</span>
-                      {actionType && (
-                        <code className="ml-2 text-[10px] font-mono">{actionType}</code>
-                      )}
-                    </p>
+                    )}
+                    {entry.actions_library && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold font-body bg-surface-container-high text-foreground">
+                        <Sparkles size={11} />
+                        {entry.actions_library.name}
+                        <span className="text-muted-foreground font-semibold">
+                          · {entry.actions_library.platform}
+                        </span>
+                      </span>
+                    )}
+                    {!entry.action_template_id && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold font-body bg-amber-50 text-amber-700 uppercase tracking-wider">
+                        Notification-only
+                      </span>
+                    )}
                   </div>
-                  {typeof confidence === "number" && (
-                    <div className="shrink-0 text-right">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">
-                        AI confidence
-                      </p>
-                      <p
-                        className={`text-2xl font-black font-sans ${
-                          confidence >= 0.8 ? "text-emerald-600"
-                          : confidence >= 0.5 ? "text-primary"
-                          : "text-amber-600"
-                        }`}
-                      >
-                        {Math.round(confidence * 100)}%
-                      </p>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-body shrink-0">
+                    <Clock size={12} />
+                    {formatTimestamp(entry.created_at)}
+                  </div>
                 </div>
 
-                {firstReasoning && (
-                  <div className="bg-surface-container-low rounded-lg p-3 mb-3 flex items-start gap-2">
-                    <Brain size={14} className="text-primary shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-body text-foreground">
-                        <span className="font-bold">{firstReasoning.step}:</span>{" "}
-                        <span className="text-muted-foreground">{firstReasoning.insight}</span>
-                      </p>
-                    </div>
+                {/* Reasoning steps (collapsible when > 2) */}
+                {reasoning.length > 0 && (
+                  <div className="bg-surface-container-low rounded-xl p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 font-body">
+                      AI Reasoning
+                    </p>
+                    <ol className="space-y-2 text-sm text-foreground leading-relaxed font-body">
+                      {visibleReasoning.map((rs, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="text-primary font-bold shrink-0">
+                            {i + 1}.
+                          </span>
+                          <span>
+                            <span className="font-semibold">{rs.step}:</span>{" "}
+                            {rs.insight}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                    {reasoning.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setReasoningExpanded((prev) => ({
+                            ...prev,
+                            [entry.id]: !prev[entry.id],
+                          }))
+                        }
+                        className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline font-body"
+                      >
+                        {isExpanded ? (
+                          <>
+                            <ChevronUp size={12} /> Show less
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown size={12} /> Show {reasoning.length - 2} more step
+                            {reasoning.length - 2 === 1 ? "" : "s"}
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
 
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/30">
-                  {r.ai_decision_id && (
-                    <Link
-                      href={`/operator/ai/${r.ai_decision_id}`}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline font-body"
-                    >
-                      Review decision <ArrowRight size={11} />
-                    </Link>
+                {/* Action params preview (only when present) */}
+                {entry.action_params &&
+                  Object.keys(entry.action_params).length > 0 && (
+                    <div className="bg-surface-container-low rounded-xl p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 font-body">
+                        Action Parameters
+                      </p>
+                      <pre className="text-[11px] font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-words">
+                        {JSON.stringify(entry.action_params, null, 2)}
+                      </pre>
+                    </div>
                   )}
+
+                {/* Row-level error (per-row, post-click) */}
+                {err && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-body rounded-lg px-3 py-2 flex items-start gap-2">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span>{err}</span>
+                  </div>
+                )}
+
+                {/* Reject note (when expanded) */}
+                {isRejectOpen && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">
+                      Reason (optional)
+                    </label>
+                    <textarea
+                      value={rejectNotes[entry.id] ?? ""}
+                      onChange={(e) =>
+                        setRejectNotes((prev) => ({
+                          ...prev,
+                          [entry.id]: e.target.value,
+                        }))
+                      }
+                      maxLength={1000}
+                      rows={2}
+                      placeholder="Why is this being rejected? (Optional; 1000 char max.)"
+                      className="w-full px-3 py-2 rounded-xl border border-border bg-surface-container-low text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-body"
+                    />
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">
                   <button
-                    onClick={() => dismiss(r)}
-                    disabled={isFiring}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors font-body disabled:opacity-50"
-                    title="Hide for the rest of this session"
+                    onClick={() => handleApprove(entry.id)}
+                    disabled={!!action}
+                    className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed font-body"
                   >
-                    <EyeOff size={11} />
-                    Dismiss
-                  </button>
-                  <button
-                    onClick={() => void approveAndFire(r)}
-                    disabled={isFiring || !r.automation_rule_id}
-                    className="inline-flex items-center gap-1.5 bg-primary text-white px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-primary/90 transition-all font-body disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={r.automation_rule_id ? "Approve and execute via the canonical manual-fire path" : "Rule id missing — cannot fire"}
-                  >
-                    {isFiring ? (
+                    {action === "approve" ? (
                       <>
-                        <RefreshCw size={11} className="animate-spin" />
-                        Firing…
+                        <Loader2 size={14} className="animate-spin" />
+                        Approving…
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 size={11} />
-                        Approve &amp; Fire
+                        <CheckCircle2 size={14} />
+                        Approve
                       </>
                     )}
                   </button>
+
+                  {!isRejectOpen ? (
+                    <button
+                      onClick={() =>
+                        setRejectExpanded((prev) => ({
+                          ...prev,
+                          [entry.id]: true,
+                        }))
+                      }
+                      disabled={!!action}
+                      className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-red-600 text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-60 font-body"
+                    >
+                      <XCircle size={14} />
+                      Reject
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleReject(entry.id)}
+                        disabled={!!action}
+                        className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed font-body"
+                      >
+                        {action === "reject" ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Rejecting…
+                          </>
+                        ) : (
+                          <>
+                            <XCircle size={14} />
+                            Confirm reject
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setRejectExpanded((prev) => {
+                            const next = { ...prev };
+                            delete next[entry.id];
+                            return next;
+                          });
+                          setRejectNotes((prev) => {
+                            const next = { ...prev };
+                            delete next[entry.id];
+                            return next;
+                          });
+                        }}
+                        disabled={!!action}
+                        className="inline-flex items-center px-4 py-2 rounded-xl text-muted-foreground text-sm font-medium hover:bg-surface-container-low transition-colors disabled:opacity-60 font-body"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+
+                  <span className="ml-auto text-[10px] font-mono text-muted-foreground">
+                    {entry.id.slice(0, 8)}…
+                  </span>
                 </div>
               </div>
             );
           })}
         </div>
       )}
-
-      {/* Footer hint */}
-      <div className="pt-4 border-t border-border/30 text-[11px] font-body text-muted-foreground">
-        <AlertTriangle size={10} className="inline mr-1.5 -mt-0.5" />
-        Approving via this page reuses the canonical manual-rule-execute endpoint.
-        The original skipped row stays in the audit history for accountability.
-      </div>
     </div>
   );
 }
