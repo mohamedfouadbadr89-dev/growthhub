@@ -124,6 +124,15 @@ export default function AIOperatorPage() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
 
+  // Continuation #123 (2026-05-14) — Phase Ω.2 empty-state vs error split.
+  // /ai/decisions list endpoint returns 200 + empty array for orgs with no
+  // decisions. A 404 here would only fire if the route isn't mounted on
+  // the running backend (stale build / pre-PR#15). In that case the
+  // operator should see the friendly empty state, not a red error banner.
+  function isNotFound(err: unknown): boolean {
+    return err instanceof ApiError && err.status === 404;
+  }
+
   async function fetchDecisions() {
     setDecisionsLoading(true);
     setDecisionsError(null);
@@ -139,7 +148,11 @@ export default function AIOperatorPage() {
       );
       setDecisions(data.decisions);
     } catch (err) {
-      setDecisionsError(formatErrorMessage(err, "Failed to load AI decisions"));
+      if (isNotFound(err)) {
+        setDecisions([]); // empty state, no error banner
+      } else {
+        setDecisionsError(formatErrorMessage(err, "Failed to load AI decisions"));
+      }
     } finally {
       setDecisionsLoading(false);
     }
@@ -165,7 +178,13 @@ export default function AIOperatorPage() {
         );
         if (!cancelled) setDecisions(data.decisions);
       } catch (err) {
-        if (!cancelled) setDecisionsError(formatErrorMessage(err, "Failed to load AI decisions"));
+        if (!cancelled) {
+          if (isNotFound(err)) {
+            setDecisions([]); // empty state, no error banner (see isNotFound note)
+          } else {
+            setDecisionsError(formatErrorMessage(err, "Failed to load AI decisions"));
+          }
+        }
       } finally {
         if (!cancelled) setDecisionsLoading(false);
       }
@@ -225,10 +244,9 @@ export default function AIOperatorPage() {
             AI Operator Center
           </h1>
           <p className="text-muted-foreground font-body mt-2">
-            Inspect AI decisions, lifecycle phases, and reasoning. Backed by the canonical
-            <code className="text-foreground bg-surface-container-low px-1.5 py-0.5 rounded ml-1">ai_decisions</code>
-            +
-            <code className="text-foreground bg-surface-container-low px-1.5 py-0.5 rounded ml-1">ai_logs</code> tables.
+            Review every AI decision your AI has made, the reasoning behind it, and trace each call
+            end-to-end. Use this to validate outcomes, debug a specific run, or audit confidence trends
+            over time.
           </p>
         </div>
       </div>
