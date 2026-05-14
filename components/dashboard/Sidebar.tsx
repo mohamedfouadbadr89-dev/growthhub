@@ -42,6 +42,9 @@ import {
   GitBranch,
   Archive as ArchiveIcon,
   Activity as ActivityIcon,
+  Brain,
+  ShieldAlert as ShieldAlertIcon,
+  ShieldCheck as ShieldCheckIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -84,7 +87,11 @@ const AUTOMATION_CHILDREN: NavItem[] = [
   // the sidebar's href stayed at `/automation` but the resolved pathname
   // after redirect was the deeper path. Operator-facing navigation
   // coherence (priority #8).
-  { label: 'Decision Center', href: '/dashboard/automation/decision-center', icon: Cpu },
+  // Continuation #122 (2026-05-14) — Phase Ω: relabel to make the
+  // governance-deferred state operator-visible. The canonical AI
+  // operator surface lives at `/operator/ai` (Phase β); this link is
+  // preserved for the Phase 6 unlock path.
+  { label: 'Decision Center (preview)', href: '/dashboard/automation/decision-center', icon: Cpu },
   { label: 'Builder',         href: '/automation/builder',    icon: GitBranch },
   { label: 'Strategies',      href: '/automation/strategies', icon: Lightbulb },
   { label: 'History',         href: '/automation/history',    icon: ScrollText },
@@ -92,6 +99,11 @@ const AUTOMATION_CHILDREN: NavItem[] = [
   // per `specs/execution-timeline.md`. Interleaved chronological view of
   // automation_runs + decision_history. FE-only; no new endpoints.
   { label: 'Timeline',        href: '/automation/timeline',   icon: ActivityIcon },
+  // Continuation #120 (2026-05-14) — Phase γ Layer 7 (Approval Intelligence)
+  // per `specs/approval-intelligence.md`. Operator queue of auto-fire
+  // blocked rule attempts; reads /automation/runs?status=skipped which
+  // the new automation-engine.ts persistence path populates.
+  { label: 'Approvals',       href: '/automation/approvals',  icon: ShieldAlertIcon },
 ];
 
 const ACTIONS_CHILDREN: NavItem[] = [
@@ -142,6 +154,17 @@ const DECISIONS_CHILDREN: NavItem[] = [
   { label: 'Audience',        href: '/decisions/audience',         icon: UserCheck },
 ];
 
+// Continuation #119 (2026-05-14) — Phase β AI Operator Center entry per
+// `specs/ai-operator-center.md`. Single top-level link (no submenu —
+// the page itself has tabs). Read-only operator surface over
+// `ai_decisions` + `ai_logs`.
+const OPERATOR_AI_ITEM: NavItem = { label: 'AI Operator', href: '/operator/ai', icon: Brain };
+
+// Continuation #121 (2026-05-14) — Phase δ Governance Dashboard entry per
+// `specs/governance-dashboard.md`. Read-only observability over the
+// EXISTING governance architecture. No mutation paths.
+const GOVERNANCE_ITEM: NavItem = { label: 'Governance', href: '/governance', icon: ShieldCheckIcon };
+
 const NAV_STRUCTURE: NavItem[] = [
   {
     label: 'Dashboard',
@@ -155,7 +178,8 @@ const NAV_STRUCTURE: NavItem[] = [
   },
   { label: 'Actions', icon: MousePointer2, children: ACTIONS_CHILDREN },
   { label: 'Automation', icon: Cpu, children: AUTOMATION_CHILDREN },
-
+  OPERATOR_AI_ITEM,
+  GOVERNANCE_ITEM,
   { label: 'Creatives', icon: Palette, children: CREATIVES_CHILDREN },
   { label: 'Campaigns', icon: Flag, children: CAMPAIGNS_CHILDREN },
   { label: 'Integrations', icon: Puzzle, children: INTEGRATIONS_CHILDREN },

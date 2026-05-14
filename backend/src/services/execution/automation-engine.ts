@@ -92,6 +92,16 @@ export function actionRequiresApproval(actionType: string | null | undefined): b
   return typeof actionType === 'string' && SPEND_INCREASING_OR_LAUNCH_ACTION_TYPES.has(actionType)
 }
 
+// Continuation #121 (2026-05-14) — Phase δ governance dashboard.
+// Read-only snapshot of the protected action-type set, exported as a
+// sorted string[] for operator-facing surfaces. The Set above remains
+// the SOLE policy authority; this is a defensive view (caller cannot
+// mutate the Set through this snapshot). The governance summary endpoint
+// surfaces this list as `approval_policy.protected_action_types` so
+// operators can audit policy state without grepping source.
+export const SPEND_INCREASING_OR_LAUNCH_ACTION_TYPES_SNAPSHOT: readonly string[] =
+  Object.freeze(Array.from(SPEND_INCREASING_OR_LAUNCH_ACTION_TYPES).sort())
+
 // ─── Types ────────────────────────────────────────────────────────────
 
 interface AutomationRuleRow {
@@ -292,6 +302,71 @@ export async function evaluateRulesForAIDecision(
         `ai_decision_id=${decision.id} reason=approval_required ` +
         `(spend-increasing or launch-capable; operator must trigger via POST /automation/rules/:id/execute)`,
       )
+
+      // Continuation #120 (2026-05-14) — Phase γ Layer 7 (Approval
+      // Intelligence) per `specs/approval-intelligence.md`. Persist the
+      // skip as an audit-visible automation_runs row so operators have a
+      // queue to review. Approval policy code path UNCHANGED — this is
+      // an ADDITIVE write beside the existing console log + continue.
+      //
+      // Safety invariants preserved:
+      //   - `automation_runs.status='skipped'` is ALREADY in the CHECK
+      //     enum (migration 20260507130000:92) — NO schema change.
+      //   - `decision_history` is NOT written here — executor remains
+      //     single-writer. (SKIP path doesn't execute, doesn't audit.)
+      //   - `result_data` is freely-shaped JSONB; adds structured
+      //     `skip_reason`, `action_type`, `skipped_at` metadata.
+      //   - Dedupe: this branch runs BEFORE the main dedupe block at
+      //     line 298+, so we add an inline dedupe check here (same
+      //     query shape) to prevent duplicate skip rows on Inngest
+      //     retries. Best-effort — if the dedupe query OR the insert
+      //     fails, we log + continue (the SKIP behavior is preserved;
+      //     only the audit-visibility row is lost, console line stays).
+      //   - No real provider call is made (executor never invoked).
+      //   - actionRequiresApproval() remains the SOLE policy authority.
+      try {
+        const { data: existingSkipRows, error: existingErr } = await supabaseAdmin
+          .from('automation_runs')
+          .select('id')
+          .eq('org_id', orgId)
+          .eq('automation_rule_id', rawRule.id)
+          .eq('ai_decision_id', decision.id)
+          .limit(1)
+
+        if (existingErr) {
+          console.error(
+            `[automation] skip_dedupe_lookup_failed org_id=${orgId} rule_id=${rawRule.id}: ${existingErr.message}`,
+          )
+        } else if (!existingSkipRows || existingSkipRows.length === 0) {
+          const { error: skipInsertErr } = await supabaseAdmin
+            .from('automation_runs')
+            .insert({
+              org_id: orgId,
+              automation_rule_id: rawRule.id,
+              ai_decision_id: decision.id,
+              action_template_id: rawRule.action_template_id,
+              status: 'skipped',
+              result_data: {
+                trigger_source: 'auto_fire',
+                skip_reason: 'approval_required',
+                action_type: actionType,
+                skipped_at: new Date().toISOString(),
+              },
+              executed_at: new Date().toISOString(),
+            })
+          if (skipInsertErr) {
+            console.error(
+              `[automation] skip_persist_failed org_id=${orgId} rule_id=${rawRule.id}: ${skipInsertErr.message}`,
+            )
+          }
+        }
+      } catch (persistErr) {
+        // Defensive — never let an audit-trail persistence error abort
+        // the rule evaluation loop. Console line above is the fallback
+        // record (operator-greppable via PM2/journald).
+        console.error(`[automation] skip_persist_exception:`, persistErr)
+      }
+
       continue
     }
 

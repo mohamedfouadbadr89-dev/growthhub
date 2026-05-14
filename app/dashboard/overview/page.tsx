@@ -229,7 +229,7 @@ export default function DashboardOverview() {
             <span className="text-[#54436b] text-xl">✦</span>
           </div>
           <div className="flex-1">
-            <h3 className="font-sans font-bold text-lg mb-1 text-foreground">Precision Intelligence Summary</h3>
+            <h3 className="font-sans font-bold text-lg mb-1 text-foreground">Performance Summary</h3>
             <p className="text-muted-foreground leading-relaxed text-sm">
               {metricsLoading
                 ? "Loading your performance data…"

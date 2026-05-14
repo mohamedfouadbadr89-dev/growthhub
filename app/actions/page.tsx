@@ -24,18 +24,13 @@ import Link from "next/link";
 import { ShieldAlert, Sparkles, Zap, AlertCircle, Filter, Search } from "lucide-react";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
-// Mirror of `automation-engine.ts:80-93` SPEND_INCREASING_OR_LAUNCH_ACTION_TYPES.
-// Single source of truth remains the backend's `actionRequiresApproval` policy;
-// this constant exists ONLY for the FE display badge so the user sees the
-// approval-required hint at catalog-browse time. The badge is informational —
-// the actual enforcement happens server-side on the auto-fire gate
-// (automation-engine.ts:278-296). Manual execute via this page bypasses the
-// gate by design (manual = implicit operator approval).
-const APPROVAL_REQUIRED_TYPES = new Set<string>([
-  "meta.increase_budget",
-  "meta.create_campaign",
-  "google.create_campaign",
-]);
+// Continuation #122 (2026-05-14) — Phase Ω stabilization. The prior
+// FE-side `APPROVAL_REQUIRED_TYPES` Set (mirror of the centralized BE
+// policy) is removed. `GET /api/v1/actions` now returns a
+// server-computed `requires_approval` boolean per row via
+// `actionRequiresApproval()` — single source of truth lives in
+// `automation-engine.ts:80-93`. FE consumes the flag directly; no
+// mirror, no drift.
 
 type PlatformFilter = "all" | "meta" | "google" | "shopify";
 
@@ -47,6 +42,10 @@ interface ApiActionTemplate {
   description: string | null;
   parameter_schema: Record<string, unknown> | null;
   created_at: string;
+  // Server-computed via `actionRequiresApproval()` (#122). Absent on
+  // legacy clients hitting this page before the BE upgrade — falls back
+  // to `false` defensively at the render site.
+  requires_approval?: boolean;
 }
 
 const PLATFORM_OPTIONS: Array<{ value: PlatformFilter; label: string; color: string }> = [
@@ -111,7 +110,7 @@ export default function ActionsLibraryPage() {
 
   const filtered = actions.filter((a) => {
     if (platformFilter !== "all" && a.platform.toLowerCase() !== platformFilter) return false;
-    if (approvalOnly && !APPROVAL_REQUIRED_TYPES.has(a.action_type)) return false;
+    if (approvalOnly && !a.requires_approval === true) return false;
     if (search) {
       const q = search.toLowerCase();
       const hay = `${a.name} ${a.action_type} ${a.description ?? ""}`.toLowerCase();
@@ -121,7 +120,7 @@ export default function ActionsLibraryPage() {
   });
 
   const totalCount = actions.length;
-  const requireApprovalCount = actions.filter((a) => APPROVAL_REQUIRED_TYPES.has(a.action_type)).length;
+  const requireApprovalCount = actions.filter((a) => a.requires_approval === true).length;
 
   return (
     <div className="space-y-8 pb-12">
@@ -233,7 +232,7 @@ export default function ActionsLibraryPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map((a) => {
-            const requiresApproval = APPROVAL_REQUIRED_TYPES.has(a.action_type);
+            const requiresApproval = a.requires_approval === true;
             const dotColor = platformDotColor(a.platform);
             const paramN = paramCount(a.parameter_schema);
             return (
@@ -259,7 +258,7 @@ export default function ActionsLibraryPage() {
                       title="This action requires operator approval — auto-fire is blocked by the centralized policy"
                     >
                       <ShieldAlert size={10} />
-                      Approval
+                      Approval required
                     </span>
                   )}
                 </div>

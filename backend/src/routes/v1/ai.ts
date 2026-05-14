@@ -414,3 +414,145 @@ aiRouter.post('/execute', async (c) => {
     return fail(c, e?.message ?? 'unknown error', 500, { phase: 'unknown' })
   }
 })
+
+// ─── Continuation #119 (2026-05-14) — Phase β Layer 2/5 read endpoints ───
+// per `specs/ai-operator-center.md`.
+//
+// Three additive read-only endpoints over the EXISTING ai_decisions + ai_logs
+// tables. No new tables, no schema change, no executor touch, no AI validator
+// bypass, no orchestration change. Org-scoped via `c.get('orgId')` server-side
+// (never trust body). Canonical envelope via ok()/fail(). PGRST116 discriminator
+// pattern mirrored from history.ts:114-155. Error sanitization via existing
+// errorHandler triple-sink (Sentry + stdout + sanitized 500).
+//
+// These endpoints UNBLOCK two surfaces that previously had no canonical
+// data path:
+//   1. `app/operator/ai/*` — new AI Operator Center pages
+//   2. `app/decisions/[id]/page.tsx` — re-pointed from 503-gated /decisions/:id
+//      to GET /ai/decisions/:id (canonical AI decision table — never reactivates
+//      the legacy `decisions` table)
+// ───────────────────────────────────────────────────────────────────────
+
+const UUID_LIKE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i
+
+// Closed-enum filters mirrored from the live ai_decisions CHECK constraints.
+// Same INVALID_FILTER pattern as routes/v1/history.ts:65-69 + automation.ts.
+const VALID_AI_TYPE = new Set(['dashboard', 'insight', 'decision'])
+const VALID_AI_STATUS = new Set(['active', 'needs_review'])
+
+// MAX_LIMIT for AI list endpoints; matches the rest of the v1 surface.
+const AI_MAX_LIMIT = 100
+const AI_LOGS_MAX_LIMIT = 500
+
+// ─── GET /api/v1/ai/decisions ─────────────────────────────────────────
+// Paginated list of ai_decisions for the calling org. Filters: type,
+// status, category (Path F column from 20260509130000 migration).
+aiRouter.get('/decisions', async (c) => {
+  const orgId = c.get('orgId')
+  const { type, status, category } = c.req.query()
+
+  if (type !== undefined && !VALID_AI_TYPE.has(type)) {
+    return fail(c, `Invalid type filter: ${type}. Must be one of: dashboard, insight, decision`, 400, {
+      code: 'INVALID_FILTER',
+      field: 'type',
+    })
+  }
+  if (status !== undefined && !VALID_AI_STATUS.has(status)) {
+    return fail(c, `Invalid status filter: ${status}. Must be one of: active, needs_review`, 400, {
+      code: 'INVALID_FILTER',
+      field: 'status',
+    })
+  }
+  // category is intentionally NOT enum-validated — it's a free-form label
+  // emitted by the AI per Path F (system prompt at ai.ts:127). We trust
+  // the validator-enforced shape but the value space is open.
+
+  const rawLimit  = parseInt(c.req.query('limit')  ?? '50', 10)
+  const rawOffset = parseInt(c.req.query('offset') ?? '0',  10)
+  const limit  = Math.min(Math.max(1, isNaN(rawLimit)  ? 50 : rawLimit), AI_MAX_LIMIT)
+  const offset = Math.max(0, isNaN(rawOffset) ? 0 : rawOffset)
+
+  let query = supabaseAdmin
+    .from('ai_decisions')
+    .select('id, org_id, type, result, confidence_score, status, reasoning_steps, category, trace_id, created_at', { count: 'exact' })
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (type)     query = query.eq('type', type)
+  if (status)   query = query.eq('status', status)
+  if (category) query = query.eq('category', category)
+
+  const { data, error, count } = await query
+  if (error) {
+    throw new Error(`ai_decisions list lookup failed: ${error.message}`)
+  }
+
+  return ok(c, { decisions: data ?? [], total: count ?? 0, limit, offset })
+})
+
+// ─── GET /api/v1/ai/decisions/:id ─────────────────────────────────────
+// Single ai_decision row with full payload (result + reasoning_steps).
+// PGRST116 = genuine not-found → 404; any other PG error → throw → errorHandler.
+aiRouter.get('/decisions/:id', async (c) => {
+  const orgId = c.get('orgId')
+  const id = c.req.param('id')
+  if (!UUID_LIKE.test(id)) {
+    return fail(c, 'Invalid decision id format', 400, { code: 'INVALID_TYPE', field: 'id' })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('ai_decisions')
+    .select('id, org_id, type, result, confidence_score, status, reasoning_steps, category, trace_id, created_at')
+    .eq('id', id)
+    .eq('org_id', orgId)
+    .single()
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`ai_decisions/:id lookup failed: ${error.message}`)
+  }
+  if (!data) return fail(c, 'AI decision not found', 404, { code: 'NOT_FOUND' })
+  return ok(c, data)
+})
+
+// ─── GET /api/v1/ai/logs ──────────────────────────────────────────────
+// Read-only access to the AI lifecycle log (request/raw/validated/persisted/
+// validation_error/transport_error/persistence_error per the migration CHECK).
+// Required filter: `?trace_id=` (UUID). Returns excerpts only — full prompt
+// and raw_response JSONB blobs are intentionally not exposed in this surface
+// to keep payload bounded; the validated_response and error JSONB ARE
+// returned because they're already validator-bounded.
+aiRouter.get('/logs', async (c) => {
+  const orgId = c.get('orgId')
+  const traceId = c.req.query('trace_id')
+
+  if (typeof traceId !== 'string' || traceId.length === 0) {
+    return fail(c, 'trace_id query parameter is required', 400, {
+      code: 'MISSING_PARAMETER',
+      field: 'trace_id',
+    })
+  }
+  if (!UUID_LIKE.test(traceId)) {
+    return fail(c, 'trace_id must be a valid UUID', 400, {
+      code: 'INVALID_TYPE',
+      field: 'trace_id',
+    })
+  }
+
+  const rawLimit = parseInt(c.req.query('limit') ?? '100', 10)
+  const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 100 : rawLimit), AI_LOGS_MAX_LIMIT)
+
+  const { data, error, count } = await supabaseAdmin
+    .from('ai_logs')
+    .select('id, trace_id, phase, model, latency_ms, validated_response, error, created_at', { count: 'exact' })
+    .eq('org_id', orgId)
+    .eq('trace_id', traceId)
+    .order('created_at', { ascending: true })
+    .limit(limit)
+
+  if (error) {
+    throw new Error(`ai_logs lookup failed: ${error.message}`)
+  }
+
+  return ok(c, { logs: data ?? [], total: count ?? 0, limit })
+})

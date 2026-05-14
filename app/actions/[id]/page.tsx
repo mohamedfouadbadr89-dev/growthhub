@@ -31,13 +31,10 @@ import {
 } from "lucide-react";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
-// Mirror of `automation-engine.ts:80-93`. See note in `app/actions/page.tsx`
-// — single source of truth lives backend-side; this is display-only.
-const APPROVAL_REQUIRED_TYPES = new Set<string>([
-  "meta.increase_budget",
-  "meta.create_campaign",
-  "google.create_campaign",
-]);
+// Continuation #122 (2026-05-14) — Phase Ω stabilization. The prior
+// FE-side approval mirror Set has been removed; `GET /api/v1/actions/:id`
+// now returns server-computed `requires_approval`. Single source of
+// truth = `automation-engine.ts:actionRequiresApproval`.
 
 interface ApiActionTemplate {
   id: string;
@@ -47,6 +44,10 @@ interface ApiActionTemplate {
   description: string | null;
   parameter_schema: ParameterSchema | null;
   created_at: string;
+  // Server-computed via `actionRequiresApproval()` (#122). Defaults to
+  // `false` defensively at the render site if a legacy response shape
+  // arrives without the field.
+  requires_approval?: boolean;
 }
 
 interface ParameterSchemaField {
@@ -138,9 +139,7 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
     () => extractFields(template?.parameter_schema),
     [template?.parameter_schema],
   );
-  const requiresApproval = template
-    ? APPROVAL_REQUIRED_TYPES.has(template.action_type)
-    : false;
+  const requiresApproval = template?.requires_approval === true;
 
   function updateField(name: string, type: string, raw: string | boolean) {
     setFormValues((prev) => {
@@ -273,7 +272,7 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
                 title="Auto-fire blocked by centralized approval policy. Manual fire here is an implicit operator approval."
               >
                 <ShieldAlert size={10} />
-                Approval-Required
+                Approval required
               </span>
             )}
           </div>
@@ -316,7 +315,7 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
         <div className="flex items-center justify-between">
           <h2 className="font-sans font-bold text-foreground text-xl">Manual Execute</h2>
           <span className="text-[10px] font-body text-muted-foreground uppercase tracking-widest font-bold">
-            Phase 4 · canonical executor
+            Canonical executor
           </span>
         </div>
 
@@ -451,9 +450,35 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
             <h3 className="font-sans font-bold text-foreground text-lg">
               Execution {executeResult.result}
             </h3>
+            {/* Continuation #122 (2026-05-14) — Phase Ω: prominent
+                Live/Simulated pill so the operator sees provider-call
+                context at-a-glance. Reads `result_data.mode` written by
+                the canonical executor (action-executor.ts). Renders only
+                when `mode` is present (legacy / shaped result_data may
+                omit it). */}
+            {(() => {
+              const mode = executeResult.result_data?.mode;
+              if (mode !== "live" && mode !== "simulated") return null;
+              const isLive = mode === "live";
+              return (
+                <span
+                  className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider font-body ${
+                    isLive ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-700"
+                  }`}
+                  title={
+                    isLive
+                      ? "REAL provider call — this execution hit Meta/Google/Shopify with operator-visible side effects."
+                      : "Simulated mode — no real provider call was made. LIVE flag for this action is OFF, allowlist excludes this org, or credentials are missing."
+                  }
+                >
+                  {isLive ? <Zap size={10} /> : <ShieldAlert size={10} />}
+                  {isLive ? "Live" : "Simulated"}
+                </span>
+              );
+            })()}
             {executeResult.idempotent_replay && (
               <span
-                className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 font-body"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 font-body"
                 title="This execution_id matched an existing row — the original result was returned. No duplicate side effect."
               >
                 <RefreshCw size={10} />

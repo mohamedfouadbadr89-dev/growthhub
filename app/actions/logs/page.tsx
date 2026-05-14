@@ -32,8 +32,10 @@ import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 //     is free-form TEXT). The canonical `?executed_by=` query param is
 //     validated server-side against the CHECK enum (history.ts:29,65).
 //   - Status filter → success/failed/skipped (terminal); no "running"
-//     since the result column is terminal. The Stitch "running" mock state
-//     is preserved in the type union for backwards-compat but never emitted.
+//     since the result column is terminal. Continuation #122 (Phase Ω):
+//     dropped the legacy "running" literal from the Status type union
+//     (was preserved as a Stitch-era mock placeholder; never emitted by
+//     the backend per the CHECK enum).
 //
 // KPI strip (bottom-3-card metrics + system health strip):
 //   - Total Executions → derived from loaded entries
@@ -43,7 +45,7 @@ import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 //     route /:id, which we don't pre-load). Marked with "—" to be honest
 //     rather than render fabricated numbers.
 
-type Status = "success" | "failed" | "running" | "skipped";
+type Status = "success" | "failed" | "skipped";
 type ExecutedBy = "All" | "manual" | "automation";
 
 interface PlatformTag {
@@ -110,7 +112,6 @@ const EXECUTED_BY_TAG: Record<"manual" | "automation", PlatformTag> = {
 const STATUS_LABELS: Record<Status, { label: string; class: string }> = {
   success: { label: "Success", class: "bg-emerald-100 text-emerald-700" },
   failed:  { label: "Failed",  class: "bg-red-100 text-red-600" },
-  running: { label: "Running", class: "bg-primary/10 text-primary" },
   skipped: { label: "Skipped", class: "bg-surface-container-high text-muted-foreground" },
 };
 

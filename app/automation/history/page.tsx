@@ -258,12 +258,15 @@ const RESULT_FILTERS: ResultFilter[] = ["All", "Success", "Failed", "Skipped"];
 // pure client-side filter over the `entry.resultData.trigger_source` key
 // already populated by the executor (action-executor.ts:526-540 + #103).
 // "All" reads everything (default — zero behavior change for users who
-// don't click). "Auto-fire" / "Manual fire" filter on the JSONB value.
+// don't click). "Auto-fire" / "Manual rule fire" filter on the JSONB value.
+// Continuation #122 (2026-05-14) — Phase Ω label alignment with the
+// timeline page (`/automation/timeline`) so the same trigger_source value
+// renders with the same operator-facing label across all surfaces.
 type TriggerSourceFilter = "all" | "auto_fire" | "manual_rule_fire";
 const TRIGGER_SOURCE_FILTERS: Array<{ value: TriggerSourceFilter; label: string }> = [
   { value: "all",              label: "All triggers" },
   { value: "auto_fire",        label: "Auto-fire" },
-  { value: "manual_rule_fire", label: "Manual fire" },
+  { value: "manual_rule_fire", label: "Manual rule fire" },
 ];
 
 export default function DecisionHistoryPage() {
@@ -651,7 +654,7 @@ export default function DecisionHistoryPage() {
                                 ? "Fired automatically by the AI-decision stream"
                                 : "Fired by an operator via the manual rule-execute path"}
                             >
-                              {isAuto ? "Auto-fire" : "Manual fire"}
+                              {isAuto ? "Auto-fire" : "Manual rule fire"}
                             </span>
                           );
                         })()}

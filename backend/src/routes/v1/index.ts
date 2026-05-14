@@ -15,6 +15,10 @@ import { creativesRouter } from './creatives.js'
 import { campaignsRouter } from './campaigns.js'
 import { aiRouter } from './ai.js'
 import { billingRouter } from './billing.js'
+// Continuation #121 (2026-05-14) — Phase δ Governance Dashboard.
+// Read-only aggregate endpoint over EXISTING tables + env-driven LIVE
+// flag matrix. No new orchestration; no mutations.
+import { governanceRouter } from './governance.js'
 
 type Variables = { userId: string; orgId: string }
 
@@ -134,5 +138,6 @@ v1.route('/creatives', creativesRouter)
 v1.route('/campaigns', campaignsRouter)
 v1.route('/ai', aiRouter)
 v1.route('/billing', billingRouter)
+v1.route('/governance', governanceRouter)
 
 export { v1 }

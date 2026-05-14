@@ -91,6 +91,23 @@ interface ApiAction {
   created_at: string;
 }
 
+// Continuation #119 (2026-05-14) — Phase β Layer 3 recommendation payload
+// returned by GET /api/v1/automation/recommendations. Mirrors the BE shape
+// exactly; FE never derives recommendations itself.
+interface ApiRecommendation {
+  category: string;
+  decision_count_30d: number;
+  avg_confidence: number;
+  suggested_action_template_id: string;
+  suggested_action_name: string;
+  suggested_action_type: string;
+  suggested_platform: string;
+  requires_approval: boolean;
+  suggested_min_confidence_threshold: number;
+  suggested_rule_name: string;
+  rationale: string;
+}
+
 // Trigger-type enum mirrors the backend VALID_TRIGGER_TYPES set
 // (automation.ts:30). Single source of truth lives in the backend; this is
 // purely a display list for the form select — the canonical 400 error path
@@ -125,11 +142,13 @@ interface ApiRun {
   } | null;
 }
 
+// Continuation #122 (2026-05-14) — Phase Ω cleanup. Dropped orphan
+// `tiktok` / `snapchat` keys; backend `VALID_PLATFORMS` in actions.ts:33
+// only accepts meta/google/shopify.
 const PLATFORM_DOT: Record<string, string> = {
   meta: "#0668E1",
   google: "#4285F4",
-  tiktok: "#FE2C55",
-  snapchat: "#FFFC00",
+  shopify: "#5E8E3E",
 };
 
 function platformColor(platform: string | null | undefined): string {
@@ -220,6 +239,16 @@ export default function AutomationPage() {
     enabled: true,
   });
 
+  // Continuation #119 (2026-05-14) — Phase β Layer 3 (Recommended
+  // Automations) per `specs/recommended-automations.md`. Reads the
+  // additive `GET /api/v1/automation/recommendations` endpoint and
+  // renders a card above the rules grid when uncovered categories
+  // exist (decision_count_30d >= 3). One-click pre-fills the existing
+  // #111 Create form — NO autonomous rule creation; operator must
+  // submit. Approval-required categories default to enabled=false.
+  const [recommendations, setRecommendations] = useState<ApiRecommendation[]>([]);
+  const [dismissedRecKeys, setDismissedRecKeys] = useState<Set<string>>(new Set());
+
   // Continuation #92 (2026-05-12) — data-freshness indicator extended to
   // the automation status page (third volatility-sensitive cockpit
   // surface after #90 dashboard/overview + #91 automation/history). Auto-
@@ -249,14 +278,19 @@ export default function AutomationPage() {
     try {
       const token = await getToken();
       if (!token) throw new ApiError(401, "Sign in required");
-      const [rulesData, runsData, actionsData] = await Promise.all([
+      const [rulesData, runsData, actionsData, recsData] = await Promise.all([
         apiClient<{ rules: ApiRule[]; total: number }>("/api/v1/automation/rules", token),
         apiClient<{ runs: ApiRun[]; total: number }>("/api/v1/automation/runs?limit=100", token),
         apiClient<{ actions: ApiAction[]; total: number }>("/api/v1/actions", token),
+        apiClient<{ recommendations: ApiRecommendation[]; total: number }>(
+          "/api/v1/automation/recommendations",
+          token,
+        ),
       ]);
       setRules(rulesData.rules);
       setRuns(runsData.runs);
       setActions(actionsData.actions);
+      setRecommendations(recsData.recommendations);
       setLastUpdatedAt(Date.now());
     } catch (err) {
       setLoadError(formatErrorMessage(err, "Failed to refresh automation status"));
@@ -273,7 +307,7 @@ export default function AutomationPage() {
       try {
         const token = await getToken();
         if (!token) throw new ApiError(401, "Sign in required");
-        const [rulesData, runsData, actionsData] = await Promise.all([
+        const [rulesData, runsData, actionsData, recsData] = await Promise.all([
           apiClient<{ rules: ApiRule[]; total: number }>(
             "/api/v1/automation/rules",
             token,
@@ -286,11 +320,16 @@ export default function AutomationPage() {
             "/api/v1/actions",
             token,
           ),
+          apiClient<{ recommendations: ApiRecommendation[]; total: number }>(
+            "/api/v1/automation/recommendations",
+            token,
+          ),
         ]);
         if (!cancelled) {
           setRules(rulesData.rules);
           setRuns(runsData.runs);
           setActions(actionsData.actions);
+          setRecommendations(recsData.recommendations);
           setLastUpdatedAt(Date.now());
         }
       } catch (err) {
@@ -362,6 +401,41 @@ export default function AutomationPage() {
   // On success the new rule is prepended to the rules list optimistically
   // and form state reset; `requires_approval` is computed server-side
   // (#102) and arrives on the response row.
+  // Continuation #119 (2026-05-14) — Phase β Layer 3 prefill handler.
+  // Pre-populates the existing #111 Create form from a recommendation
+  // and opens it for review. NO autonomous submission — operator must
+  // explicitly click "Create Rule" in the form. Approval-required
+  // recommendations default to enabled=false so the rule lands dormant.
+  function applyRecommendation(rec: ApiRecommendation) {
+    setCreateError(null);
+    // Force trigger_type to a canonical enum value the form select knows
+    // about. If category isn't in TRIGGER_TYPE_OPTIONS, fall back to the
+    // current value (defensive; server will reject if invalid).
+    const validTrigger = (TRIGGER_TYPE_OPTIONS as readonly string[]).includes(rec.category)
+      ? (rec.category as (typeof TRIGGER_TYPE_OPTIONS)[number])
+      : createForm.trigger_type;
+    setCreateForm({
+      name: rec.suggested_rule_name,
+      trigger_type: validTrigger,
+      action_template_id: rec.suggested_action_template_id,
+      min_confidence_threshold: rec.suggested_min_confidence_threshold,
+      enabled: !rec.requires_approval,
+    });
+    setShowCreateForm(true);
+    // Scroll to the form so operators see it.
+    setTimeout(() => {
+      document.querySelector("form")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  }
+
+  function dismissRecommendation(rec: ApiRecommendation) {
+    setDismissedRecKeys((prev) => {
+      const next = new Set(prev);
+      next.add(`${rec.category}:${rec.suggested_action_template_id}`);
+      return next;
+    });
+  }
+
   async function createRule(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
@@ -558,7 +632,7 @@ export default function AutomationPage() {
           <div className="flex items-center justify-between">
             <h3 className="font-sans font-bold text-foreground text-lg">Create Automation Rule</h3>
             <span className="text-[10px] text-muted-foreground font-body uppercase tracking-widest font-bold">
-              Phase 4 Part 2 · canonical
+              Canonical automation rule
             </span>
           </div>
 
@@ -691,7 +765,7 @@ export default function AutomationPage() {
       )}
 
       {/* Metrics Row — derived from rules + runs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-2xl p-6 shadow-sm">
           <div className="flex justify-between items-start mb-4">
             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Total Rules</span>
@@ -716,7 +790,126 @@ export default function AutomationPage() {
           <p className="text-4xl font-black text-foreground font-sans">{relTime(lastFiredAt)}</p>
           <p className="text-xs text-muted-foreground mt-1 font-body">Across all rules</p>
         </div>
+        {/* Continuation #120 (2026-05-14) — Phase γ Layer 7 KPI card.
+            Derived from the already-fetched `runs` state: counts rows with
+            status='skipped' AND result_data.skip_reason='approval_required'
+            (the audit-visible block events written by automation-engine.ts
+            per #120 backend extension). NO additional fetch — same data
+            already powers Live Activity and the per-rule sparklines. */}
+        {(() => {
+          const pendingApprovals = runs.filter((r) => {
+            if (r.status !== "skipped") return false;
+            const reason = (r.result_data as { skip_reason?: string } | null)?.skip_reason;
+            return reason === "approval_required";
+          }).length;
+          return (
+            <Link
+              href="/automation/approvals"
+              className={`block bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition-all border ${
+                pendingApprovals > 0 ? "border-amber-300 ring-2 ring-amber-100" : "border-transparent"
+              }`}
+            >
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Pending Approvals</span>
+                <AlertTriangle size={18} className={pendingApprovals > 0 ? "text-amber-600" : "text-muted-foreground"} />
+              </div>
+              <p className={`text-4xl font-black font-sans ${pendingApprovals > 0 ? "text-amber-600" : "text-foreground"}`}>
+                {pendingApprovals}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 font-body">
+                {pendingApprovals === 0
+                  ? "No blocked auto-fires"
+                  : pendingApprovals === 1
+                    ? "1 blocked auto-fire awaiting review →"
+                    : `${pendingApprovals} blocked auto-fires awaiting review →`}
+              </p>
+            </Link>
+          );
+        })()}
       </div>
+
+      {/* Continuation #119 — Phase β Layer 3 RecommendationsCard.
+          Renders only when uncovered AI-category patterns exist.
+          One-click prefill of the existing #111 Create form; operator
+          must submit. NO autonomous writes. */}
+      {(() => {
+        const visibleRecs = recommendations.filter(
+          (r) => !dismissedRecKeys.has(`${r.category}:${r.suggested_action_template_id}`),
+        );
+        if (visibleRecs.length === 0) return null;
+        return (
+          <div className="bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 rounded-2xl p-6">
+            <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+              <div>
+                <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary font-body">
+                  Recommended automations
+                </p>
+                <h3 className="text-xl font-bold text-foreground font-sans mt-1">
+                  AI detected {visibleRecs.length} uncovered {visibleRecs.length === 1 ? "pattern" : "patterns"}
+                </h3>
+                <p className="text-xs text-muted-foreground font-body mt-1">
+                  Derived from <code className="text-foreground">ai_decisions.category</code> over the last 30 days.
+                  Suggestions only — your approval creates the rule.
+                </p>
+              </div>
+              <Link
+                href="/operator/ai"
+                className="text-[11px] font-bold text-primary hover:underline font-body"
+              >
+                View AI decisions →
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {visibleRecs.map((rec) => (
+                <div
+                  key={`${rec.category}:${rec.suggested_action_template_id}`}
+                  className="bg-white rounded-xl p-4 border border-border/40"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary font-body">
+                      {rec.category}
+                    </span>
+                    {rec.requires_approval && (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 font-body"
+                        title="Auto-fire blocked by centralized policy — rule will be created disabled"
+                      >
+                        <AlertTriangle size={10} />
+                        Approval required
+                      </span>
+                    )}
+                  </div>
+                  <h4 className="text-sm font-bold font-sans text-foreground mb-1">
+                    {rec.suggested_rule_name}
+                  </h4>
+                  <p className="text-xs text-muted-foreground font-body leading-relaxed">
+                    {rec.rationale} · avg confidence {Math.round(rec.avg_confidence * 100)}%
+                  </p>
+                  <p className="text-[10px] font-body text-muted-foreground mt-2">
+                    Suggested action: <code className="text-foreground">{rec.suggested_action_type}</code>
+                  </p>
+                  <div className="mt-4 flex items-center gap-2">
+                    <button
+                      onClick={() => applyRecommendation(rec)}
+                      className="inline-flex items-center gap-1 bg-primary text-white px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-primary/90 transition-all font-body"
+                    >
+                      <Plus size={11} />
+                      Use this
+                    </button>
+                    <button
+                      onClick={() => dismissRecommendation(rec)}
+                      className="text-[11px] font-bold text-muted-foreground hover:text-foreground font-body"
+                      title="Hide this recommendation for the rest of the session"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -770,7 +963,7 @@ export default function AutomationPage() {
                             title="Spend-increasing or launch-capable — auto-fire is blocked; operator must trigger manually via Run Now"
                           >
                             <AlertTriangle size={10} />
-                            Approval
+                            Approval required
                           </span>
                         )}
                       </div>

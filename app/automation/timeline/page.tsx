@@ -22,12 +22,18 @@ import Link from "next/link";
 import {
   Activity, AlertCircle, RefreshCw, CheckCircle2, XCircle, SkipForward,
   Sparkles, Zap, History as HistoryIcon, User, Bot, Filter, Search,
+  ShieldAlert as ShieldAlertIconTimeline,
 } from "lucide-react";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
 // ─── Local event types ────────────────────────────────────────────────
 // Normalized event shape (FE-only). Each source stream maps into this.
-type EventKind = "automation_run" | "decision_history";
+// Continuation #119 (2026-05-14) — Phase β enrichment. AI decision events
+// added as a third stream now that /api/v1/ai/decisions has landed. Per
+// `specs/execution-timeline.md` rollout note: "Page degrades gracefully
+// if Layer 2/5 endpoints not yet shipped (just hides AI decision events)"
+// — endpoint now exists, so we fetch it.
+type EventKind = "automation_run" | "decision_history" | "ai_decision";
 
 interface TimelineEvent {
   kind: EventKind;
@@ -35,9 +41,26 @@ interface TimelineEvent {
   occurredAt: string;       // ISO; sort key
   title: string;            // primary line (action / rule / decision summary)
   subtitle: string;         // secondary line
-  status: "success" | "failed" | "skipped" | "pending" | "manual" | null;
+  status: "success" | "failed" | "skipped" | "pending" | "manual" | "ai_active" | "ai_review" | "approval_blocked" | null;
   triggerSource: "auto_fire" | "manual_rule_fire" | "manual" | null;
+  // Phase β additions for AI decisions enrichment
+  category?: string | null;
+  confidenceScore?: number | null;
+  reasoningPreview?: string | null;
+  traceId?: string | null;
   raw: Record<string, unknown>;  // original row for drill-down (kept opaque)
+}
+
+interface ApiAIDecisionTimeline {
+  id: string;
+  org_id: string;
+  type: "dashboard" | "insight" | "decision";
+  confidence_score: number;
+  status: "active" | "needs_review";
+  reasoning_steps: Array<{ step: string; insight: string }>;
+  category: string | null;
+  trace_id: string;
+  created_at: string;
 }
 
 // ─── Source-stream shapes (subset of canonical responses) ─────────────
@@ -78,10 +101,14 @@ interface ApiHistoryRow {
 type EventTypeFilter = "all" | "runs" | "history";
 type TriggerFilter = "all" | "auto_fire" | "manual_rule_fire" | "manual";
 
-const EVENT_TYPE_OPTIONS: Array<{ value: EventTypeFilter; label: string }> = [
-  { value: "all",     label: "All events" },
-  { value: "runs",    label: "Automation runs" },
-  { value: "history", label: "Audit rows" },
+type EventTypeFilterExt = EventTypeFilter | "ai" | "approval_blocked";
+
+const EVENT_TYPE_OPTIONS: Array<{ value: EventTypeFilterExt; label: string }> = [
+  { value: "all",               label: "All events" },
+  { value: "ai",                label: "AI decisions" },
+  { value: "runs",              label: "Automation runs" },
+  { value: "approval_blocked",  label: "Approval-blocked" },
+  { value: "history",           label: "Audit rows" },
 ];
 
 const TRIGGER_OPTIONS: Array<{ value: TriggerFilter; label: string }> = [
@@ -133,13 +160,27 @@ function mapRunToEvent(r: ApiAutomationRun): TimelineEvent | null {
     ts === "auto_fire" ? "auto_fire" :
     ts === "manual_rule_fire" ? "manual_rule_fire" :
     null;
+  // Continuation #120 (2026-05-14) — Phase γ approval-block detection.
+  // Rows with status='skipped' + result_data.skip_reason='approval_required'
+  // are the audit-visible blocks persisted by automation-engine.ts. Map
+  // them to a distinct status="approval_blocked" so the timeline can
+  // render an amber shield rather than a generic skip chip.
+  const skipReason = (r.result_data as { skip_reason?: string } | null)?.skip_reason ?? null;
+  const isApprovalBlock = r.status === "skipped" && skipReason === "approval_required";
+  const displayStatus = isApprovalBlock ? "approval_blocked" : r.status;
+  const displayTitle = isApprovalBlock
+    ? `${action} · blocked by approval policy`
+    : `${action} · ${r.status}`;
+  const displaySubtitle = isApprovalBlock
+    ? `Rule: ${ruleName} — operator approval required`
+    : ruleName === "—" ? "Manual rule fire" : `Rule: ${ruleName}`;
   return {
     kind: "automation_run",
     id: r.id,
     occurredAt: r.executed_at,
-    title: `${action} · ${r.status}`,
-    subtitle: ruleName === "—" ? "Manual rule fire" : `Rule: ${ruleName}`,
-    status: r.status,
+    title: displayTitle,
+    subtitle: displaySubtitle,
+    status: displayStatus,
     triggerSource,
     raw: r as unknown as Record<string, unknown>,
   };
@@ -158,18 +199,47 @@ function mapHistoryToEvent(h: ApiHistoryRow): TimelineEvent {
   };
 }
 
+// Continuation #119 (2026-05-14) — Phase β AI decision mapper.
+// Surfaces category, confidence, and reasoning preview without exposing
+// the full `result` payload (kept opaque; operators drill via the
+// /operator/ai/:id deep view).
+function mapAIDecisionToEvent(d: ApiAIDecisionTimeline): TimelineEvent {
+  const firstStep = d.reasoning_steps?.[0];
+  const reasoningPreview = firstStep
+    ? `${firstStep.step}: ${firstStep.insight}`
+    : null;
+  return {
+    kind: "ai_decision",
+    id: d.id,
+    occurredAt: d.created_at,
+    title: d.category
+      ? `${d.category} · AI ${d.type}`
+      : `AI ${d.type}`,
+    subtitle: reasoningPreview ?? "No reasoning steps recorded",
+    status: d.status === "active" ? "ai_active" : "ai_review",
+    triggerSource: null,
+    category: d.category,
+    confidenceScore: d.confidence_score,
+    reasoningPreview,
+    traceId: d.trace_id,
+    raw: d as unknown as Record<string, unknown>,
+  };
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────
 export default function ExecutionTimelinePage() {
   const { getToken } = useAuth();
 
   const [runs, setRuns] = useState<ApiAutomationRun[]>([]);
   const [history, setHistory] = useState<ApiHistoryRow[]>([]);
+  // Continuation #119 — Phase β AI stream
+  const [aiDecisions, setAiDecisions] = useState<ApiAIDecisionTimeline[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [hours, setHours] = useState<(typeof HOUR_PRESETS)[number]>(24);
-  const [eventTypeFilter, setEventTypeFilter] = useState<EventTypeFilter>("all");
+  const [eventTypeFilter, setEventTypeFilter] = useState<EventTypeFilterExt>("all");
   const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>("all");
   const [search, setSearch] = useState("");
 
@@ -189,7 +259,7 @@ export default function ExecutionTimelinePage() {
     try {
       const token = await getToken();
       if (!token) throw new ApiError(401, "Sign in required");
-      const [runsRes, historyRes] = await Promise.all([
+      const [runsRes, historyRes, aiRes] = await Promise.all([
         apiClient<{ runs: ApiAutomationRun[]; total: number }>(
           "/api/v1/automation/runs?limit=100",
           token,
@@ -198,9 +268,14 @@ export default function ExecutionTimelinePage() {
           "/api/v1/history?limit=100",
           token,
         ),
+        apiClient<{ decisions: ApiAIDecisionTimeline[]; total: number }>(
+          "/api/v1/ai/decisions?limit=100",
+          token,
+        ),
       ]);
       setRuns(runsRes.runs);
       setHistory(historyRes.history);
+      setAiDecisions(aiRes.decisions);
     } catch (err) {
       setLoadError(formatErrorMessage(err, "Failed to load execution timeline"));
     } finally {
@@ -216,7 +291,7 @@ export default function ExecutionTimelinePage() {
       try {
         const token = await getToken();
         if (!token) throw new ApiError(401, "Sign in required");
-        const [runsRes, historyRes] = await Promise.all([
+        const [runsRes, historyRes, aiRes] = await Promise.all([
           apiClient<{ runs: ApiAutomationRun[]; total: number }>(
             "/api/v1/automation/runs?limit=100",
             token,
@@ -225,10 +300,15 @@ export default function ExecutionTimelinePage() {
             "/api/v1/history?limit=100",
             token,
           ),
+          apiClient<{ decisions: ApiAIDecisionTimeline[]; total: number }>(
+            "/api/v1/ai/decisions?limit=100",
+            token,
+          ),
         ]);
         if (!cancelled) {
           setRuns(runsRes.runs);
           setHistory(historyRes.history);
+          setAiDecisions(aiRes.decisions);
         }
       } catch (err) {
         if (!cancelled) setLoadError(formatErrorMessage(err, "Failed to load execution timeline"));
@@ -248,8 +328,9 @@ export default function ExecutionTimelinePage() {
       .map(mapRunToEvent)
       .filter((e): e is TimelineEvent => e !== null);
     const historyEvents = history.map(mapHistoryToEvent);
+    const aiEvents = aiDecisions.map(mapAIDecisionToEvent);
 
-    let merged: TimelineEvent[] = [...runEvents, ...historyEvents];
+    let merged: TimelineEvent[] = [...runEvents, ...historyEvents, ...aiEvents];
 
     // Time window
     merged = merged.filter((e) => {
@@ -262,6 +343,10 @@ export default function ExecutionTimelinePage() {
       merged = merged.filter((e) => e.kind === "automation_run");
     } else if (eventTypeFilter === "history") {
       merged = merged.filter((e) => e.kind === "decision_history");
+    } else if (eventTypeFilter === "ai") {
+      merged = merged.filter((e) => e.kind === "ai_decision");
+    } else if (eventTypeFilter === "approval_blocked") {
+      merged = merged.filter((e) => e.status === "approval_blocked");
     }
 
     // Trigger source
@@ -294,7 +379,7 @@ export default function ExecutionTimelinePage() {
       }
     }
     return grouped;
-  }, [runs, history, hours, eventTypeFilter, triggerFilter, search, nowTick]);
+  }, [runs, history, aiDecisions, hours, eventTypeFilter, triggerFilter, search, nowTick]);
 
   const totalVisible = eventsByDay.reduce((acc, g) => acc + g.events.length, 0);
 
@@ -435,7 +520,13 @@ export default function ExecutionTimelinePage() {
                               ? "bg-amber-500"
                               : e.status === "pending"
                                 ? "bg-slate-400"
-                                : "bg-primary"
+                                : e.status === "ai_active"
+                                  ? "bg-blue-500"
+                                  : e.status === "ai_review"
+                                    ? "bg-amber-400"
+                                    : e.status === "approval_blocked"
+                                      ? "bg-amber-600"
+                                      : "bg-primary"
                       }`}
                       aria-hidden="true"
                     />
@@ -446,10 +537,41 @@ export default function ExecutionTimelinePage() {
                             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">
                               {e.kind === "automation_run" ? (
                                 <span className="inline-flex items-center gap-1"><Zap size={10} /> Run</span>
+                              ) : e.kind === "ai_decision" ? (
+                                <span className="inline-flex items-center gap-1 text-primary"><Sparkles size={10} /> AI</span>
                               ) : (
                                 <span className="inline-flex items-center gap-1"><HistoryIcon size={10} /> Audit</span>
                               )}
                             </span>
+                            {/* Phase β AI enrichment chips */}
+                            {e.kind === "ai_decision" && e.category && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary font-body">
+                                {e.category}
+                              </span>
+                            )}
+                            {e.kind === "ai_decision" && typeof e.confidenceScore === "number" && (
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider font-body ${
+                                  e.confidenceScore >= 0.8
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : e.confidenceScore >= 0.5
+                                      ? "bg-slate-100 text-slate-700"
+                                      : "bg-amber-100 text-amber-700"
+                                }`}
+                              >
+                                {Math.round(e.confidenceScore * 100)}% conf
+                              </span>
+                            )}
+                            {/* Phase γ approval-blocked chip */}
+                            {e.status === "approval_blocked" && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 font-body"
+                                title="Auto-fire blocked by the centralized approval policy"
+                              >
+                                <ShieldAlertIconTimeline size={10} />
+                                Approval blocked
+                              </span>
+                            )}
                             {e.triggerSource && (
                               <span
                                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider font-body ${
@@ -460,10 +582,10 @@ export default function ExecutionTimelinePage() {
                               >
                                 {e.triggerSource === "auto_fire" ? <Bot size={10} /> : <User size={10} />}
                                 {e.triggerSource === "auto_fire"
-                                  ? "Auto"
+                                  ? "Auto-fire"
                                   : e.triggerSource === "manual_rule_fire"
-                                    ? "Manual rule"
-                                    : "Manual"}
+                                    ? "Manual rule fire"
+                                    : "Manual action"}
                               </span>
                             )}
                             <span className="text-[10px] font-body text-muted-foreground">
@@ -483,10 +605,20 @@ export default function ExecutionTimelinePage() {
                           {e.status === "skipped" && <SkipForward size={16} className="text-amber-600" />}
                           {e.status === "pending" && <Sparkles size={16} className="text-slate-400" />}
                           {e.status === "manual" && <User size={16} className="text-primary" />}
+                          {e.status === "ai_active" && <Sparkles size={16} className="text-blue-500" />}
+                          {e.status === "ai_review" && <Sparkles size={16} className="text-amber-500" />}
+                          {e.status === "approval_blocked" && <ShieldAlertIconTimeline size={16} className="text-amber-600" />}
                         </div>
                       </div>
                       <div className="mt-3 pt-2 border-t border-border/30 flex items-center gap-3 text-[11px] font-body">
-                        {e.kind === "automation_run" ? (
+                        {e.status === "approval_blocked" ? (
+                          <Link
+                            href="/automation/approvals"
+                            className="text-amber-700 hover:underline font-bold"
+                          >
+                            Review in approvals →
+                          </Link>
+                        ) : e.kind === "automation_run" ? (
                           <Link
                             href={`/automation/history?rule_id=${
                               (e.raw as unknown as ApiAutomationRun).automation_rule_id ?? ""
@@ -494,6 +626,13 @@ export default function ExecutionTimelinePage() {
                             className="text-primary hover:underline font-bold"
                           >
                             View run in history →
+                          </Link>
+                        ) : e.kind === "ai_decision" ? (
+                          <Link
+                            href={`/operator/ai/${e.id}`}
+                            className="text-primary hover:underline font-bold"
+                          >
+                            View AI decision →
                           </Link>
                         ) : (
                           <Link
