@@ -5,7 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 import {
   TrendingUp, PauseCircle, AlertTriangle, Bell, Database,
   CheckCircle2, SkipForward, XCircle, ChevronUp, ChevronDown,
-  Sparkles, Lightbulb, Download, Search,
+  Sparkles, Lightbulb, Download, Search, RefreshCw,
 } from "lucide-react";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
@@ -19,8 +19,12 @@ import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 //   - Growth Suggestion card in AI Decision Insights aside (no per-run
 //     recommendation endpoint; AI Output Contract is reasoning, not
 //     prescriptive next-action)
-//   - Quick Stats aside (no monthly aggregation endpoint)
-//   - Trend bar chart in Quick Stats
+//   - (RESOLVED #49) Quick Stats aside — was previously mocked with
+//     fabricated "+12.4% Efficiency / 18h/wk" copy; now shows real
+//     totals derived from loaded entries (Total Runs, Success Rate).
+//   - (RESOLVED #49) Trend bar chart in Quick Stats — was hardcoded
+//     [40,55,35,70,…]; now buckets loaded entries by day for last 12
+//     days, heights normalized to busiest bucket.
 //
 // Sections WIRED (resolved from prior MOCKED-DEFERRED list):
 //   - Confidence Score per entry → #34 (ai_decisions(confidence_score) JOIN)
@@ -125,6 +129,10 @@ interface HistoryEntry {
   // objects like the upstream-API `body` are intentionally filtered out
   // to avoid leaking large or unstructured payloads to the operator UI).
   resultData: Record<string, unknown> | null;
+  // Continuation #49 — raw ISO timestamp for Quick Stats time-bucketing
+  // (the formatted `timestamp` field above is locale-string, not parsable
+  // for histogram math).
+  executedAt: string | null;
 }
 
 // Map backend automation_run → display HistoryEntry. Pending status maps
@@ -235,6 +243,8 @@ function mapRunToEntry(run: ApiAutomationRun): HistoryEntry {
     // #39 — passthrough; rendering logic filters to primitive top-level
     // keys at the JSX layer to keep mapRunToEntry shape-agnostic.
     resultData: run.result_data ?? null,
+    // #49 — raw ISO for Quick Stats histogram bucketing.
+    executedAt: run.executed_at ?? null,
   };
 }
 
@@ -246,16 +256,112 @@ const RESULT_BADGES: Record<string, { label: string; class: string; Icon: React.
 
 const RESULT_FILTERS: ResultFilter[] = ["All", "Success", "Failed", "Skipped"];
 
+// Continuation #117 (2026-05-14) — Phase α Layer 1 (Automation Explainability)
+// per `specs/automation-explainability.md`. Trigger-source filter is a
+// pure client-side filter over the `entry.resultData.trigger_source` key
+// already populated by the executor (action-executor.ts:526-540 + #103).
+// "All" reads everything (default — zero behavior change for users who
+// don't click). "Auto-fire" / "Manual rule fire" filter on the JSONB value.
+// Continuation #122 (2026-05-14) — Phase Ω label alignment with the
+// timeline page (`/automation/timeline`) so the same trigger_source value
+// renders with the same operator-facing label across all surfaces.
+type TriggerSourceFilter = "all" | "auto_fire" | "manual_rule_fire";
+const TRIGGER_SOURCE_FILTERS: Array<{ value: TriggerSourceFilter; label: string }> = [
+  { value: "all",              label: "All triggers" },
+  { value: "auto_fire",        label: "Auto-fire" },
+  { value: "manual_rule_fire", label: "Manual rule fire" },
+];
+
 export default function DecisionHistoryPage() {
   const { getToken } = useAuth();
 
   const [entries,    setEntries]    = useState<HistoryEntry[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [loadError,  setLoadError]  = useState<string | null>(null);
+  // Continuation #73 (2026-05-12) — surface backend `total` so operators
+  // see when more runs exist beyond the loaded page. Pre-fix Quick Stats
+  // showed `entries.length` (limited to 50 by MAX_LIMIT) misrepresenting
+  // it as the org's full count when 100+ runs may exist.
+  const [totalRunsBackend, setTotalRunsBackend] = useState<number>(0);
 
   const [resultFilter, setResultFilter] = useState<ResultFilter>("All");
+  // Continuation #117 — trigger_source filter (Layer 1). Default "all" =
+  // current behavior; flipping to auto/manual narrows the visible runs.
+  const [triggerSourceFilter, setTriggerSourceFilter] = useState<TriggerSourceFilter>("all");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Continuation #45 (2026-05-12) — server-side rule_id filter. Reads
+  // `?rule_id=<UUID>` from the URL on mount and passes it as a backend
+  // query param (`/automation/runs?rule_id=...`), validated server-side
+  // against UUID_LIKE per automation.ts:392. Enables operator drill-down
+  // from rule cards on `/actions/automation` to a rule-filtered history
+  // view — coherent cockpit chain (success target item #1). UUID
+  // validated client-side before sending to avoid a 400 round-trip.
+  const UUID_LIKE_RE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+  const initialRuleId = typeof window !== "undefined"
+    ? (() => {
+        const v = new URLSearchParams(window.location.search).get("rule_id");
+        return v && UUID_LIKE_RE.test(v) ? v : null;
+      })()
+    : null;
+  const [ruleFilter, setRuleFilter] = useState<string | null>(initialRuleId);
+
+  function clearRuleFilter() {
+    setRuleFilter(null);
+    if (typeof window !== "undefined") {
+      window.history.replaceState({}, "", "/automation/history");
+    }
+  }
+
+  // Continuation #47 — extracted fetch into a reusable callback so the
+  // header refresh button can re-fire it without re-triggering useEffect
+  // dependency churn. `cancelled` flag preserved in useEffect for unmount
+  // races; refresh button just re-calls fetchRuns() without one.
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Continuation #91 (2026-05-12) — data-freshness indicator mirroring
+  // the #90 pattern from dashboard/overview. Especially important on
+  // the history page since it's the CLAUDE.md §9 "system memory" surface;
+  // operators need to know if displayed runs are current or stale.
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  function relUpdated(): string {
+    if (lastUpdatedAt === null) return "—";
+    const ms = nowTick - lastUpdatedAt;
+    if (ms < 60_000) return "just now";
+    const m = Math.floor(ms / 60_000);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  }
+
+  async function fetchRuns() {
+    setRefreshing(true);
+    setLoadError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      const query = ruleFilter ? `?rule_id=${encodeURIComponent(ruleFilter)}` : "";
+      const data = await apiClient<{ runs: ApiAutomationRun[]; total: number }>(
+        `/api/v1/automation/runs${query}`,
+        token,
+      );
+      setEntries(data.runs.map(mapRunToEntry));
+      setTotalRunsBackend(data.total);
+      setLastUpdatedAt(Date.now());
+    } catch (err) {
+      // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
+      setLoadError(formatErrorMessage(err, "Failed to load automation history"));
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -265,12 +371,15 @@ export default function DecisionHistoryPage() {
       try {
         const token = await getToken();
         if (!token) throw new ApiError(401, "Sign in required");
+        const query = ruleFilter ? `?rule_id=${encodeURIComponent(ruleFilter)}` : "";
         const data = await apiClient<{ runs: ApiAutomationRun[]; total: number }>(
-          "/api/v1/automation/runs",
+          `/api/v1/automation/runs${query}`,
           token,
         );
         if (!cancelled) {
           setEntries(data.runs.map(mapRunToEntry));
+          setTotalRunsBackend(data.total);
+          setLastUpdatedAt(Date.now());
         }
       } catch (err) {
         if (!cancelled) {
@@ -282,7 +391,7 @@ export default function DecisionHistoryPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [getToken]);
+  }, [getToken, ruleFilter]);
 
   function toggleExpand(id: string) {
     setExpanded((prev) => {
@@ -295,8 +404,43 @@ export default function DecisionHistoryPage() {
   const filtered = entries.filter((h) => {
     if (resultFilter !== "All" && h.result !== resultFilter) return false;
     if (search && !h.decision.toLowerCase().includes(search.toLowerCase())) return false;
+    // Continuation #117 — trigger_source narrowing. Reads from the JSONB
+    // primitive key already in the row (#39 renderer respected). Manual
+    // /actions/:id/execute runs (`executed_by='manual'`) skip the
+    // automation engine, so they carry no trigger_source key → hidden
+    // when filtering by auto/manual (correct: they're a separate path).
+    if (triggerSourceFilter !== "all") {
+      const ts = h.resultData?.trigger_source;
+      if (ts !== triggerSourceFilter) return false;
+    }
     return true;
   });
+
+  // Continuation #49 — Quick Stats derived from loaded entries. Replaces
+  // the prior fabricated "+12.4% Efficiency / 18h/wk Time Saved" mock
+  // numbers with honest counts. Trend bar chart buckets entries by day
+  // for the last 12 days; bar heights normalized to the busiest bucket.
+  const totalRuns = entries.length;
+  const successCountStats = entries.filter((e) => e.result === "Success").length;
+  const successRateStatsPct = totalRuns === 0
+    ? 0
+    : Math.round((successCountStats / totalRuns) * 100);
+  const trendBuckets = (() => {
+    const buckets = new Array(12).fill(0);
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    for (const e of entries) {
+      if (!e.executedAt) continue;
+      const t = new Date(e.executedAt).getTime();
+      if (Number.isNaN(t)) continue;
+      const daysAgo = Math.floor((now - t) / DAY);
+      if (daysAgo < 0 || daysAgo > 11) continue;
+      // bucket 0 = oldest (11 days ago), bucket 11 = today
+      buckets[11 - daysAgo] += 1;
+    }
+    return buckets;
+  })();
+  const maxBucket = Math.max(1, ...trendBuckets);
 
   // Active entry powers the right-aside AI Decision Insights panel:
   //   - Confidence Score bar (wired #34)
@@ -320,11 +464,56 @@ export default function DecisionHistoryPage() {
           </h1>
           <p className="text-muted-foreground font-body">Full memory — every decision, trigger, data snapshot, and outcome</p>
         </div>
-        <button className="inline-flex items-center gap-2 bg-surface-container-high text-foreground px-6 py-2.5 rounded-full font-bold text-sm hover:bg-surface-container-highest transition-all font-body self-start md:self-auto">
-          <Download size={15} />
-          Export Log
-        </button>
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          {lastUpdatedAt !== null && (
+            <span className="text-[11px] text-muted-foreground font-body">
+              Updated <span className="font-bold text-foreground">{relUpdated()}</span>
+            </span>
+          )}
+          <button
+            onClick={() => void fetchRuns()}
+            disabled={refreshing || loading}
+            title="Refresh — fetch latest runs"
+            className="inline-flex items-center gap-2 bg-surface-container-high text-foreground px-4 py-2.5 rounded-full font-bold text-sm hover:bg-surface-container-highest transition-all font-body disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+          <button
+            disabled
+            title="Export pending"
+            className="inline-flex items-center gap-2 bg-surface-container-high text-muted-foreground px-6 py-2.5 rounded-full font-bold text-sm font-body opacity-50 cursor-not-allowed"
+          >
+            <Download size={15} />
+            Export Log
+          </button>
+        </div>
       </div>
+
+      {/* Continuation #45 — server-side rule filter chip. Continuation #47
+          polishes the chip to surface the rule's friendly name when entries
+          are loaded: `decision` field on HistoryEntry already carries the
+          joined automation_rules.name (mapRunToEntry line 131), so when all
+          filtered rows share a rule_id they share a name — pluck from
+          entries[0]. Falls back to UUID prefix when no rows match yet. */}
+      {ruleFilter && (
+        <div className="bg-primary/5 border border-primary/20 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 text-sm font-body">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-primary">Filtered</span>
+            <span className="text-foreground font-medium truncate">
+              {entries[0]?.decision
+                ? <>Showing runs for <span className="font-bold">{entries[0].decision}</span></>
+                : <>Showing runs for rule <span className="font-mono text-xs">{ruleFilter.slice(0, 8)}…</span></>}
+            </span>
+          </div>
+          <button
+            onClick={clearRuleFilter}
+            className="text-xs font-bold text-primary hover:underline shrink-0"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="bg-surface-container-low rounded-2xl p-4 flex flex-wrap items-center gap-4">
@@ -353,6 +542,37 @@ export default function DecisionHistoryPage() {
               }`}
             >
               {f}
+            </button>
+          ))}
+        </div>
+
+        {/* Continuation #117 — trigger_source filter (Layer 1).
+            Renders alongside the existing Result filter so operators can
+            independently narrow by outcome AND by trigger source. */}
+        <div className="h-5 w-px bg-border" />
+        <div className="flex gap-2">
+          {TRIGGER_SOURCE_FILTERS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setTriggerSourceFilter(opt.value)}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all font-body ${
+                triggerSourceFilter === opt.value
+                  ? opt.value === "auto_fire"
+                    ? "bg-violet-600 text-white"
+                    : opt.value === "manual_rule_fire"
+                      ? "bg-slate-700 text-white"
+                      : "bg-foreground text-white"
+                  : "bg-surface-container-high text-foreground hover:bg-surface-container-highest"
+              }`}
+              title={
+                opt.value === "auto_fire"
+                  ? "Runs triggered automatically by the AI-decision stream"
+                  : opt.value === "manual_rule_fire"
+                    ? "Runs fired by an operator via the manual rule-execute path"
+                    : "All runs regardless of trigger source"
+              }
+            >
+              {opt.label}
             </button>
           ))}
         </div>
@@ -410,6 +630,37 @@ export default function DecisionHistoryPage() {
                           <badge.Icon size={12} />
                           {badge.label}
                         </span>
+                        {/* Continuation #110 (2026-05-14) — promote the
+                            `trigger_source` audit signal (#103) from the
+                            expanded `result_data` key-value list to a
+                            distinct collapsed-row chip beside the Result
+                            badge. Operators can now scan history at a
+                            glance to see which executions were AI-driven
+                            auto-fires vs operator-approved manual rule
+                            fires. Reads from `resultData.trigger_source`
+                            which the action-executor populates on every
+                            run (success + failure paths). Renders only
+                            when present (manual non-rule action runs from
+                            /actions/:id/execute won't have it). */}
+                        {(() => {
+                          const ts = entry.resultData?.trigger_source;
+                          if (ts !== "auto_fire" && ts !== "manual_rule_fire") return null;
+                          const isAuto = ts === "auto_fire";
+                          return (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-body uppercase tracking-wider ${
+                                isAuto
+                                  ? "bg-violet-100 text-violet-700"
+                                  : "bg-slate-100 text-slate-700"
+                              }`}
+                              title={isAuto
+                                ? "Fired automatically by the AI-decision stream"
+                                : "Fired by an operator via the manual rule-execute path"}
+                            >
+                              {isAuto ? "Auto-fire" : "Manual rule fire"}
+                            </span>
+                          );
+                        })()}
                         <button
                           onClick={() => toggleExpand(entry.id)}
                           className="text-muted-foreground hover:text-primary transition-colors"
@@ -598,11 +849,22 @@ export default function DecisionHistoryPage() {
                   )}
                 </div>
 
-                <div className="bg-primary/20 p-4 rounded-xl border border-primary/30">
+                {/* Growth Suggestion — explicitly MOCKED-DEFERRED per the
+                    page header comment ("no per-run recommendation
+                    endpoint; AI Output Contract is reasoning, not
+                    prescriptive next-action"). Continuation #89
+                    (2026-05-12) — added Sample marker + opacity-70 +
+                    disabled the Apply Adjustment button (no recommendation
+                    apply endpoint). Matches the cockpit Sample-marker
+                    pattern from #76/#78/#79/#80/#81. */}
+                <div className="bg-primary/20 p-4 rounded-xl border border-primary/30 opacity-70">
                   <div className="flex items-start gap-3">
                     <Lightbulb size={16} className="text-blue-200 shrink-0 mt-0.5" />
                     <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-white uppercase font-body">Growth Suggestion</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] font-bold text-white uppercase font-body">Growth Suggestion</p>
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-body">Sample</span>
+                      </div>
                       <p className="text-sm text-slate-200 font-body">
                         Lower threshold to{" "}
                         <span className="text-white font-bold">2.5</span>{" "}
@@ -610,7 +872,11 @@ export default function DecisionHistoryPage() {
                       </p>
                     </div>
                   </div>
-                  <button className="w-full mt-4 bg-white text-foreground py-2 rounded-xl font-bold text-xs hover:bg-blue-50 transition-colors font-body active:scale-95">
+                  <button
+                    disabled
+                    title="Recommendation apply pipeline pending"
+                    className="w-full mt-4 bg-white/40 text-foreground/60 py-2 rounded-xl font-bold text-xs font-body cursor-not-allowed"
+                  >
                     Apply Adjustment
                   </button>
                 </div>
@@ -629,27 +895,48 @@ export default function DecisionHistoryPage() {
             </div>
           </div>
 
-          {/* Quick Stats */}
+          {/* Continuation #49 — Quick Stats derived from loaded entries.
+              Replaces fabricated mock numbers ("+12.4% Efficiency",
+              "18h/wk Time Saved", arbitrary bar heights) with honest counts.
+              Bar chart buckets entries by day for last 12 days; heights
+              normalized to busiest bucket. Closes the explicit MOCKED-DEFERRED
+              comment at line 22-23 of the page header. */}
           <div className="bg-surface-container-high rounded-2xl p-6 space-y-4">
             <h4 className="font-bold text-sm text-foreground font-sans">Quick Stats</h4>
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white p-4 rounded-xl">
-                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body mb-1">Efficiency</p>
-                <p className="text-xl font-bold text-primary font-sans">+12.4%</p>
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body mb-1">Total Runs</p>
+                {/* Continuation #73 — backend `total` count surfaced when it
+                    exceeds the loaded page (default limit=50). Honest
+                    distinction between "what we fetched" and "what exists". */}
+                <p className="text-xl font-bold text-primary font-sans">
+                  {totalRunsBackend > totalRuns
+                    ? <>{totalRunsBackend}<span className="text-[10px] text-muted-foreground font-normal ml-1">(showing {totalRuns})</span></>
+                    : totalRuns}
+                </p>
               </div>
               <div className="bg-white p-4 rounded-xl">
-                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body mb-1">Time Saved</p>
-                <p className="text-xl font-bold text-primary font-sans">18h/wk</p>
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body mb-1">Success Rate</p>
+                <p className="text-xl font-bold text-primary font-sans">
+                  {totalRuns === 0 ? "—" : `${successRateStatsPct}%`}
+                </p>
               </div>
             </div>
-            <div className="h-24 bg-white rounded-xl flex items-end px-4 pb-3 pt-3 gap-1.5">
-              {[40, 55, 35, 70, 60, 85, 75, 90, 65, 80, 95, 88].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 bg-primary/20 rounded-t"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
+            <div>
+              <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest font-body mb-2">Last 12 Days</p>
+              <div className="h-24 bg-white rounded-xl flex items-end px-4 pb-3 pt-3 gap-1.5" title={`Busiest day: ${maxBucket} run${maxBucket === 1 ? "" : "s"}`}>
+                {trendBuckets.map((count, i) => {
+                  const pct = (count / maxBucket) * 100;
+                  return (
+                    <div
+                      key={i}
+                      className="flex-1 bg-primary/20 rounded-t"
+                      style={{ height: `${Math.max(pct, count > 0 ? 8 : 2)}%` }}
+                      title={`${count} run${count === 1 ? "" : "s"}`}
+                    />
+                  );
+                })}
+              </div>
             </div>
           </div>
 

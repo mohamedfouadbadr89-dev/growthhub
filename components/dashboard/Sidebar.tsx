@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useUser, useOrganization } from '@clerk/nextjs';
 import {
   LayoutDashboard,
   Gavel,
@@ -31,7 +32,6 @@ import {
   List,
   Plus,
   Network,
-  Link2,
   UserCircle,
   Users as UsersIcon,
   CreditCard,
@@ -41,6 +41,10 @@ import {
   Paintbrush,
   GitBranch,
   Archive as ArchiveIcon,
+  Activity as ActivityIcon,
+  Brain,
+  ShieldAlert as ShieldAlertIcon,
+  ShieldCheck as ShieldCheckIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -58,6 +62,14 @@ interface NavItem {
 }
 
 const DASHBOARD_CHILDREN: NavItem[] = [
+  // Continuation #53 (2026-05-12) — Overview entry was missing. The canonical
+  // dashboard landing page lives at /dashboard/overview (per CLAUDE.md §5
+  // routing map; Clerk `AFTER_SIGN_IN_URL` env points here per CLAUDE.md §10).
+  // Without this sidebar entry, operators had no path back to Overview from
+  // any dashboard child page; clicking the Dashboard parent header also
+  // didn't help since there is no `app/dashboard/page.tsx` root → bare
+  // `/dashboard` 404s. Placing Overview at index 0 matches the routing map.
+  { label: 'Overview', href: '/dashboard/overview', icon: LayoutDashboard },
   { label: 'Channels', href: '/dashboard/channels', icon: BarChart3 },
   { label: 'Creative', href: '/dashboard/creative', icon: Palette },
   { label: 'Attribution', href: '/dashboard/attribution', icon: Layers },
@@ -68,10 +80,30 @@ const DASHBOARD_CHILDREN: NavItem[] = [
 ];
 
 const AUTOMATION_CHILDREN: NavItem[] = [
-  { label: 'Decision Center', href: '/automation',            icon: Cpu },
+  // Continuation #54 (2026-05-12) — Decision Center link points to the
+  // canonical destination directly instead of `/automation` (which then
+  // redirects to /dashboard/automation/decision-center). Pre-fix: the
+  // pathname-based active-state highlight in NavGroup never lit up since
+  // the sidebar's href stayed at `/automation` but the resolved pathname
+  // after redirect was the deeper path. Operator-facing navigation
+  // coherence (priority #8).
+  // Continuation #122 (2026-05-14) — Phase Ω: relabel to make the
+  // governance-deferred state operator-visible. The canonical AI
+  // operator surface lives at `/operator/ai` (Phase β); this link is
+  // preserved for the Phase 6 unlock path.
+  { label: 'Decision Center (preview)', href: '/dashboard/automation/decision-center', icon: Cpu },
   { label: 'Builder',         href: '/automation/builder',    icon: GitBranch },
   { label: 'Strategies',      href: '/automation/strategies', icon: Lightbulb },
   { label: 'History',         href: '/automation/history',    icon: ScrollText },
+  // Continuation #118 (2026-05-14) — Phase α Layer 6 (Execution Timeline)
+  // per `specs/execution-timeline.md`. Interleaved chronological view of
+  // automation_runs + decision_history. FE-only; no new endpoints.
+  { label: 'Timeline',        href: '/automation/timeline',   icon: ActivityIcon },
+  // Continuation #120 (2026-05-14) — Phase γ Layer 7 (Approval Intelligence)
+  // per `specs/approval-intelligence.md`. Operator queue of auto-fire
+  // blocked rule attempts; reads /automation/runs?status=skipped which
+  // the new automation-engine.ts persistence path populates.
+  { label: 'Approvals',       href: '/automation/approvals',  icon: ShieldAlertIcon },
 ];
 
 const ACTIONS_CHILDREN: NavItem[] = [
@@ -96,7 +128,13 @@ const SETTINGS_CHILDREN: NavItem[] = [
 
 const INTEGRATIONS_CHILDREN: NavItem[] = [
   { label: 'All Integrations', href: '/integrations',         icon: Network },
-  { label: 'Connect',          href: '/integrations/connect', icon: Link2 },
+  // Continuation #109 (2026-05-14) — removed "Connect" sub-nav. The route
+  // it pointed at (`/integrations/connect`) was a mock-shell catalog with
+  // hardcoded unsupported platforms; the page is now a redirect to
+  // `/integrations` (which already exposes the real per-provider Connect
+  // CTAs). Sidebar shortcut becomes a redirect no-op + a duplicate concept
+  // — removing it cleans up operator nav and matches the canonical
+  // single-source-of-truth pattern.
 ];
 
 const CAMPAIGNS_CHILDREN: NavItem[] = [
@@ -116,6 +154,17 @@ const DECISIONS_CHILDREN: NavItem[] = [
   { label: 'Audience',        href: '/decisions/audience',         icon: UserCheck },
 ];
 
+// Continuation #119 (2026-05-14) — Phase β AI Operator Center entry per
+// `specs/ai-operator-center.md`. Single top-level link (no submenu —
+// the page itself has tabs). Read-only operator surface over
+// `ai_decisions` + `ai_logs`.
+const OPERATOR_AI_ITEM: NavItem = { label: 'AI Operator', href: '/operator/ai', icon: Brain };
+
+// Continuation #121 (2026-05-14) — Phase δ Governance Dashboard entry per
+// `specs/governance-dashboard.md`. Read-only observability over the
+// EXISTING governance architecture. No mutation paths.
+const GOVERNANCE_ITEM: NavItem = { label: 'Governance', href: '/governance', icon: ShieldCheckIcon };
+
 const NAV_STRUCTURE: NavItem[] = [
   {
     label: 'Dashboard',
@@ -129,7 +178,8 @@ const NAV_STRUCTURE: NavItem[] = [
   },
   { label: 'Actions', icon: MousePointer2, children: ACTIONS_CHILDREN },
   { label: 'Automation', icon: Cpu, children: AUTOMATION_CHILDREN },
-
+  OPERATOR_AI_ITEM,
+  GOVERNANCE_ITEM,
   { label: 'Creatives', icon: Palette, children: CREATIVES_CHILDREN },
   { label: 'Campaigns', icon: Flag, children: CAMPAIGNS_CHILDREN },
   { label: 'Integrations', icon: Puzzle, children: INTEGRATIONS_CHILDREN },
@@ -224,6 +274,34 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
 
+  // Continuation #52 (2026-05-12) — wire bottom user pill to real Clerk user.
+  // Replaces hardcoded "Alex Sterling / Director" with actual signed-in
+  // identity. AuthSection (Topbar) already uses Clerk's `<UserButton>` —
+  // having the Sidebar pill show a fake user was an operator-honesty bug.
+  // useUser/useOrganization are safe inside the dashboard layout (auth
+  // middleware protects all dashboard routes, so by the time Sidebar mounts
+  // we have a session). Loading fallback shows initials placeholder; the
+  // pill renders inert (no click handler) — actual user management lives
+  // in the Topbar UserButton.
+  const { user, isLoaded: userLoaded } = useUser();
+  const { organization } = useOrganization();
+  const displayName =
+    user?.fullName ||
+    user?.firstName ||
+    user?.primaryEmailAddress?.emailAddress ||
+    (userLoaded ? "Operator" : "…");
+  const initials = (() => {
+    if (!user) return "—";
+    const first = user.firstName?.[0] ?? "";
+    const last  = user.lastName?.[0] ?? "";
+    if (first || last) return (first + last).toUpperCase() || "—";
+    const email = user.primaryEmailAddress?.emailAddress ?? "";
+    return email[0]?.toUpperCase() ?? "—";
+  })();
+  // Organization name as the subtitle slot (replaces the fabricated "Director"
+  // role). Empty when no org membership; falls back to "—".
+  const subtitle = organization?.name?.toUpperCase() || "—";
+
   return (
     <aside
       className={cn(
@@ -238,12 +316,16 @@ export function Sidebar({
              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-xl shadow-primary/20">
                 <Box className="w-6 h-6" strokeWidth={2} />
              </div>
+             {/* Continuation #52 — brand label aligned with CLAUDE.md §1
+                 product name ("GrowthHub — AI-powered Growth Operating
+                 System"). The prior "Precision / Curator" label was Stitch
+                 template residue. */}
              <div className="flex flex-col">
                 <span className="font-extrabold text-[18px] tracking-tighter text-foreground leading-none font-sans uppercase">
-                  Precision
+                  GrowthHub
                 </span>
                 <span className="text-[10px] text-primary/60 font-black uppercase tracking-[0.2em] leading-none mt-1 font-body">
-                  Curator
+                  Growth OS
                 </span>
              </div>
           </div>
@@ -263,20 +345,25 @@ export function Sidebar({
         ))}
       </div>
 
+      {/* Continuation #52 — bottom pill now reflects the real Clerk user
+          (name + org). Was hardcoded "Alex Sterling / Director" Stitch
+          mock. AuthSection in Topbar still owns the interactive
+          account/menu surface via Clerk's <UserButton>; this pill is
+          inert/decorative. */}
       <div className="p-6 mt-auto border-t border-border bg-primary/[0.02]">
         {!collapsed ? (
-          <div className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-border hover:border-primary/20 transition-all cursor-pointer group shadow-sm">
+          <div className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-border shadow-sm">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-[12px] font-black">
-               AS
+               {initials}
             </div>
             <div className="flex flex-col flex-1 overflow-hidden">
-               <span className="text-[13px] font-bold text-foreground truncate font-sans">Alex Sterling</span>
-               <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest truncate font-body">Director</span>
+               <span className="text-[13px] font-bold text-foreground truncate font-sans">{displayName}</span>
+               <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest truncate font-body">{subtitle}</span>
             </div>
           </div>
         ) : (
           <div className="w-10 h-10 rounded-lg bg-white border border-border flex items-center justify-center text-primary text-[12px] font-black mx-auto">
-             AS
+             {initials}
           </div>
         )}
       </div>

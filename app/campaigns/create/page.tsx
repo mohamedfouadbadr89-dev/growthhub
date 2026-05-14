@@ -11,10 +11,18 @@ import {
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client"
 
 // Phase 6 Sub-pass B (continuation #13, 2026-05-08): wires "Save Draft" to
-// `POST /api/v1/campaigns` (canonical envelope). "Launch" remains UNWIRED —
-// real-mode Meta/Google CREATE handlers are deferred to Sub-pass C, and
-// firing the simulated-only handler from a "Launch" button would mislead
-// users about whether a real platform campaign was created.
+// `POST /api/v1/campaigns` (canonical envelope).
+//
+// Continuation #58 (2026-05-12) — operator-honesty pass applied here. The
+// in-page "Launch Campaign" footer button used a setTimeout fake-success
+// simulator (matched the pattern from #55/#56/#57). Even though Phase 6
+// Sub-pass C closed the real-mode CREATE handlers (continuation #20), the
+// proper Launch workflow is: Save Draft → routed to detail page → Push
+// (handlePush at /campaigns/[id]/page.tsx wires `POST /:id/push`). A
+// duplicate fake "Launch Campaign" affordance on the create page misled
+// operators about whether a real push had occurred. Replaced with
+// disabled-placeholder + tooltip pointing to the proper flow. Same fate
+// for the "Apply AI Boost" button (no preview-estimation endpoint exists).
 //
 // Sections that remain UI-state only (deferred):
 //   - Objective selector       → no `campaigns.objective` column in spec
@@ -74,13 +82,14 @@ export default function CreateCampaignPage() {
   const [interests, setInterests] = useState("Fashion, Lifestyle, Online Shopping")
   const [selectedCreative, setSelectedCreative] = useState(0)
   const [biddingStrategy, setBiddingStrategy] = useState<BiddingStrategy>("auto")
-  const [launching, setLaunching] = useState(false)
-  const [launched, setLaunched] = useState(false)
+  // launching/launched + applyingBoost/boostApplied state removed at #58 —
+  // the duplicate "Launch Campaign" footer button and the "Apply AI Boost"
+  // sidebar button both used setTimeout fake-success simulators. Replaced
+  // with disabled-placeholders; proper Launch flow is Save Draft →
+  // /campaigns/[id] → handlePush (already wired in Phase 6 Sub-pass C).
   const [savingDraft, setSavingDraft] = useState(false)
   const [draftSaved, setDraftSaved] = useState(false)
   const [draftError, setDraftError] = useState<string | null>(null)
-  const [applyingBoost, setApplyingBoost] = useState(false)
-  const [boostApplied, setBoostApplied] = useState(false)
 
   const togglePlatform = (p: Platform) =>
     setPlatforms(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n })
@@ -94,11 +103,8 @@ export default function CreateCampaignPage() {
 
   const removeLocation = (loc: string) => setLocations(prev => prev.filter(l => l !== loc))
 
-  const handleLaunch = () => {
-    if (launched) return
-    setLaunching(true)
-    setTimeout(() => { setLaunching(false); setLaunched(true) }, 1400)
-  }
+  // handleLaunch removed at #58 — fake setTimeout simulator deleted with
+  // the disabled-placeholder UI swap.
 
   async function handleSaveDraft() {
     if (savingDraft || draftSaved) return
@@ -161,11 +167,8 @@ export default function CreateCampaignPage() {
     }
   }
 
-  const handleApplyBoost = () => {
-    if (boostApplied) return
-    setApplyingBoost(true)
-    setTimeout(() => { setApplyingBoost(false); setBoostApplied(true) }, 1200)
-  }
+  // handleApplyBoost removed at #58 — fake setTimeout simulator deleted
+  // with the disabled-placeholder UI swap.
 
   const estReach = platforms.size * 18 + budgetAmount * 0.6
   const estCPA = biddingStrategy === "auto" ? 4.2 : 5.8
@@ -241,16 +244,32 @@ export default function CreateCampaignPage() {
             {/* Step 2 — Platforms */}
             <div className="bg-white rounded-2xl border border-border p-6">
               <StepHeader num={2} label="Platform Selection" />
+              {/* Continuation #71 (2026-05-12) — proactive "Soon" badge on
+                  forward-compat platforms (TikTok / Snapchat). Backend
+                  VALID_PLATFORMS = ['meta', 'google'] per campaigns.ts:97;
+                  the page already returns a friendly error post-save if only
+                  unsupported platforms are selected (line 122-125), but that
+                  surfaces the constraint AFTER operators commit a flow. The
+                  Soon badge surfaces the constraint upfront. Box still
+                  toggleable (forward-compat preserved). */}
               <div className="grid grid-cols-2 gap-3">
-                {ALL_PLATFORMS.map(p => (
-                  <label key={p} className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${platforms.has(p) ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${platforms.has(p) ? "border-primary bg-primary" : "border-border"}`}>
-                      {platforms.has(p) && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <input type="checkbox" className="sr-only" checked={platforms.has(p)} onChange={() => togglePlatform(p)} />
-                    <span className="font-body text-sm font-medium text-foreground">{p}</span>
-                  </label>
-                ))}
+                {ALL_PLATFORMS.map(p => {
+                  const isSupported = p === "Meta" || p === "Google";
+                  return (
+                    <label key={p} className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${platforms.has(p) ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${platforms.has(p) ? "border-primary bg-primary" : "border-border"}`}>
+                        {platforms.has(p) && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <input type="checkbox" className="sr-only" checked={platforms.has(p)} onChange={() => togglePlatform(p)} />
+                      <span className="font-body text-sm font-medium text-foreground">{p}</span>
+                      {!isSupported && (
+                        <span className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-body">
+                          Soon
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
             </div>
 
@@ -326,10 +345,20 @@ export default function CreateCampaignPage() {
               </div>
             </div>
 
-            {/* Step 5 — Creatives */}
+            {/* Step 5 — Creatives. Continuation #83 (2026-05-12) — the
+                creative tiles are hardcoded gradient placeholders with
+                copy-only labels ("Summer Flash Sale" etc.); selected
+                value isn't included in handleSaveDraft targeting payload
+                (cross-Phase-5 surface deferred per page header comment).
+                Sample marker added on Step header + opacity-70 wrapper +
+                "Generate New AI Creative" CTA disabled (no creative
+                generation flow wired from this entry point). */}
             <div className="bg-white rounded-2xl border border-border p-6">
-              <StepHeader num={5} label="Creative Selection" />
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="flex items-center gap-2 mb-4">
+                <StepHeader num={5} label="Creative Selection" />
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-body ml-auto">Sample</span>
+              </div>
+              <div className="grid grid-cols-3 gap-3 mb-4 opacity-70">
                 {CREATIVE_GRADIENTS.map((grad, i) => (
                   <button
                     key={i}
@@ -348,7 +377,11 @@ export default function CreateCampaignPage() {
                   </button>
                 ))}
               </div>
-              <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-primary/40 text-primary text-sm font-medium hover:bg-primary/5 transition-colors w-full justify-center">
+              <button
+                disabled
+                title="Creative generation from campaign-create flow pending — use /creatives generator directly"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-border text-muted-foreground text-sm font-medium w-full justify-center opacity-50 cursor-not-allowed"
+              >
                 <Sparkles className="w-4 h-4" />
                 Generate New AI Creative
               </button>
@@ -452,18 +485,14 @@ export default function CreateCampaignPage() {
                   ? "Your auto-bid setup looks strong. Consider adding TikTok for +22% reach at minimal CPA increase."
                   : "Manual bidding detected. Switch to Auto-Optimized to save ~18% on CPA while maintaining ROAS targets."}
               </p>
+              {/* Continuation #58 — AI Boost button had no backend; the
+                  preview-estimation pipeline isn't in any current phase. */}
               <button
-                onClick={handleApplyBoost}
-                disabled={applyingBoost || boostApplied}
-                className="w-full py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
+                disabled
+                title="AI Boost pipeline pending"
+                className="w-full py-2 rounded-lg bg-white/10 text-white/60 text-xs font-medium flex items-center justify-center gap-2 cursor-not-allowed"
               >
-                {applyingBoost ? (
-                  <><span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /><span>Applying…</span></>
-                ) : boostApplied ? (
-                  <><Check className="w-3 h-3" /><span>Applied!</span></>
-                ) : (
-                  <><Zap className="w-3 h-3" /><span>Apply AI Boost</span></>
-                )}
+                <Zap className="w-3 h-3" /><span>Apply AI Boost</span>
               </button>
             </div>
 
@@ -504,30 +533,49 @@ export default function CreateCampaignPage() {
           </div>
         )}
         <div className="flex-1" />
+        {/* Continuation #72 (2026-05-12) — proactive client-side validation
+            on Save Draft. Pre-fix the button was always clickable; operators
+            with an empty campaign name or only TikTok/Snapchat selected
+            saw the canonical error only AFTER clicking. Now the predicate
+            disables the button upfront with explanatory tooltip. The server-
+            side validation in handleSaveDraft remains as the authoritative
+            gate (defense-in-depth — never trust client). */}
+        {(() => {
+          const hasName = campaignName.trim().length > 0;
+          const hasSupportedPlatform = platforms.has("Meta") || platforms.has("Google");
+          const canSave = hasName && hasSupportedPlatform;
+          const tooltip = !hasName
+            ? "Enter a campaign name first"
+            : !hasSupportedPlatform
+              ? "Select Meta or Google as a platform"
+              : "Save campaign as draft";
+          return (
+            <button
+              onClick={handleSaveDraft}
+              disabled={savingDraft || !canSave}
+              title={tooltip}
+              className="px-5 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-surface-container-low transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {savingDraft ? (
+                <><span className="w-3.5 h-3.5 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" /><span>Saving…</span></>
+              ) : draftSaved ? (
+                <><Check className="w-3.5 h-3.5 text-emerald-500" /><span>Draft Saved</span></>
+              ) : "Save Draft"}
+            </button>
+          );
+        })()}
+        {/* Continuation #58 — Launch Campaign button removed from fake-action
+            state and disabled. Proper Launch flow: Save Draft → routed to
+            /campaigns/[id] detail page → handlePush (already wired in
+            Phase 6 Sub-pass C, continuation #20). Surfacing a duplicate
+            Launch affordance here would mislead operators about whether a
+            real platform push has occurred. */}
         <button
-          onClick={handleSaveDraft}
-          disabled={savingDraft}
-          className="px-5 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-surface-container-low transition-colors flex items-center gap-2 disabled:opacity-60"
+          disabled
+          title="Save Draft first, then Launch from the campaign detail page"
+          className="px-6 py-2 rounded-lg text-sm font-semibold text-muted-foreground bg-surface-container-high flex items-center gap-2 opacity-50 cursor-not-allowed"
         >
-          {savingDraft ? (
-            <><span className="w-3.5 h-3.5 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" /><span>Saving…</span></>
-          ) : draftSaved ? (
-            <><Check className="w-3.5 h-3.5 text-emerald-500" /><span>Draft Saved</span></>
-          ) : "Save Draft"}
-        </button>
-        <button
-          onClick={handleLaunch}
-          disabled={launching || launched}
-          className="px-6 py-2 rounded-lg text-sm font-semibold text-white flex items-center gap-2 transition-all disabled:opacity-70"
-          style={{ background: launched ? "#059669" : "linear-gradient(135deg,#005bc4,#3b82f6)" }}
-        >
-          {launching ? (
-            <><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /><span>Launching…</span></>
-          ) : launched ? (
-            <><Check className="w-3.5 h-3.5" /><span>Launched!</span></>
-          ) : (
-            <><Zap className="w-3.5 h-3.5" /><span>Launch Campaign</span></>
-          )}
+          <Zap className="w-3.5 h-3.5" /><span>Launch Campaign</span>
         </button>
       </div>
     </div>

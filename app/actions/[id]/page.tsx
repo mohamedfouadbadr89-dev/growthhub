@@ -1,445 +1,526 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, Zap, PlusCircle, DollarSign, TrendingUp, Play, Calendar, RefreshCw, ShieldCheck, CheckCircle } from "lucide-react";
+// Continuation #116 (2026-05-14) — Phase α Layer 4 (Action Catalog FE Wiring)
+// per `specs/action-catalog-fe.md`. Replaces the prior 445-line Stitch
+// mock detail page ("Scale ROAS Outliers" mock-action with fabricated
+// platform targets, scope items, simulation, exec steps) with a real
+// catalog-detail + parameter_schema-derived execute form wired to the
+// canonical execution pipeline.
+//
+// Reuses:
+//   - GET /api/v1/actions/:id              (template detail)
+//   - POST /api/v1/actions/:id/execute     (canonical executor pipeline:
+//                                            idempotency, rate limit,
+//                                            LIVE flag gate, audit write)
+//   - actions_library.parameter_schema     (form derivation; existing shape
+//                                            { fields: [{name, type, required, label}] })
+//   - crypto.randomUUID()                  (client-side execution_id mint)
+//   - decision_history.id                  (returned by executor — operator
+//                                            click-through to /actions/logs)
+//   - canonical envelope error.code        (formatErrorMessage on failure)
+//
+// NO backend modification. NO schema change. Backend remains the single
+// authority on idempotency, rate limit, audit, and LIVE flag gating.
+
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
+import {
+  ArrowLeft, Zap, ShieldAlert, AlertCircle, CheckCircle2, XCircle,
+  SkipForward, RefreshCw, Copy, Info,
+} from "lucide-react";
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
-type ExecMode = "run_now" | "schedule" | "continuous";
-type ScopeTab = "campaigns" | "adsets" | "keywords";
+// Continuation #122 (2026-05-14) — Phase Ω stabilization. The prior
+// FE-side approval mirror Set has been removed; `GET /api/v1/actions/:id`
+// now returns server-computed `requires_approval`. Single source of
+// truth = `automation-engine.ts:actionRequiresApproval`.
 
-interface Condition {
-  code: string;
-  tag: string;
-  tagClass: string;
-}
-
-interface PlatformTarget {
-  label: string;
-  dot: string;
-  entities: number;
-  selected: boolean;
-}
-
-interface ExecStep {
-  icon: React.ReactNode;
-  iconBg: string;
-  title: string;
-  badge: string;
-  badgeClass: string;
-  desc: string;
-  pills: string[];
-}
-
-interface ScopeItem {
+interface ApiActionTemplate {
+  id: string;
+  platform: string;
+  action_type: string;
   name: string;
-  roas: string;
+  description: string | null;
+  parameter_schema: ParameterSchema | null;
+  created_at: string;
+  // Server-computed via `actionRequiresApproval()` (#122). Defaults to
+  // `false` defensively at the render site if a legacy response shape
+  // arrives without the field.
+  requires_approval?: boolean;
 }
 
-const MOCK_ACTION = {
-  title: "Scale ROAS Outliers",
-  status: "Active",
-  conditions: [
-    { code: "ROAS > account_avg × dynamic_multiplier", tag: "METRIC", tagClass: "bg-blue-100 text-blue-700" },
-    { code: "Spend > adaptive_threshold",              tag: "BUDGET", tagClass: "bg-blue-100 text-blue-700" },
-  ] as Condition[],
-  platforms: [
-    { label: "Meta Ads",    dot: "#1877F2", entities: 142, selected: true  },
-    { label: "Google Ads",  dot: "#4285F4", entities: 86,  selected: false },
-    { label: "TikTok Ads",  dot: "#FE2C55", entities: 54,  selected: false },
-    { label: "Snapchat",    dot: "#FFFC00", entities: 12,  selected: false },
-  ] as PlatformTarget[],
-  scopeItems: {
-    campaigns: [
-      { name: "Summer_Scale_2024",   roas: "8.4x ROAS" },
-      { name: "Retargeting_LTV_High",roas: "6.2x ROAS" },
-      { name: "Lookalike_1pct_US",   roas: "5.7x ROAS" },
-      { name: "PMax_Brand_Core",     roas: "4.9x ROAS" },
-    ] as ScopeItem[],
-    adsets: [
-      { name: "US_High_Intent_18-34",  roas: "9.1x ROAS" },
-      { name: "UK_Retargeting_30d",    roas: "7.4x ROAS" },
-      { name: "AU_Lookalike_2pct",     roas: "6.8x ROAS" },
-    ] as ScopeItem[],
-    keywords: [
-      { name: "buy running shoes online", roas: "11.2x ROAS" },
-      { name: "best athletic gear",       roas: "8.6x ROAS" },
-    ] as ScopeItem[],
-  },
-  simulation: {
-    revenueUplift: "+$12.4k",
-    costImpact:    "+$2.4k",
-    roi:           "416%",
-    confidence:    "94%",
-  },
-  riskLevel: 22,
-  riskDesc: "Learning phase reset risk if budget increases too aggressively (>30%). High probability of temporary volatility during re-optimization window.",
-  execSteps: [
-    {
-      icon: <DollarSign size={20} className="text-blue-600" />,
-      iconBg: "bg-blue-100",
-      title: "Meta Scaling Module",
-      badge: "AUTO-PILOT",
-      badgeClass: "bg-orange-100 text-orange-700",
-      desc: "Increment daily budget by 20% every 48 hours until cap is reached.",
-      pills: ["+20% Increment", "48h Window", "Cap: $5,000"],
-    },
-    {
-      icon: <TrendingUp size={20} className="text-emerald-600" />,
-      iconBg: "bg-emerald-100",
-      title: "Google Bid Adjustments",
-      badge: "SYSTEM",
-      badgeClass: "bg-surface-container-high text-muted-foreground",
-      desc: "Modify ROAS targets by +15% to capture higher value auctions.",
-      pills: ["+15% Target Shift", "Auction Depth: High"],
-    },
-  ] as ExecStep[],
-};
+interface ParameterSchemaField {
+  name: string;
+  type: "string" | "number" | "boolean" | string;
+  required?: boolean;
+  label?: string;
+  description?: string;
+}
 
-export default function ActionDetailPage() {
-  const [execMode, setExecMode] = useState<ExecMode>("run_now");
-  const [scopeTab, setScopeTab] = useState<ScopeTab>("campaigns");
-  const [platforms, setPlatforms] = useState<PlatformTarget[]>(MOCK_ACTION.platforms);
-  const [running, setRunning] = useState(false);
-  const [ran, setRan] = useState(false);
-  const [stopLoss, setStopLoss] = useState(15);
+interface ParameterSchema {
+  fields?: ParameterSchemaField[];
+  // Tolerant of additional keys (forward-compatible).
+}
 
-  function togglePlatform(idx: number) {
-    setPlatforms((prev) => prev.map((p, i) => i === idx ? { ...p, selected: !p.selected } : p));
+interface ExecuteResult {
+  history_id: string;
+  result: "success" | "failed" | "skipped";
+  result_data: Record<string, unknown> | null;
+  idempotent_replay?: true;
+}
+
+function platformDotColor(platform: string): string {
+  switch (platform.toLowerCase()) {
+    case "meta":    return "#0668E1";
+    case "google":  return "#4285F4";
+    case "shopify": return "#5E8E3E";
+    default:        return "#3d618c";
+  }
+}
+
+// Defensive parameter_schema field extraction. The catalog migration
+// (20260503130000) seeds the shape `{ fields: [...] }`; future templates
+// could add new keys, so we tolerate missing/non-array gracefully.
+function extractFields(schema: ParameterSchema | null | undefined): ParameterSchemaField[] {
+  if (!schema || typeof schema !== "object") return [];
+  const fields = (schema as ParameterSchema).fields;
+  return Array.isArray(fields) ? fields : [];
+}
+
+export default function ActionDetailPage({ params }: { params: { id: string } }) {
+  const { getToken } = useAuth();
+  const actionId = params.id;
+
+  const [template, setTemplate] = useState<ApiActionTemplate | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Form state — keyed by parameter name. Initialized empty; backend
+  // re-validates required fields and rejects with code='MISSING_PARAMETER'.
+  const [formValues, setFormValues] = useState<Record<string, string | number | boolean>>({});
+
+  // Execution_id is minted client-side for idempotency. Generated on first
+  // execute (lazy) — avoids SSR hydration mismatch (different UUIDs on
+  // server vs client) and avoids the react-hooks/set-state-in-effect
+  // lint rule. Once minted, the SAME id persists across error retries so
+  // a duplicate submit replays the prior result instead of creating a
+  // duplicate side effect. The regenerate button mints a fresh id.
+  const [executionId, setExecutionId] = useState<string>("");
+  const [executing, setExecuting] = useState(false);
+  const [executeResult, setExecuteResult] = useState<ExecuteResult | null>(null);
+  const [executeError, setExecuteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const token = await getToken();
+        if (!token) throw new ApiError(401, "Sign in required");
+        const data = await apiClient<ApiActionTemplate>(
+          `/api/v1/actions/${actionId}`,
+          token,
+        );
+        if (!cancelled) setTemplate(data);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(formatErrorMessage(err, "Failed to load action template"));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [getToken, actionId]);
+
+  const fields = useMemo(
+    () => extractFields(template?.parameter_schema),
+    [template?.parameter_schema],
+  );
+  const requiresApproval = template?.requires_approval === true;
+
+  function updateField(name: string, type: string, raw: string | boolean) {
+    setFormValues((prev) => {
+      const next = { ...prev };
+      if (type === "number") {
+        // Preserve raw string while typing so partial inputs (e.g., "1.") don't snap.
+        if (typeof raw !== "string" || raw === "") {
+          delete next[name];
+        } else {
+          const n = Number(raw);
+          if (Number.isFinite(n)) next[name] = n;
+          else delete next[name];
+        }
+      } else if (type === "boolean") {
+        next[name] = Boolean(raw);
+      } else {
+        if (typeof raw !== "string" || raw === "") {
+          delete next[name];
+        } else {
+          next[name] = raw;
+        }
+      }
+      return next;
+    });
   }
 
-  function handleRun() {
-    setRunning(true);
-    setTimeout(() => {
-      setRunning(false);
-      setRan(true);
-    }, 1400);
+  async function handleExecute(e: React.FormEvent) {
+    e.preventDefault();
+    if (!template) return;
+    setExecuting(true);
+    setExecuteError(null);
+    setExecuteResult(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      // Client-side check for missing required fields — gives a fast
+      // diagnostic before the round-trip. Backend re-validates against
+      // the canonical parameter_schema (`action-executor.ts`) and would
+      // reject with MISSING_PARAMETER; this duplication is purely UX.
+      const missing = fields
+        .filter((f) => f.required && (formValues[f.name] === undefined || formValues[f.name] === ""))
+        .map((f) => f.label || f.name);
+      if (missing.length > 0) {
+        throw new ApiError(400, `Missing required ${missing.length === 1 ? "field" : "fields"}: ${missing.join(", ")}`);
+      }
+
+      // Lazy-mint the execution_id on first submit. Subsequent submits
+      // reuse the same id (idempotent replay path). Regenerate button
+      // resets to "" to force a new id on next submit.
+      const idToUse = executionId === "" ? crypto.randomUUID() : executionId;
+      if (idToUse !== executionId) setExecutionId(idToUse);
+
+      const result = await apiClient<ExecuteResult>(
+        `/api/v1/actions/${template.id}/execute`,
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            params: formValues,
+            execution_id: idToUse,
+          }),
+        },
+      );
+      setExecuteResult(result);
+    } catch (err) {
+      setExecuteError(formatErrorMessage(err, "Execution failed"));
+    } finally {
+      setExecuting(false);
+    }
   }
 
-  const SCOPE_TABS: { key: ScopeTab; label: string; count: number }[] = [
-    { key: "campaigns", label: "Campaigns", count: MOCK_ACTION.scopeItems.campaigns.length },
-    { key: "adsets",    label: "Ad Sets",   count: MOCK_ACTION.scopeItems.adsets.length },
-    { key: "keywords",  label: "Keywords",  count: MOCK_ACTION.scopeItems.keywords.length },
-  ];
+  function regenerateExecutionId() {
+    // Reset to empty — the next submit lazy-mints a fresh UUID.
+    setExecutionId("");
+    setExecuteResult(null);
+    setExecuteError(null);
+  }
 
-  const currentScope = MOCK_ACTION.scopeItems[scopeTab];
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-8 w-48 bg-surface-container-low rounded animate-pulse" />
+        <div className="h-32 bg-surface-container-low rounded-2xl animate-pulse" />
+        <div className="h-64 bg-surface-container-low rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
 
-  const EXEC_MODES: { key: ExecMode; icon: React.ReactNode; label: string }[] = [
-    { key: "run_now",    icon: <Play size={16} className="text-primary" />,              label: "Run Now"     },
-    { key: "schedule",   icon: <Calendar size={16} className="text-muted-foreground" />, label: "Schedule"    },
-    { key: "continuous", icon: <RefreshCw size={16} className="text-muted-foreground" />,label: "Continuous"  },
-  ];
+  if (loadError || !template) {
+    return (
+      <div className="space-y-6">
+        <Link href="/actions" className="inline-flex items-center gap-2 text-sm font-bold text-primary hover:underline font-body">
+          <ArrowLeft size={14} /> Back to Action Library
+        </Link>
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-body flex items-center gap-2">
+          <AlertCircle size={16} />
+          {loadError ?? "Action template not found"}
+        </div>
+      </div>
+    );
+  }
+
+  const dotColor = platformDotColor(template.platform);
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Back + Title */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/actions" className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors font-body text-sm">
-            <ArrowLeft size={16} />
-            Back to Actions
-          </Link>
-          <div className="h-5 w-px bg-border" />
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-extrabold tracking-tight text-foreground font-sans">{MOCK_ACTION.title}</h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold tracking-wider uppercase font-body">
-              {MOCK_ACTION.status}
+      {/* Back link */}
+      <Link
+        href="/actions"
+        className="inline-flex items-center gap-2 text-sm font-bold text-primary hover:underline font-body"
+      >
+        <ArrowLeft size={14} /> Back to Action Library
+      </Link>
+
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-3">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: dotColor }}
+              aria-label={`Platform ${template.platform}`}
+            />
+            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground font-body">
+              {template.platform}
             </span>
+            {requiresApproval && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 font-body"
+                title="Auto-fire blocked by centralized approval policy. Manual fire here is an implicit operator approval."
+              >
+                <ShieldAlert size={10} />
+                Approval required
+              </span>
+            )}
           </div>
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-sans leading-none mb-2">
+            {template.name}
+          </h1>
+          <code className="text-xs text-muted-foreground font-mono break-all">
+            {template.action_type}
+          </code>
         </div>
-        {ran ? (
-          <button className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm font-body" disabled>
-            <CheckCircle size={15} />
-            Executed
-          </button>
-        ) : (
-          <button
-            onClick={handleRun}
-            disabled={running}
-            className="flex items-center gap-2 bg-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-md hover:opacity-90 active:scale-95 transition-all font-body"
-          >
-            {running ? (
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            ) : null}
-            {running ? "Running…" : "Run Now"}
-          </button>
-        )}
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Col */}
-        <div className="lg:col-span-8 space-y-8">
-          {/* Trigger Logic */}
-          <section className="bg-white rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-base font-bold text-foreground flex items-center gap-2 font-sans">
-                <Zap size={16} className="text-primary" />
-                Trigger Logic
-              </h2>
-              <button className="text-primary text-sm font-semibold flex items-center gap-1 font-body hover:underline">
-                <PlusCircle size={14} />
-                Add Condition
+      {/* Description */}
+      {template.description && (
+        <p className="text-foreground font-body text-base leading-relaxed max-w-3xl">
+          {template.description}
+        </p>
+      )}
+
+      {/* Approval notice (informational) */}
+      {requiresApproval && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 max-w-3xl">
+          <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-sm font-body">
+            <p className="font-bold text-amber-800 mb-1">Approval-required action</p>
+            <p className="text-amber-700">
+              Automation rules pointing at this template will not auto-fire on AI-decision streams.
+              Manual execution from this page is treated as implicit operator approval and runs
+              through the canonical executor pipeline (idempotency, rate limit, audit trail preserved).
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Execute form */}
+      <form
+        onSubmit={handleExecute}
+        className="bg-white border border-border/40 rounded-2xl p-6 max-w-3xl space-y-6"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-sans font-bold text-foreground text-xl">Manual Execute</h2>
+          <span className="text-[10px] font-body text-muted-foreground uppercase tracking-widest font-bold">
+            Canonical executor
+          </span>
+        </div>
+
+        {fields.length === 0 ? (
+          <p className="text-sm text-muted-foreground font-body italic">
+            This template defines no parameters.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {fields.map((f) => {
+              const label = f.label || f.name;
+              const required = f.required === true;
+              const value = formValues[f.name];
+              if (f.type === "boolean") {
+                return (
+                  <label key={f.name} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(value)}
+                      onChange={(e) => updateField(f.name, "boolean", e.target.checked)}
+                      className="w-4 h-4 accent-primary"
+                    />
+                    <span className="text-sm font-body text-foreground">
+                      {label}
+                      {required && <span className="text-red-500 ml-1">*</span>}
+                    </span>
+                  </label>
+                );
+              }
+              return (
+                <div key={f.name} className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">
+                    {label}
+                    {required && <span className="text-red-500 ml-1">*</span>}
+                    <code className="ml-2 text-muted-foreground font-mono normal-case font-normal">
+                      {f.name} · {f.type}
+                    </code>
+                  </label>
+                  <input
+                    type={f.type === "number" ? "number" : "text"}
+                    step={f.type === "number" ? "any" : undefined}
+                    value={value === undefined ? "" : String(value)}
+                    onChange={(e) => updateField(f.name, f.type, e.target.value)}
+                    placeholder={f.description ?? ""}
+                    className="w-full px-3 py-2 bg-surface-container-low border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 font-body"
+                    required={required}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Idempotency key (advanced — collapsed by default to reduce noise) */}
+        <details className="text-xs font-body">
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5">
+            <Info size={11} />
+            Idempotency key
+          </summary>
+          <div className="mt-2 pl-5 space-y-2">
+            <p className="text-muted-foreground leading-relaxed">
+              A unique <code className="text-foreground">execution_id</code> is minted client-side
+              on first execute. Re-submitting (or hitting the same id from another tool) returns
+              the original result instead of producing a duplicate side effect.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-2 py-1 bg-surface-container-low rounded text-[10px] font-mono break-all text-foreground">
+                {executionId === "" ? "auto-generated on execute" : executionId}
+              </code>
+              <button
+                type="button"
+                disabled={executionId === ""}
+                onClick={() => {
+                  if (executionId) navigator.clipboard?.writeText(executionId).catch(() => undefined);
+                }}
+                className="p-1.5 hover:bg-surface-container-low rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Copy execution_id"
+              >
+                <Copy size={11} className="text-muted-foreground" />
+              </button>
+              <button
+                type="button"
+                disabled={executionId === ""}
+                onClick={regenerateExecutionId}
+                className="p-1.5 hover:bg-surface-container-low rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Discard the current id — next execute will mint a fresh one"
+              >
+                <RefreshCw size={11} className="text-muted-foreground" />
               </button>
             </div>
-            <div className="flex flex-col gap-3">
-              {MOCK_ACTION.conditions.map((cond, i) => (
-                <>
-                  <div key={cond.code} className="bg-surface-container-low p-4 rounded-xl flex items-center justify-between border-l-4 border-primary">
-                    <code className="text-sm font-mono text-muted-foreground">{cond.code}</code>
-                    <span className={`px-3 py-1 text-[10px] font-black tracking-widest rounded-full font-body ${cond.tagClass}`}>
-                      {cond.tag}
-                    </span>
-                  </div>
-                  {i < MOCK_ACTION.conditions.length - 1 && (
-                    <div className="flex justify-center">
-                      <span className="bg-surface-container-high px-3 py-0.5 rounded-full text-[10px] font-bold text-muted-foreground font-body">
-                        AND
-                      </span>
-                    </div>
-                  )}
-                </>
-              ))}
-            </div>
-          </section>
+          </div>
+        </details>
 
-          {/* Platform + Scope */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Platform Targeting */}
-            <section className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-base font-bold text-foreground mb-5 font-sans">Platform Targeting</h2>
-              <div className="grid grid-cols-2 gap-3">
-                {platforms.map((p, i) => (
-                  <button
-                    key={p.label}
-                    onClick={() => togglePlatform(i)}
-                    className={`relative p-4 rounded-xl flex flex-col gap-2 text-left transition-all border-2 ${
-                      p.selected
-                        ? "border-primary/30 bg-primary/5"
-                        : "border-transparent bg-surface-container-low hover:bg-surface-container-high"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.dot }} />
-                      <span className="text-xs font-bold text-foreground font-body">{p.label}</span>
-                    </div>
-                    <div className="text-2xl font-black text-foreground font-sans">
-                      {p.entities}
-                      <span className="text-xs font-medium text-muted-foreground ml-1">entities</span>
-                    </div>
-                    {p.selected && (
-                      <CheckCircle size={14} className="absolute top-3 right-3 text-primary" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </section>
+        {executeError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs font-body flex items-start gap-2">
+            <AlertCircle size={14} className="shrink-0 mt-0.5" />
+            <span>{executeError}</span>
+          </div>
+        )}
 
-            {/* Execution Scope */}
-            <section className="bg-white rounded-2xl p-6 shadow-sm flex flex-col">
-              <h2 className="text-base font-bold text-foreground mb-5 font-sans">Execution Scope</h2>
-              <div className="bg-surface-container-low p-1 rounded-xl flex gap-1 mb-5">
-                {SCOPE_TABS.map((t) => (
-                  <button
-                    key={t.key}
-                    onClick={() => setScopeTab(t.key)}
-                    className={`flex-1 py-2 px-2 rounded-lg text-xs font-bold transition-all font-body ${
-                      scopeTab === t.key
-                        ? "bg-white text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {t.label} ({t.count})
-                  </button>
-                ))}
-              </div>
-              <div className="space-y-2 flex-1">
-                {currentScope.map((item) => (
-                  <div key={item.name} className="flex items-center justify-between p-3 rounded-xl hover:bg-surface-container-low transition-colors">
-                    <div className="flex items-center gap-2">
-                      <Zap size={14} className="text-muted-foreground shrink-0" />
-                      <span className="text-sm font-medium text-foreground font-body truncate">{item.name}</span>
-                    </div>
-                    <span className="text-xs font-bold text-emerald-600 font-body shrink-0 ml-2">{item.roas}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/40">
+          <button
+            type="submit"
+            disabled={executing}
+            className="inline-flex items-center gap-2 bg-primary text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-primary/90 transition-all font-body disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Zap size={12} />
+            {executing ? "Executing…" : "Execute"}
+          </button>
+        </div>
+      </form>
+
+      {/* Result panel */}
+      {executeResult && (
+        <div
+          className={`rounded-2xl p-6 max-w-3xl border ${
+            executeResult.result === "success"
+              ? "bg-emerald-50 border-emerald-200"
+              : executeResult.result === "failed"
+                ? "bg-red-50 border-red-200"
+                : "bg-amber-50 border-amber-200"
+          }`}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            {executeResult.result === "success" ? (
+              <CheckCircle2 size={22} className="text-emerald-600" />
+            ) : executeResult.result === "failed" ? (
+              <XCircle size={22} className="text-red-600" />
+            ) : (
+              <SkipForward size={22} className="text-amber-600" />
+            )}
+            <h3 className="font-sans font-bold text-foreground text-lg">
+              Execution {executeResult.result}
+            </h3>
+            {/* Continuation #122 (2026-05-14) — Phase Ω: prominent
+                Live/Simulated pill so the operator sees provider-call
+                context at-a-glance. Reads `result_data.mode` written by
+                the canonical executor (action-executor.ts). Renders only
+                when `mode` is present (legacy / shaped result_data may
+                omit it). */}
+            {(() => {
+              const mode = executeResult.result_data?.mode;
+              if (mode !== "live" && mode !== "simulated") return null;
+              const isLive = mode === "live";
+              return (
+                <span
+                  className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider font-body ${
+                    isLive ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-700"
+                  }`}
+                  title={
+                    isLive
+                      ? "REAL provider call — this execution hit Meta/Google/Shopify with operator-visible side effects."
+                      : "Simulated mode — no real provider call was made. LIVE flag for this action is OFF, allowlist excludes this org, or credentials are missing."
+                  }
+                >
+                  {isLive ? <Zap size={10} /> : <ShieldAlert size={10} />}
+                  {isLive ? "Live" : "Simulated"}
+                </span>
+              );
+            })()}
+            {executeResult.idempotent_replay && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 font-body"
+                title="This execution_id matched an existing row — the original result was returned. No duplicate side effect."
+              >
+                <RefreshCw size={10} />
+                Idempotent replay
+              </span>
+            )}
           </div>
 
-          {/* Execution Logic */}
-          <section className="bg-white rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-bold text-foreground mb-5 font-sans">Execution Logic</h2>
-            <div className="space-y-4">
-              {MOCK_ACTION.execSteps.map((step, i) => (
-                <div key={i} className="flex items-start gap-5 p-4 rounded-xl bg-surface-container-low hover:border-primary/10 border border-transparent transition-colors">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${step.iconBg}`}>
-                    {step.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1 gap-2">
-                      <h3 className="text-sm font-bold text-foreground font-sans">{step.title}</h3>
-                      <span className={`px-2 py-0.5 text-[10px] font-black rounded-full whitespace-nowrap font-body ${step.badgeClass}`}>
-                        {step.badge}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-3 font-body">{step.desc}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {step.pills.map((pill) => (
-                        <span key={pill} className="px-3 py-1 bg-white rounded-full text-[10px] font-bold text-muted-foreground shadow-sm font-body">
-                          {pill}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+          <div className="space-y-2 text-xs font-body">
+            <div className="flex gap-2">
+              <span className="text-muted-foreground font-bold w-32 shrink-0">decision_history</span>
+              <code className="text-foreground font-mono break-all">{executeResult.history_id}</code>
+            </div>
+            {executeResult.result_data && Object.entries(executeResult.result_data)
+              .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
+              .slice(0, 8)
+              .map(([k, v]) => (
+                <div key={k} className="flex gap-2">
+                  <span className="text-muted-foreground font-bold w-32 shrink-0">{k}</span>
+                  <code className="text-foreground font-mono break-all">{String(v)}</code>
                 </div>
               ))}
-            </div>
-          </section>
+          </div>
+
+          <div className="mt-5 pt-4 border-t border-border/40 flex items-center gap-3">
+            <Link
+              href="/actions/logs"
+              className="text-xs font-bold text-primary hover:underline font-body"
+            >
+              View in execution log →
+            </Link>
+            <button
+              type="button"
+              onClick={regenerateExecutionId}
+              className="text-xs font-bold text-muted-foreground hover:text-foreground font-body"
+              title="Mint a fresh execution_id and clear the result panel"
+            >
+              Run another →
+            </button>
+          </div>
         </div>
-
-        {/* Right Col */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Impact Simulation */}
-          <section className="bg-foreground rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-            <div className="absolute -right-8 -top-8 w-48 h-48 bg-primary/20 blur-[80px] rounded-full pointer-events-none" />
-            <div className="relative z-10">
-              <h2 className="text-base font-bold mb-5 flex items-center gap-2 font-sans">
-                <TrendingUp size={16} className="text-blue-300" />
-                Impact Simulation
-              </h2>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "Revenue Uplift", value: MOCK_ACTION.simulation.revenueUplift, valueClass: "text-emerald-400" },
-                  { label: "Cost Impact",    value: MOCK_ACTION.simulation.costImpact,    valueClass: "text-blue-300"   },
-                  { label: "ROI Projection", value: MOCK_ACTION.simulation.roi,           valueClass: "text-white"      },
-                  { label: "Confidence",     value: MOCK_ACTION.simulation.confidence,    valueClass: "text-blue-200"   },
-                ].map((stat) => (
-                  <div key={stat.label} className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <p className="text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1 font-body">{stat.label}</p>
-                    <p className={`text-xl font-black font-sans ${stat.valueClass}`}>{stat.value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Risk Analysis */}
-          <section className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-400">
-            <h2 className="text-base font-bold text-foreground mb-3 flex items-center gap-2 font-sans">
-              <ShieldCheck size={16} className="text-red-500" />
-              Risk Analysis
-            </h2>
-            <p className="text-sm text-muted-foreground leading-relaxed font-body">
-              <span className="font-bold text-foreground">Causal Explanation:</span>{" "}
-              {MOCK_ACTION.riskDesc}
-            </p>
-            <div className="mt-4 flex items-center gap-3">
-              <div className="flex-1 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
-                <div className="h-full bg-red-400 rounded-full" style={{ width: `${MOCK_ACTION.riskLevel}%` }} />
-              </div>
-              <span className="text-[10px] font-bold text-red-500 whitespace-nowrap font-body">{MOCK_ACTION.riskLevel}% RISK</span>
-            </div>
-          </section>
-
-          {/* Execution Mode */}
-          <section className="bg-white rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-bold text-foreground mb-5 font-sans">Execution Mode</h2>
-            <div className="space-y-2">
-              {EXEC_MODES.map((mode) => (
-                <label
-                  key={mode.key}
-                  className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                    execMode === mode.key
-                      ? "border-primary bg-primary/5"
-                      : "border-transparent bg-surface-container-low hover:border-border"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {mode.icon}
-                    <span className={`text-sm font-bold font-body ${execMode === mode.key ? "text-foreground" : "text-muted-foreground"}`}>
-                      {mode.label}
-                    </span>
-                  </div>
-                  <input
-                    type="radio"
-                    name="exec-mode"
-                    checked={execMode === mode.key}
-                    onChange={() => setExecMode(mode.key)}
-                    className="text-primary h-4 w-4 accent-primary"
-                  />
-                </label>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {/* Full-width Safeguards */}
-        <div className="lg:col-span-12">
-          <section className="bg-white rounded-2xl p-8 shadow-sm">
-            <h2 className="text-xl font-bold text-foreground mb-8 flex items-center gap-2 font-sans">
-              <ShieldCheck size={20} className="text-primary" />
-              Algorithmic Safeguards
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Stop-loss */}
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-foreground font-body">Stop-loss Protection</label>
-                  <span className="text-xs font-mono font-bold text-primary">-{stopLoss}% ROAS</span>
-                </div>
-                <p className="text-xs text-muted-foreground font-body leading-relaxed">
-                  Automatic pause if ROAS drops below historical baseline during scaling.
-                </p>
-                <input
-                  type="range"
-                  min="5"
-                  max="40"
-                  value={stopLoss}
-                  onChange={(e) => setStopLoss(Number(e.target.value))}
-                  className="w-full h-1.5 bg-surface-container-high rounded-full appearance-none cursor-pointer accent-primary"
-                />
-              </div>
-
-              {/* Auto Rollback */}
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-foreground font-body">Auto Rollback</label>
-                  <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full font-body">ENABLED</span>
-                </div>
-                <p className="text-xs text-muted-foreground font-body leading-relaxed">
-                  Reverts to previous stable budget if KPIs don't normalize within 72h.
-                </p>
-                <button className="py-2 bg-white border border-border rounded-xl text-xs font-bold shadow-sm hover:bg-surface-container-low transition-colors font-body">
-                  Configure Sensitivity
-                </button>
-              </div>
-
-              {/* Volatility Control */}
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-foreground font-body">Volatility Control</label>
-                  <span className="text-xs font-mono font-bold text-primary">STRICT</span>
-                </div>
-                <p className="text-xs text-muted-foreground font-body leading-relaxed">
-                  Filters out hourly data noise to prevent impulsive budget triggers.
-                </p>
-                <div className="bg-surface-container-low p-3 rounded-xl flex items-center justify-around">
-                  <span className="text-[10px] font-bold text-muted-foreground font-body">Loose</span>
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-surface-container-high" />
-                    <div className="w-3 h-3 rounded-full bg-surface-container-high" />
-                    <div className="w-3 h-3 rounded-full bg-primary" />
-                  </div>
-                  <span className="text-[10px] font-bold text-foreground font-body">Aggressive</span>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

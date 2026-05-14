@@ -13,8 +13,8 @@ export default function SignInPage() {
               </svg>
             </div>
             <div className="text-left">
-              <p className="font-extrabold text-[18px] tracking-tighter text-foreground leading-none font-sans uppercase">Precision</p>
-              <p className="text-[10px] text-primary/60 font-black uppercase tracking-[0.2em] leading-none mt-0.5 font-body">Curator</p>
+              <p className="font-extrabold text-[18px] tracking-tighter text-foreground leading-none font-sans uppercase">GrowthHub</p>
+              <p className="text-[10px] text-primary/60 font-black uppercase tracking-[0.2em] leading-none mt-0.5 font-body">Growth OS</p>
             </div>
           </div>
           <p className="text-muted-foreground text-sm font-body">Sign in to your growth intelligence platform</p>

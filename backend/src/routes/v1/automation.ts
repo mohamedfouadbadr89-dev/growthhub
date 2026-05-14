@@ -30,7 +30,7 @@
 import { Hono } from 'hono'
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { ok, fail } from '../../utils/response.js'
-import { executeRule } from '../../services/execution/automation-engine.js'
+import { executeRule, actionRequiresApproval } from '../../services/execution/automation-engine.js'
 
 type Variables = { userId: string; orgId: string; requestId: string }
 
@@ -51,10 +51,18 @@ const MAX_LIMIT = 100
 automationRouter.get('/rules', async (c) => {
   const orgId = c.get('orgId')
 
+  // Continuation #102 (2026-05-12) — extended SELECT to include
+  // `actions_library.action_type` so the server can compute the
+  // `requires_approval` flag from the SAME centralized policy
+  // (automation-engine.ts:actionRequiresApproval). Operator-facing
+  // visibility for the #99 auto-fire gate: rule cards on
+  // /actions/automation can render an "Approval required — manual fire
+  // only" badge when this flag is true. Single source of truth — no FE
+  // mirror of the action-type set is needed.
   const { data, error } = await supabaseAdmin
     .from('automation_rules')
     .select(
-      'id, name, trigger_type, min_confidence_threshold, action_template_id, action_params, enabled, run_count, last_fired_at, created_at, updated_at, actions_library(platform, name)',
+      'id, name, trigger_type, min_confidence_threshold, action_template_id, action_params, enabled, run_count, last_fired_at, created_at, updated_at, actions_library(platform, name, action_type)',
     )
     .eq('org_id', orgId)
     .order('created_at', { ascending: false })
@@ -63,7 +71,18 @@ automationRouter.get('/rules', async (c) => {
     throw new Error(`automation rules list failed: ${error.message}`)
   }
 
-  return ok(c, { rules: data ?? [], total: (data ?? []).length })
+  // Compute `requires_approval` per-row from the central policy. Cast via
+  // unknown because supabase-js types many-to-one nested-selects as arrays.
+  type RuleRow = {
+    actions_library?: { action_type?: string } | null
+    [k: string]: unknown
+  }
+  const enriched = ((data ?? []) as unknown as RuleRow[]).map((r) => ({
+    ...r,
+    requires_approval: actionRequiresApproval(r.actions_library?.action_type),
+  }))
+
+  return ok(c, { rules: enriched, total: enriched.length })
 })
 
 // ─── POST /rules ──────────────────────────────────────────────────────
@@ -371,7 +390,7 @@ automationRouter.post('/rules/:id/execute', async (c) => {
 // ─── GET /runs ────────────────────────────────────────────────────────
 automationRouter.get('/runs', async (c) => {
   const orgId = c.get('orgId')
-  const { status, rule_id } = c.req.query()
+  const { status, rule_id, ai_decision_id } = c.req.query()
 
   if (status !== undefined && !VALID_RUN_STATUSES.has(status)) {
     return fail(
@@ -385,6 +404,19 @@ automationRouter.get('/runs', async (c) => {
     return fail(c, 'Invalid rule_id filter', 400, {
       code: 'INVALID_TYPE',
       field: 'rule_id',
+    })
+  }
+  // Continuation #122 (2026-05-14) — Phase Ω stabilization.
+  // Optional `?ai_decision_id=` filter mirrors the existing `?rule_id=`
+  // pattern. Closes audit MEDIUM finding #4 — the AI Decision deep view
+  // (`app/operator/ai/[decision_id]/page.tsx`) previously fetched 100
+  // runs and filtered client-side, missing downstream effects on orgs
+  // with >100 runs in window. With this filter, the page can request
+  // only the runs that consumed a specific decision. UUID-gated.
+  if (ai_decision_id !== undefined && !UUID_LIKE.test(ai_decision_id)) {
+    return fail(c, 'Invalid ai_decision_id filter', 400, {
+      code: 'INVALID_TYPE',
+      field: 'ai_decision_id',
     })
   }
 
@@ -440,6 +472,7 @@ automationRouter.get('/runs', async (c) => {
 
   if (status) query = query.eq('status', status)
   if (rule_id) query = query.eq('automation_rule_id', rule_id)
+  if (ai_decision_id) query = query.eq('ai_decision_id', ai_decision_id)
 
   const { data, error, count } = await query
   if (error) {
@@ -451,5 +484,157 @@ automationRouter.get('/runs', async (c) => {
     total: count ?? 0,
     limit,
     offset,
+  })
+})
+
+// ─── Continuation #119 (2026-05-14) — Phase β Layer 3 ─────────────────
+// GET /api/v1/automation/recommendations
+// per `specs/recommended-automations.md`.
+//
+// Additive read-only aggregate. Surfaces gaps: AI emits decisions in a
+// category but the org has NO enabled rule whose trigger_type matches.
+// Each recommendation carries a suggested action_template (from a static
+// category→action map) plus the centralized requires_approval flag for
+// display. Suggestion-only — no autonomous rule creation. Operators
+// click-through to the existing Create Rule form (#111) with pre-fill.
+//
+// NO autonomous writes. NO orchestration changes. NO new tables.
+// Org-scoped via `c.get('orgId')`. Categories below 3 decisions in the
+// 30-day window are filtered out (noise floor).
+//
+// Category → action map is the SINGLE source of truth for "what action
+// should fire on this category" at the recommendation layer. Approval
+// determination delegates to the centralized policy
+// (actionRequiresApproval), so the FE never mirrors the protected-action
+// set.
+
+const RECOMMENDATION_WINDOW_DAYS = 30
+const RECOMMENDATION_MIN_COUNT = 3
+const RECOMMENDATION_DEFAULT_THRESHOLD = 70
+
+// Static map from AI category → suggested platform + action_type. Stays
+// inside the backend so frontend can't drift. New categories surface here
+// only when an actions_library template exists; the FK lookup below
+// verifies the template is actually present in the org's catalog.
+const CATEGORY_ACTION_SUGGESTIONS: Record<string, { platform: string; action_type: string; rule_name: string }> = {
+  ROAS_DROP:           { platform: 'meta',   action_type: 'pause_campaign',   rule_name: 'Auto-pause on ROAS drop' },
+  CONVERSION_DROP:     { platform: 'meta',   action_type: 'pause_campaign',   rule_name: 'Auto-pause on conversion drop' },
+  SPEND_SPIKE:         { platform: 'meta',   action_type: 'decrease_budget',  rule_name: 'Auto-decrease budget on spend spike' },
+  SCALING_OPPORTUNITY: { platform: 'meta',   action_type: 'increase_budget',  rule_name: 'Scale-up on opportunity (approval required)' },
+}
+
+automationRouter.get('/recommendations', async (c) => {
+  const orgId = c.get('orgId')
+
+  const cutoff = new Date(Date.now() - RECOMMENDATION_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString()
+
+  // 1. Pull recent AI decisions for the org — only the fields we need.
+  //    category is the Path F nullable column; rows without it are
+  //    ignored (cannot recommend without a categorical signal).
+  const { data: decisions, error: decisionsErr } = await supabaseAdmin
+    .from('ai_decisions')
+    .select('category, confidence_score')
+    .eq('org_id', orgId)
+    .not('category', 'is', null)
+    .gte('created_at', cutoff)
+    .limit(1000)
+
+  if (decisionsErr) {
+    throw new Error(`recommendations: ai_decisions aggregate failed: ${decisionsErr.message}`)
+  }
+
+  // 2. Pull enabled rules' trigger_types — we recommend only for
+  //    categories with NO enabled rule already.
+  const { data: rules, error: rulesErr } = await supabaseAdmin
+    .from('automation_rules')
+    .select('trigger_type')
+    .eq('org_id', orgId)
+    .eq('enabled', true)
+
+  if (rulesErr) {
+    throw new Error(`recommendations: rules aggregate failed: ${rulesErr.message}`)
+  }
+
+  const coveredCategories = new Set<string>((rules ?? []).map((r) => r.trigger_type as string))
+
+  // 3. Bucket decisions by category and compute counts + avg confidence.
+  type Agg = { count: number; confSum: number }
+  const byCategory = new Map<string, Agg>()
+  for (const d of decisions ?? []) {
+    const cat = d.category as string | null
+    if (!cat) continue
+    const conf = typeof d.confidence_score === 'number' ? d.confidence_score : Number(d.confidence_score)
+    const existing = byCategory.get(cat) ?? { count: 0, confSum: 0 }
+    existing.count += 1
+    if (Number.isFinite(conf)) existing.confSum += conf
+    byCategory.set(cat, existing)
+  }
+
+  // 4. Build candidate recommendations. For each uncovered category
+  //    with count >= floor, look up the suggested action_template row
+  //    from actions_library so the FE can pre-fill the Create form.
+  const recommendations: Array<{
+    category: string
+    decision_count_30d: number
+    avg_confidence: number
+    suggested_action_template_id: string
+    suggested_action_name: string
+    suggested_action_type: string
+    suggested_platform: string
+    requires_approval: boolean
+    suggested_min_confidence_threshold: number
+    suggested_rule_name: string
+    rationale: string
+  }> = []
+
+  for (const [category, agg] of byCategory.entries()) {
+    if (coveredCategories.has(category)) continue
+    if (agg.count < RECOMMENDATION_MIN_COUNT) continue
+    const suggestion = CATEGORY_ACTION_SUGGESTIONS[category]
+    if (!suggestion) continue // category outside our suggestion map — skip
+
+    // Look up the template id (system-global; no org_id filter).
+    const { data: template, error: templateErr } = await supabaseAdmin
+      .from('actions_library')
+      .select('id, name, platform, action_type')
+      .eq('platform', suggestion.platform)
+      .eq('action_type', suggestion.action_type)
+      .maybeSingle()
+
+    if (templateErr) {
+      throw new Error(`recommendations: actions_library lookup failed: ${templateErr.message}`)
+    }
+    if (!template) {
+      // Template not seeded — skip silently. Operator can still create
+      // the rule manually via the Create form once the template is added.
+      continue
+    }
+
+    const fullActionType = `${template.platform}.${template.action_type}`
+    const avgConfidence = agg.count > 0 ? Math.round((agg.confSum / agg.count) * 100) / 100 : 0
+
+    recommendations.push({
+      category,
+      decision_count_30d: agg.count,
+      avg_confidence: avgConfidence,
+      suggested_action_template_id: template.id as string,
+      suggested_action_name: template.name as string,
+      suggested_action_type: fullActionType,
+      suggested_platform: template.platform as string,
+      requires_approval: actionRequiresApproval(fullActionType),
+      suggested_min_confidence_threshold: RECOMMENDATION_DEFAULT_THRESHOLD,
+      suggested_rule_name: suggestion.rule_name,
+      rationale: `${agg.count} ${category} decision${agg.count === 1 ? '' : 's'} in ${RECOMMENDATION_WINDOW_DAYS}d with no matching rule`,
+    })
+  }
+
+  // Sort by count DESC so highest-signal recommendations are first.
+  recommendations.sort((a, b) => b.decision_count_30d - a.decision_count_30d)
+
+  return ok(c, {
+    recommendations,
+    total: recommendations.length,
+    window_days: RECOMMENDATION_WINDOW_DAYS,
+    min_count: RECOMMENDATION_MIN_COUNT,
   })
 })

@@ -277,8 +277,23 @@ const app = new Hono<{ Variables: Variables }>()
 // Replaces hono/logger() — same wire position, structured JSON output.
 app.use('*', tracingMiddleware)
 app.use('*', requestLoggerMiddleware)
+// Continuation #113 (2026-05-14) — env-driven CORS origin allowlist.
+// Pre-fix: origins were hardcoded to dev URLs (`localhost:3000` + a
+// specific dev VPS IP). A production deploy on a custom domain would
+// have every browser cross-origin request blocked, manifesting as the
+// FE losing all data fetches with no clear error. Now: parse comma-
+// separated `CORS_ALLOWED_ORIGINS` from env; fall back to the existing
+// dev pair when unset so local development is unaffected.
+//
+// Launch-readiness deliverable — closes a genuine production blocker
+// without changing any runtime behavior for existing deployments.
+const corsOriginsRaw = process.env.CORS_ALLOWED_ORIGINS
+const corsOrigins = corsOriginsRaw && corsOriginsRaw.trim() !== ''
+  ? corsOriginsRaw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+  : ['http://localhost:3000', 'http://72.62.131.250:3000']
+
 app.use('*', cors({
-  origin: ['http://localhost:3000', 'http://72.62.131.250:3000'],
+  origin: corsOrigins,
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true,

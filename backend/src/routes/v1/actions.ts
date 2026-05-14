@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { executeAction } from '../../services/execution/action-executor.js'
+import { actionRequiresApproval } from '../../services/execution/automation-engine.js'
 import { ok, fail } from '../../utils/response.js'
 
 // requestId is set by tracingMiddleware mounted at app level (index.ts).
@@ -76,7 +77,19 @@ actionsRouter.get('/', async (c) => {
     throw new Error(`actions list lookup failed: ${error.message}`)
   }
 
-  return ok(c, { actions: data ?? [], total: count ?? 0 })
+  // Continuation #122 (2026-05-14) — Phase Ω stabilization.
+  // Server-compute `requires_approval` per template from the centralized
+  // policy (`actionRequiresApproval`) so the FE never mirrors the
+  // protected-action set. Closes audit MEDIUM finding #2 — eliminates
+  // the FE policy-mirror Sets in `app/actions/page.tsx` and
+  // `app/actions/[id]/page.tsx`. Single source of truth remains
+  // `automation-engine.ts:SPEND_INCREASING_OR_LAUNCH_ACTION_TYPES`.
+  const enriched = (data ?? []).map((row) => ({
+    ...row,
+    requires_approval: actionRequiresApproval(`${row.platform}.${row.action_type}`),
+  }))
+
+  return ok(c, { actions: enriched, total: count ?? 0 })
 })
 
 // GET /actions/:id — single action template
@@ -110,7 +123,12 @@ actionsRouter.get('/:id', async (c) => {
     throw new Error(`actions/:id lookup failed: ${error.message}`)
   }
   if (!data) return fail(c, 'Action not found', 404, { code: 'NOT_FOUND' })
-  return ok(c, data)
+  // Continuation #122 — same `requires_approval` enrichment as the LIST
+  // response. Single source of truth = automation-engine.ts policy.
+  return ok(c, {
+    ...data,
+    requires_approval: actionRequiresApproval(`${data.platform}.${data.action_type}`),
+  })
 })
 
 // POST /actions/:id/execute — manually execute an action

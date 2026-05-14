@@ -42,11 +42,59 @@ export const authMiddleware = createMiddleware<{
   }
 
   const token = authHeader.slice(7)
+
+  // Continuation #98 (2026-05-12) — AUTH MIDDLEWARE CATCH-SCOPE ISOLATION.
+  // Pre-fix: a single try/catch wrapped BOTH verifyToken (which legitimately
+  // throws on bad/expired/wrong-key JWTs → maps to 401 UNAUTHORIZED) AND
+  // the entire JIT auto-provision flow (DB upserts, RPC, inserts).
+  //
+  // The supabase-js calls below normally return `{data, error}` and are
+  // handled explicitly (`if (error) return fail(...)`); but low-level
+  // failures (fetch network error, DNS failure, connection pool exhaustion,
+  // unexpected exceptions inside a `.then` handler, an unreached programming
+  // error introduced by future edits) DO throw. Pre-fix those throws were
+  // caught by the outer catch and silently REBRANDED as
+  // "Missing or invalid authentication token" / 401 UNAUTHORIZED.
+  //
+  // Concrete failure modes that were misclassified:
+  //   * Supabase DNS blip during JIT org-upsert → operator sees 401, retries
+  //     auth, retries auth — wastes time on the wrong root cause.
+  //   * Programming error introduced by a future maintainer (e.g. accessing
+  //     payload.o.x.y when o is null and chaining is missing) → 401, hiding
+  //     the real exception trace from Sentry/error-handler.
+  //   * grant_credits RPC throwing synchronously inside `.then` callback →
+  //     401 instead of the 500 + sanitized error envelope.
+  //
+  // Fix: narrow the catch scope to verifyToken ONLY. The JIT logic runs
+  // outside the catch — any throw bubbles to Hono's onError → errorHandler
+  // → sanitized 500 with request_id, surfacing through Sentry like every
+  // other production failure.
+  //
+  // The supabase `{data, error}` checks below are preserved verbatim — they
+  // remain the primary failure path for expected DB failures (RLS denials,
+  // unique-violation races, etc.). The catch-scope split only protects
+  // against unexpected throws.
+  let payload: ClerkSessionPayload
   try {
-    const payload = (await verifyToken(token, {
+    payload = (await verifyToken(token, {
       secretKey: process.env.CLERK_SECRET_KEY!,
     })) as unknown as ClerkSessionPayload
+  } catch (err) {
+    // Diagnostic: surface the actual reason verifyToken rejected the JWT.
+    // Without this, the 401 looks identical whether the cause is an
+    // expired token, a key/instance mismatch, a JWKS fetch failure, or a
+    // signature error — the audit trail must distinguish them.
+    // CONSTITUTION §3 "Fail Loudly" + Phase 0 patch (centralized logging).
+    const e = err as Error
+    console.error(
+      `[auth] request_id=${request_id} verifyToken failed: name=${e?.name} message=${e?.message}`,
+    )
+    return fail(c, 'Missing or invalid authentication token', 401, { code: 'UNAUTHORIZED' })
+  }
 
+  // ── JWT verified; JIT auto-provision runs OUTSIDE the verifyToken catch ──
+  // Any throw here bubbles to errorHandler (sanitized 500 + request_id).
+  {
     const userId = payload.sub
     const orgId = payload.org_id ?? payload.o?.id
 
@@ -213,16 +261,6 @@ export const authMiddleware = createMiddleware<{
     c.set('userId', userId)
     c.set('orgId', orgId)
     await next()
-  } catch (err) {
-    // Diagnostic: surface the actual reason verifyToken rejected the JWT.
-    // Without this, the 401 looks identical whether the cause is an
-    // expired token, a key/instance mismatch, a JWKS fetch failure, or a
-    // signature error — the audit trail must distinguish them.
-    // CONSTITUTION §3 "Fail Loudly" + Phase 0 patch (centralized logging).
-    const e = err as Error
-    console.error(
-      `[auth] request_id=${request_id} verifyToken failed: name=${e?.name} message=${e?.message}`,
-    )
-    return fail(c, 'Missing or invalid authentication token', 401, { code: 'UNAUTHORIZED' })
   }
+  // ── /verifyToken-scoped catch isolation (#98) ───────────────────────────
 })

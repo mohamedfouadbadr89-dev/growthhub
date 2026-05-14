@@ -1,7 +1,5 @@
 'use client';
 
-'use client';
-
 import { Search, Bell, Calendar, Command, LayoutGrid } from 'lucide-react';
 import { AuthSection } from '@/components/auth/AuthSection';
 
@@ -14,10 +12,13 @@ export function Topbar() {
             <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-muted-foreground group-focus-within:text-primary transition-colors">
               <Search className="w-5 h-5" strokeWidth={1.5} />
             </div>
+            {/* Continuation #50 — search input has no backend; disabled
+                + honest placeholder until a global-search endpoint lands. */}
             <input
               type="text"
-              placeholder="Search Precision Matrix..."
-              className="w-full h-12 pl-12 pr-12 bg-white border border-border rounded-xl text-[14px] font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all font-body shadow-sm"
+              disabled
+              placeholder="Search — pending"
+              className="w-full h-12 pl-12 pr-12 bg-white border border-border rounded-xl text-[14px] font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all font-body shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
             />
             <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
               <div className="flex items-center gap-1 px-2.5 py-1 bg-surface-container rounded-lg border border-border">
@@ -37,11 +38,26 @@ export function Topbar() {
           </div>
 
           <div className="flex items-center gap-3">
-             <button className="p-3 bg-white border border-border rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/[0.03] transition-all relative group active:scale-95 shadow-sm">
+             {/* Continuation #50 — removed the always-animating fake
+                 "unread notification" dot. There is no notifications
+                 backend; the perpetual pulse implied a persistent unread
+                 state that never resolved. Button kept as a visual
+                 placeholder until a real notification stream lands
+                 (deferred; not in any current phase). */}
+             <button
+               title="Notifications pending"
+               disabled
+               className="p-3 bg-white border border-border rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/[0.03] transition-all relative group active:scale-95 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+             >
                 <Bell className="w-5 h-5" strokeWidth={1.5} />
-                <span className="absolute top-3.5 right-3.5 w-2 h-2 bg-primary rounded-full border-2 border-white shadow-lg shadow-primary/40 animate-pulse" />
              </button>
-             <button className="p-3 bg-white border border-border rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/[0.03] transition-all active:scale-95 shadow-sm">
+             {/* Continuation #50 — LayoutGrid button never had a click
+                 handler; matches the Bell disabled-placeholder pattern. */}
+             <button
+               title="Workspace switcher pending"
+               disabled
+               className="p-3 bg-white border border-border rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/[0.03] transition-all active:scale-95 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+             >
                 <LayoutGrid className="w-5 h-5" strokeWidth={1.5} />
              </button>
           </div>
