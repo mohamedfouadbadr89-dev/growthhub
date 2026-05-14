@@ -9,7 +9,7 @@ import {
   Wifi,
   Mail,
   Filter,
-  Download,
+  Download, RefreshCw,
   Wand2,
   ChevronDown,
   Key,
@@ -79,6 +79,30 @@ export default function BillingPage() {
   const [upgrading,    setUpgrading]    = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
 
+  // Continuation #97 (2026-05-12) — data-freshness indicator extended to
+  // settings billing (eighth volatility-sensitive cockpit surface after
+  // #90/#91/#92/#93/#94/#95/#96). Billing state changes via Stripe webhook
+  // events (plan_type transitions on subscription.created, credits_balance
+  // changes on invoice.paid / refund / RPC writes); operators don't
+  // directly trigger these so a freshness indicator helps them judge
+  // whether the displayed credits + plan reflect the latest webhook.
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  function relUpdated(): string {
+    if (lastUpdatedAt === null) return "—";
+    const ms = nowTick - lastUpdatedAt;
+    if (ms < 60_000) return "just now";
+    const m = Math.floor(ms / 60_000);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  }
+
   async function load() {
     setLoading(true);
     setLoadError(null);
@@ -87,6 +111,7 @@ export default function BillingPage() {
       if (!token) throw new ApiError(401, "Sign in required");
       const data = await apiClient<BillingState>("/api/v1/billing/plan", token);
       setBilling(data);
+      setLastUpdatedAt(Date.now());
     } catch (err) {
       // Continuation #35: formatErrorMessage surfaces ApiError.requestId
       // (from #34) so operators can quote it to support for backend log pivot.
@@ -200,11 +225,33 @@ export default function BillingPage() {
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
-      <div>
-        <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">
-          Settings
-        </p>
-        <h2 className="text-3xl font-bold tracking-tight text-foreground font-sans">Billing &amp; Usage</h2>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">
+            Settings
+          </p>
+          <h2 className="text-3xl font-bold tracking-tight text-foreground font-sans">Billing &amp; Usage</h2>
+        </div>
+        {/* Continuation #67 (2026-05-12) — Refresh button completes cockpit
+            coverage on every wired top-level surface. Re-fires the existing
+            `load()` callback (which BYOK save/delete already invoke).
+            Continuation #97 added freshness indicator beside it. */}
+        <div className="flex items-center gap-3">
+          {lastUpdatedAt !== null && (
+            <span className="text-[11px] text-muted-foreground font-body">
+              Updated <span className="font-bold text-foreground">{relUpdated()}</span>
+            </span>
+          )}
+          <button
+            onClick={() => void load()}
+            disabled={loading}
+            title="Refresh — re-poll billing state"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-surface-container-low text-foreground hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-body"
+          >
+            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {loadError && (
@@ -247,12 +294,19 @@ export default function BillingPage() {
               </p>
             </div>
           </div>
-          {/* Plan features — MOCKED-DEFERRED (no plan-catalogue endpoint) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          {/* Plan features — MOCKED-DEFERRED (no plan-catalogue endpoint).
+              Continuation #82 (2026-05-12) — feature list is hardcoded
+              ("Unlimited Executions" etc.) with no source of truth.
+              Sample-marker added inline above the feature grid. */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-body">Sample</span>
+            <span className="text-[11px] text-muted-foreground font-body">Feature catalogue pending</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 opacity-70">
             {PLAN_FEATURES.map((f) => (
               <div
                 key={f}
-                className="flex items-center gap-3 p-4 bg-surface-container-low rounded-2xl hover:bg-surface-container-high transition-colors"
+                className="flex items-center gap-3 p-4 bg-surface-container-low rounded-2xl"
               >
                 <CheckCircle2 size={18} className="text-primary shrink-0" />
                 <span className="text-sm font-medium text-foreground font-body">{f}</span>
@@ -275,7 +329,13 @@ export default function BillingPage() {
                 <span>Upgrade Plan</span>
               )}
             </button>
-            <button className="px-8 py-3 text-foreground font-semibold text-sm hover:bg-surface-container-low rounded-xl transition-all font-body">
+            {/* Continuation #82 — View Details button had no handler;
+                no plan-catalogue endpoint to navigate to. Disabled. */}
+            <button
+              disabled
+              title="Plan details pending"
+              className="px-8 py-3 text-muted-foreground font-semibold text-sm rounded-xl font-body opacity-50 cursor-not-allowed"
+            >
               View Details
             </button>
           </div>
@@ -284,10 +344,16 @@ export default function BillingPage() {
           )}
         </div>
 
-        {/* System Utilization — MOCKED-DEFERRED (no monthly-spend aggregation endpoint) */}
-        <div className="bg-white rounded-3xl p-8 flex flex-col border border-border shadow-sm">
+        {/* System Utilization — MOCKED-DEFERRED (no monthly-spend
+            aggregation endpoint). Continuation #81 (2026-05-12) — Sample
+            marker added matching the #76/#78/#79/#80 honesty pattern;
+            $320 / $500 / "+34% vs last month" are fabricated. */}
+        <div className="bg-white rounded-3xl p-8 flex flex-col border border-border shadow-sm opacity-70">
           <div className="flex items-center justify-between mb-8">
-            <h3 className="text-foreground font-bold text-lg font-sans">System Utilization</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-foreground font-bold text-lg font-sans">System Utilization</h3>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-body">Sample</span>
+            </div>
             <LineChart size={20} className="text-muted-foreground" />
           </div>
           <div className="mb-10">
@@ -408,11 +474,24 @@ export default function BillingPage() {
 
       {/* Bento Row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Payment Method — MOCKED-DEFERRED (no Stripe payment-method API wiring) */}
-        <div className="bg-white rounded-3xl p-8 border border-border shadow-sm">
+        {/* Payment Method — MOCKED-DEFERRED (no Stripe payment-method API
+            wiring). Continuation #81 (2026-05-12) — Sample marker added;
+            "Alexander Wright VISA 4242" is fabricated card data. The
+            "Change" button is also non-functional (no payment-method
+            management endpoint); now disabled. */}
+        <div className="bg-white rounded-3xl p-8 border border-border shadow-sm opacity-70">
           <div className="flex justify-between items-center mb-8">
-            <h3 className="text-foreground font-bold text-lg font-sans">Payment Method</h3>
-            <button className="text-primary text-sm font-bold hover:underline font-body">Change</button>
+            <div className="flex items-center gap-2">
+              <h3 className="text-foreground font-bold text-lg font-sans">Payment Method</h3>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-body">Sample</span>
+            </div>
+            <button
+              disabled
+              title="Payment-method management pending"
+              className="text-muted-foreground text-sm font-bold opacity-50 cursor-not-allowed font-body"
+            >
+              Change
+            </button>
           </div>
 
           {/* Credit Card */}
@@ -453,11 +532,21 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Billing History — MOCKED-DEFERRED (no invoices endpoint) */}
-        <div className="lg:col-span-2 bg-white rounded-3xl p-8 flex flex-col border border-border shadow-sm">
+        {/* Billing History — MOCKED-DEFERRED (no invoices endpoint).
+            Continuation #81 (2026-05-12) — Sample marker added; the
+            displayed rows are fabricated invoice history. Filter button
+            also disabled (no real filter endpoint). */}
+        <div className="lg:col-span-2 bg-white rounded-3xl p-8 flex flex-col border border-border shadow-sm opacity-70">
           <div className="flex items-center justify-between mb-8">
-            <h3 className="text-foreground font-bold text-lg font-sans">Billing History</h3>
-            <button className="p-2 text-muted-foreground hover:text-primary transition-colors">
+            <div className="flex items-center gap-2">
+              <h3 className="text-foreground font-bold text-lg font-sans">Billing History</h3>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-body">Sample</span>
+            </div>
+            <button
+              disabled
+              title="Filter pending — invoices endpoint not wired"
+              className="p-2 text-muted-foreground opacity-50 cursor-not-allowed"
+            >
               <Filter size={18} />
             </button>
           </div>
@@ -504,20 +593,31 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* Annual Billing Banner — MOCKED-DEFERRED (no annual-plan logic) */}
-      <div className="bg-gradient-to-r from-[#495c95] to-[#2563eb] rounded-3xl p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6">
+      {/* Annual Billing Banner — MOCKED-DEFERRED (no annual-plan logic).
+          Continuation #82 (2026-05-12) — entire banner marked Sample;
+          annual-plan upgrade isn't wired (no annual plan in the Stripe
+          catalogue per Phase 7 closure state). "Switch & Save" CTA
+          disabled with explanatory tooltip. */}
+      <div className="bg-gradient-to-r from-[#495c95] to-[#2563eb] rounded-3xl p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6 opacity-70">
         <div className="flex items-center gap-6">
           <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-md shrink-0">
             <Wand2 size={28} className="text-white" />
           </div>
           <div>
-            <h4 className="text-xl font-bold font-sans">Annual Billing is now available</h4>
+            <div className="flex items-center gap-2 mb-1">
+              <h4 className="text-xl font-bold font-sans">Annual Billing is now available</h4>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-body">Sample</span>
+            </div>
             <p className="text-white/80 text-sm font-body">
-              Switch to yearly payments and save up to 20% on your AI execution costs.
+              Annual plan pending — monthly plans only via current Stripe checkout.
             </p>
           </div>
         </div>
-        <button className="px-8 py-3 bg-white text-primary rounded-xl font-bold text-sm whitespace-nowrap hover:bg-primary/10 transition-colors font-body">
+        <button
+          disabled
+          title="Annual plan pending"
+          className="px-8 py-3 bg-white/40 text-white/70 rounded-xl font-bold text-sm whitespace-nowrap font-body cursor-not-allowed"
+        >
           Switch &amp; Save
         </button>
       </div>

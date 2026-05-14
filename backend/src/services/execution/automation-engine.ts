@@ -42,6 +42,56 @@
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { executeAction } from './action-executor.js'
 
+// ─── Continuation #99 (2026-05-12) — APPROVAL-PATH ENFORCEMENT ──────────
+//
+// Centralized execution-policy enforcement per the PRIORITY SAFETY
+// ENFORCEMENT OVERRIDE: "Spend-increasing or launch-capable actions MUST
+// NOT auto-fire without approval-path enforcement." Manual fire via
+// `executeRule` (POST /automation/rules/:id/execute) is the implicit
+// approval path — an operator must explicitly trigger the rule.
+//
+// This constant centralizes the policy in ONE place (vs distributed
+// conditional logic per the override). The set lists action_types
+// classified as spend-increasing (Meta increase_budget) or launch-capable
+// (campaign CREATE on either platform). Pause / decrease_budget /
+// send_alert_email are SAFE (spend-reducing or informational); they
+// remain free to auto-fire.
+//
+// Set contents derived from actions_library template seeds:
+//   - meta.pause_campaign       SAFE  (reducing-spend)
+//   - meta.decrease_budget      SAFE  (reducing-spend)
+//   - meta.increase_budget      RESTRICTED (spend-increasing)
+//   - send_alert_email          SAFE  (informational)
+//   - google.pause_campaign     SAFE  (reducing-spend)
+//   - meta.create_campaign      RESTRICTED (launch-capable)
+//   - google.create_campaign    RESTRICTED (launch-capable)
+//
+// When an auto-fire path encounters a rule pointing at a RESTRICTED
+// template, the rule is SKIPPED at the evaluator (no automation_runs
+// row inserted, no executeAction call). The operator can still trigger
+// the same rule manually via POST /automation/rules/:id/execute —
+// which goes through `executeRule` (NOT through this gate). Manual
+// invocation is the approval-path enforcement.
+//
+// Future expansion: when an approvals schema lands (approvals table /
+// requires_approval column on actions_library), this constant migrates
+// to a runtime DB query against actions_library.requires_approval. The
+// gate position stays identical — only the source of truth changes.
+const SPEND_INCREASING_OR_LAUNCH_ACTION_TYPES = new Set<string>([
+  'meta.increase_budget',
+  'meta.create_campaign',
+  'google.create_campaign',
+])
+
+// Continuation #102 (2026-05-12) — exported policy check for cross-module
+// reuse. The auto-fire gate (#99) consumes this internally; route handlers
+// import it to compute a `requires_approval` flag for operator-facing
+// list responses (avoids drift between BE policy + FE display). Single
+// source of truth for the approval classification.
+export function actionRequiresApproval(actionType: string | null | undefined): boolean {
+  return typeof actionType === 'string' && SPEND_INCREASING_OR_LAUNCH_ACTION_TYPES.has(actionType)
+}
+
 // ─── Types ────────────────────────────────────────────────────────────
 
 interface AutomationRuleRow {
@@ -191,10 +241,15 @@ export async function evaluateRulesForAIDecision(
 
   const category = extractCategory(decision)
 
-  // 2. Fetch enabled rules for org.
+  // 2. Fetch enabled rules for org. Continuation #99: extended SELECT
+  // with `actions_library(action_type)` nested-select so the auto-fire
+  // gate below can read the action_type classification without an
+  // extra round-trip. Same PostgREST nested-select pattern as #38
+  // (automation_runs ↔ actions_library) — non-null FK guarantees the
+  // join row is always present for legitimate rules.
   const { data: rules, error: rulesErr } = await supabaseAdmin
     .from('automation_rules')
-    .select('id, org_id, name, trigger_type, min_confidence_threshold, action_template_id, action_params, enabled, run_count')
+    .select('id, org_id, name, trigger_type, min_confidence_threshold, action_template_id, action_params, enabled, run_count, actions_library(action_type)')
     .eq('org_id', orgId)
     .eq('enabled', true)
 
@@ -208,7 +263,10 @@ export async function evaluateRulesForAIDecision(
   let rulesFired = 0
   const runIds: string[] = []
 
-  for (const rawRule of rules as AutomationRuleRow[]) {
+  // supabase-js types infer the nested-select as `{action_type:any}[]` even
+  // for many-to-one FKs (PostgREST actually returns a single object). Cast
+  // via `unknown` to assert the runtime shape.
+  for (const rawRule of rules as unknown as Array<AutomationRuleRow & { actions_library?: { action_type: string } | null }>) {
     // Trigger-type match: rule.trigger_type vs decision result.category.
     // If decision has no category (governance-deferred AI Output Contract
     // extension), no rule auto-fires categorically.
@@ -217,7 +275,101 @@ export async function evaluateRulesForAIDecision(
     // Confidence gate.
     if (!meetsConfidenceThreshold(decision.confidence_score, rawRule.min_confidence_threshold)) continue
 
-    const result = await fireRule(orgId, rawRule, decision)
+    // Continuation #99 — APPROVAL-PATH ENFORCEMENT GATE.
+    // Spend-increasing (meta.increase_budget) and launch-capable
+    // (meta.create_campaign / google.create_campaign) actions MUST NOT
+    // auto-fire on the AI-decision stream. The operator must trigger
+    // these manually via POST /automation/rules/:id/execute, which is
+    // the implicit approval path. Skip the rule here — do NOT insert an
+    // automation_runs row, do NOT call executeAction. Log the skip so
+    // operators can grep for [automation] auto_fire_blocked and find
+    // exactly which rules would have fired but were gated.
+    const actionType = rawRule.actions_library?.action_type
+    if (actionRequiresApproval(actionType)) {
+      // eslint-disable-next-line no-console
+      console.info(
+        `[automation] auto_fire_blocked org_id=${orgId} rule_id=${rawRule.id} action_type=${actionType} ` +
+        `ai_decision_id=${decision.id} reason=approval_required ` +
+        `(spend-increasing or launch-capable; operator must trigger via POST /automation/rules/:id/execute)`,
+      )
+      continue
+    }
+
+    // Continuation #100 (2026-05-12) — AUTO-FIRE DISPATCH DEDUPE GATE.
+    // Per PRIORITY SAFETY ENFORCEMENT OVERRIDE item #4 ("approval dispatch
+    // idempotency/dedupe"). Pre-fix: if `evaluateRulesForAIDecision` is
+    // called twice for the same `aiDecisionId` (Inngest retry of the
+    // post-persist hook, concurrent webhook delivery, manual re-trigger
+    // for testing), each call would INSERT a fresh `automation_runs` row
+    // and dispatch a fresh `executeAction` call — duplicating the side
+    // effect on the underlying ad platform.
+    //
+    // The existing `decision_history (org_id, execution_id)` partial
+    // unique index protects against decision_history duplicates IF the
+    // caller supplies an idempotency key, but the auto-fire path doesn't
+    // synthesize one — so each retry creates a new decision_history row
+    // too. The Phase 4 idempotency invariant (no double-write to
+    // `decision_history`) holds only because each automation_runs.id
+    // becomes a fresh execution_id; that doesn't prevent the duplicate
+    // side effect itself.
+    //
+    // Application-level dedupe at the gate position: BEFORE inserting
+    // automation_runs, check if a row already exists for
+    // `(automation_rule_id, ai_decision_id)`. If yes, skip — that AI
+    // decision already triggered this rule once. Log the skip.
+    //
+    // Why no schema-level unique constraint: ai_decision_id is NULLABLE
+    // on automation_runs (manual fires via executeRule pass aiDecisionId
+    // optionally), and PostgreSQL unique constraints treat NULLs as
+    // distinct — so a multi-column unique on (automation_rule_id,
+    // ai_decision_id) would not enforce uniqueness when ai_decision_id
+    // is NULL. A schema-level partial unique index could work, but
+    // schema changes are out of scope for this minimal-diff
+    // continuation. Application-level check is sufficient for the
+    // current single-writer architecture (this is the only writer to
+    // automation_runs).
+    //
+    // Manual fire path via `executeRule` is INTENTIONALLY unaffected —
+    // operator-triggered re-execution is the implicit re-approval.
+    {
+      // Continuation #101 (2026-05-12) — use `.limit(1)` array select
+      // instead of `.maybeSingle()` for backfill robustness. Pre-#100
+      // duplicates may exist in the DB (from runs prior to the dedupe
+      // gate landing); .maybeSingle() throws PGRST116 on 2+ rows, which
+      // would convert the dedupe check itself into a 500 — defeating
+      // its purpose. The array-length check still answers the correct
+      // question ("has this rule+decision pair already fired?") even
+      // when pre-existing duplicates are present, and returns the most
+      // recent existing run for the audit log.
+      const { data: existingRuns, error: existingErr } = await supabaseAdmin
+        .from('automation_runs')
+        .select('id, status')
+        .eq('org_id', orgId)
+        .eq('automation_rule_id', rawRule.id)
+        .eq('ai_decision_id', decision.id)
+        .order('executed_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+
+      if (existingErr) {
+        // Throw → caller's errorHandler emits sanitized 500 + request_id
+        // (per CONSTITUTION §3 "Fail Loudly").
+        throw new Error(`automation: auto-fire dedupe lookup failed: ${existingErr.message}`)
+      }
+
+      if (existingRuns && existingRuns.length > 0) {
+        const existingRun = existingRuns[0]
+        // eslint-disable-next-line no-console
+        console.info(
+          `[automation] auto_fire_dedupe_skip org_id=${orgId} rule_id=${rawRule.id} ` +
+          `ai_decision_id=${decision.id} existing_run_id=${existingRun.id} existing_status=${existingRun.status} ` +
+          `reason=already_fired (same rule+decision pair already triggered; preventing duplicate side effect)`,
+        )
+        continue
+      }
+    }
+
+    // Continuation #103 — explicit 'auto_fire' trigger source for audit.
+    const result = await fireRule(orgId, rawRule, decision, 'auto_fire')
     if (result.runId) runIds.push(result.runId)
     if (result.fired) rulesFired += 1
   }
@@ -269,7 +421,12 @@ export async function executeRule(
     // enforcement pattern as executeAction's optional aiDecisionId lookup.
   }
 
-  const result = await fireRule(orgId, rule as AutomationRuleRow, aiDecision)
+  // Continuation #103 — explicit 'manual_rule_fire' trigger source for
+  // audit. This is the operator-approved fire path (POST /rules/:id/
+  // execute), exempt from #99 auto-fire approval gate but recorded
+  // distinctly in result_data so reviewers can see which restricted-
+  // action fires were operator-triggered vs which auto-fired.
+  const result = await fireRule(orgId, rule as AutomationRuleRow, aiDecision, 'manual_rule_fire')
   return {
     rulesFired: result.fired ? 1 : 0,
     runIds: result.runId ? [result.runId] : [],
@@ -301,10 +458,26 @@ interface FireResult {
   runId: string | null
 }
 
+// Continuation #103 (2026-05-12) — `triggerSource` discriminator for
+// audit-trail clarity. The Phase 4 decision_history.executed_by CHECK
+// constraint is `('manual', 'automation')` only, so both auto-fires
+// (from evaluateRulesForAIDecision via post-persist hook) and operator-
+// triggered manual rule fires (from executeRule via POST /rules/:id/
+// execute) record as `executed_by='automation'` — the manual operator
+// invocation is invisible at the audit row level. Threading
+// triggerSource into result_data (JSONB, no schema change) restores
+// the distinction without altering the CHECK constraint. Operators
+// can grep result_data->trigger_source on automation_runs / decision_
+// history to separate operator-approved restricted-action fires from
+// auto-fires of safe actions. Crucial when reviewing the audit trail
+// for accountability of approval-required actions (#102).
+type AutomationTriggerSource = 'auto_fire' | 'manual_rule_fire'
+
 async function fireRule(
   orgId: string,
   rule: AutomationRuleRow,
   aiDecision: AIDecisionRow | null,
+  triggerSource: AutomationTriggerSource = 'auto_fire',
 ): Promise<FireResult> {
   const resolvedParams = resolveAutoParams(rule.action_params, aiDecision)
 
@@ -348,13 +521,22 @@ async function fireRule(
       automationRuleId:  rule.id,
       automationRunId:   runId,
     })
-    resultData = exec.resultData
+    // Continuation #103 — merge triggerSource into result_data for audit.
+    // Preserves all keys executeAction wrote (mode/stage/http_status/etc.)
+    // and adds trigger_source for distinction between auto-fires of safe
+    // actions and operator-triggered manual fires (including of approval-
+    // required actions per #99/#102).
+    resultData = { ...exec.resultData, trigger_source: triggerSource }
   } catch (err) {
     status = 'failed'
     const e = err as Error & { code?: string; field?: string }
     errorMessage = e.code
       ? `${e.code}${e.field ? `:${e.field}` : ''} — ${e.message}`
       : (e.message ?? 'unknown error')
+    // Continuation #103 — preserve trigger_source even on failure so the
+    // audit row still tells operators whether the failed fire was an
+    // auto-fire attempt or an operator manual invocation.
+    resultData = { ...resultData, trigger_source: triggerSource }
   }
 
   // Update the run row with terminal status + result_data.

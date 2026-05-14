@@ -53,7 +53,7 @@ export default function DecisionDetailPage() {
   const { getToken } = useAuth();
   const [decision, setDecision] = useState<DecisionDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [executing, setExecuting] = useState(false);
   const [execResult, setExecResult] = useState<{ result: string } | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
@@ -65,8 +65,16 @@ export default function DecisionDetailPage() {
       try {
         const data = await apiClient<DecisionDetail>(`/api/v1/decisions/${id}`, token);
         setDecision(data);
-      } catch {
-        setNotFound(true);
+      } catch (err) {
+        // Continuation #61 (2026-05-12) — surface the actual error reason
+        // instead of swallowing every catch as "Decision not found". With
+        // #59 honoring `error.code`, a 503 DEFERRED returns the actionable
+        // "Phase 3 anomaly engine disabled per SYSTEM_CONTROL.md" copy;
+        // a 401 returns "Your session expired — please sign in again";
+        // a 404 NOT_FOUND returns the canonical not-found message. Pre-fix
+        // the page collapsed all of these onto a single misleading
+        // "Decision not found" footer.
+        setLoadError(formatErrorMessage(err, "Decision not found"));
       } finally {
         setLoading(false);
       }
@@ -83,10 +91,10 @@ export default function DecisionDetailPage() {
     );
   }
 
-  if (notFound || !decision) {
+  if (loadError || !decision) {
     return (
       <div className="py-20 text-center space-y-4">
-        <p className="text-muted-foreground font-body">Decision not found.</p>
+        <p className="text-muted-foreground font-body">{loadError ?? "Decision not found."}</p>
         <Link href="/decisions" className="text-primary font-bold text-sm font-body hover:underline">← Back to Decisions</Link>
       </div>
     );

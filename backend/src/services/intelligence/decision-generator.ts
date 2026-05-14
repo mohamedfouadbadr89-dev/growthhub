@@ -20,12 +20,20 @@ function computeConfidence(deltaPct: number, dataPoints: number, consecutiveDays
 async function resolveAIClient(
   orgId: string
 ): Promise<{ client: ReturnType<typeof getOpenRouterClient> | null; isLtd: boolean; hasNoByok: boolean }> {
-  const { data: org } = await supabaseAdmin
+  // Continuation #107 (2026-05-13) — runtime safety hardening parallel to
+  // #104/#105/#106. Pre-fix: `error` was discarded; a DB lookup failure
+  // (RLS, network) silently set data=null → the catch fell through to a
+  // misleading "Org not found" error. Operators debugging an AI-decision
+  // generation failure would chase a non-existent missing-org bug instead
+  // of the real DB issue. Now: capture error + surface its message
+  // distinctly from the genuine not-found case.
+  const { data: org, error: orgErr } = await supabaseAdmin
     .from('organizations')
     .select('plan_type, vault_byok_openrouter_secret_id')
     .eq('org_id', orgId)
     .single()
 
+  if (orgErr) throw new Error(`resolveAIClient: organizations lookup failed for org_id=${orgId}: ${orgErr.message}`)
   if (!org) throw new Error(`Org ${orgId} not found`)
 
   if (org.plan_type === 'ltd') {
@@ -80,9 +88,20 @@ export async function generateDecisionsForOrg(orgId: string, runId: string): Pro
       aiStatus = 'ai_unavailable'
       recommendedAction = `Add an AI key in Settings to get recommendations for this ${anomaly.type}`
     } else if (client) {
-      // subscription: try to deduct a credit first
+      // subscription: try to deduct a credit first.
+      // Continuation #107 (2026-05-13) — billing-adjacent silent-failure
+      // hardening. Pre-fix: `error` was discarded on the `deduct_credit`
+      // RPC; a DB/RPC failure (transient pool, RLS, function bug) would
+      // produce data=null, indistinguishable from a genuine "no credits"
+      // null return → users shown "Add credits" UI even when their balance
+      // is fine, leading to false-positive billing prompts. Now: capture
+      // error + throw → genuine null still routes to credits_exhausted;
+      // real DB failures surface as Inngest run failures with a trace.
       if (!isLtd) {
-        const { data: newBalance } = await supabaseAdmin.rpc('deduct_credit', { p_org_id: orgId })
+        const { data: newBalance, error: deductErr } = await supabaseAdmin.rpc('deduct_credit', { p_org_id: orgId })
+        if (deductErr) {
+          throw new Error(`generateDecisionsForOrg: deduct_credit RPC failed for org_id=${orgId}: ${deductErr.message}`)
+        }
         if (newBalance === null) {
           aiStatus = 'credits_exhausted'
           recommendedAction = `Add credits to see AI recommendations for this ${anomaly.type}`

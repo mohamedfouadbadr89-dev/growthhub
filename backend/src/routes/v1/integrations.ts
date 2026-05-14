@@ -89,14 +89,28 @@ integrationsRouter.post('/:id/sync', async (c) => {
     return fail(c, 'Integration is not connected', 404, { code: 'NOT_CONNECTED' })
   }
 
-  const { data: inProgress } = await supabaseAdmin
+  // Continuation #104 (2026-05-12) — runtime safety hardening on the
+  // in-progress sync lookup. Pre-fix: (a) `error` was discarded — a DB
+  // lookup failure (network/RLS/schema) silently returned `data=null`
+  // and the code treated it as "no in-progress sync" → ALLOWED a
+  // duplicate Inngest queue. False-negative safety hole when the
+  // dedupe path is the most critical (it's the ONLY thing preventing
+  // duplicate sync work). Now: capture error + throw → errorHandler
+  // emits sanitized 500 with request_id (CONSTITUTION §3 "Fail Loudly").
+  // (b) `.maybeSingle()` errors PGRST116 if 2+ rows exist (pre-existing
+  // duplicate in_progress rows from a prior bug). Switched to
+  // .limit(1) array select — backfill-safe, mirrors the #101 pattern.
+  const { data: inProgressRows, error: inProgressErr } = await supabaseAdmin
     .from('sync_logs')
     .select('id')
     .eq('integration_id', id)
     .eq('status', 'in_progress')
-    .maybeSingle()
+    .limit(1)
 
-  if (inProgress) {
+  if (inProgressErr) {
+    throw new Error(`integrations sync: in_progress lookup failed: ${inProgressErr.message}`)
+  }
+  if (inProgressRows && inProgressRows.length > 0) {
     return fail(c, 'A sync is already in progress for this integration', 409, { code: 'SYNC_IN_PROGRESS' })
   }
 

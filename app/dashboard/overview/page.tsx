@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
+import { RefreshCw } from "lucide-react";
 
 interface MetricsSummary {
   spend: number;
@@ -65,11 +66,23 @@ function defaultDateRange() {
   };
 }
 
+// Continuation #84 (2026-05-12) — status dot colors aligned with the
+// discriminating scheme established in `app/campaigns/[id]/page.tsx` (#69)
+// and `app/campaigns/page.tsx` STATUS_STYLES. Pre-fix paused/draft both
+// rendered as the same muted grey, hiding the distinction between
+// scheduled/pending (draft) and explicitly halted (paused). Now each
+// status has a visually distinct dot:
+//   active    → emerald-pulse (live)
+//   paused    → amber          (operator-halted)
+//   draft     → primary        (not yet pushed)
+//   completed → blue           (finished window)
+//   archived  → muted          (hidden)
 const STATUS_DOT: Record<string, string> = {
-  active:   "bg-emerald-500 animate-pulse",
-  paused:   "bg-muted-foreground/30",
-  draft:    "bg-muted-foreground/30",
-  archived: "bg-muted-foreground/20",
+  active:    "bg-emerald-500 animate-pulse",
+  paused:    "bg-amber-500",
+  draft:     "bg-primary",
+  completed: "bg-blue-500",
+  archived:  "bg-muted-foreground/30",
 };
 
 export default function DashboardOverview() {
@@ -85,6 +98,30 @@ export default function DashboardOverview() {
 
   const [insightVisible, setInsightVisible] = useState(true);
 
+  // Continuation #90 (2026-05-12) — track the last successful fetch
+  // timestamp for the metrics surface. Operators clicking Refresh (#66)
+  // had no visual signal of how stale the displayed data was; now they
+  // see "Updated Xm ago" next to the Refresh button.
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    // Re-render the relative-time string every 30s so "Updated 5m ago"
+    // doesn't go stale while the page stays open. 30s is fine resolution
+    // for relative-time display; doesn't add network cost.
+    const t = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  function relUpdated(): string {
+    if (lastUpdatedAt === null) return "—";
+    const ms = nowTick - lastUpdatedAt;
+    if (ms < 60_000) return "just now";
+    const m = Math.floor(ms / 60_000);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  }
+
   const loadMetrics = useCallback(async () => {
     setMetricsLoading(true);
     setMetricsError(null);
@@ -97,6 +134,7 @@ export default function DashboardOverview() {
         token
       );
       setMetrics(data);
+      setLastUpdatedAt(Date.now());
     } catch (e) {
       // Continuation #36: formatErrorMessage surfaces ApiError.requestId.
       setMetricsError(formatErrorMessage(e, "Something went wrong"));
@@ -145,24 +183,45 @@ export default function DashboardOverview() {
       ]
     : Array.from({ length: 5 }, (_, i) => ({ label: ["Revenue", "Spend", "ROAS", "Impressions", "Clicks"][i], value: "—", progress: 0, positive: null as null }));
 
-  const chartBars = campaigns.length > 0
-    ? campaigns.slice(0, 7).map((c) => ({
-        revenue: Math.min(90, Math.max(8, (c.metrics.revenue / Math.max(...campaigns.map((x) => x.metrics.revenue), 1)) * 85)),
-        spend:   Math.min(85, Math.max(6, (c.metrics.spend   / Math.max(...campaigns.map((x) => x.metrics.spend),   1)) * 80)),
-        label:   c.name.slice(0, 3).toUpperCase(),
-      }))
-    : [
-        { revenue: 40, spend: 32, label: "Mon" },
-        { revenue: 55, spend: 47, label: "Tue" },
-        { revenue: 45, spend: 34, label: "Wed" },
-        { revenue: 70, spend: 63, label: "Thu" },
-        { revenue: 60, spend: 49, label: "Fri" },
-        { revenue: 85, spend: 81, label: "Sat" },
-        { revenue: 75, spend: 66, label: "Sun" },
-      ];
+  // Continuation #77 (2026-05-12) — honesty pass on the Revenue vs Spend
+  // chart. Pre-fix: (a) the chart titled "Trend" was actually per-campaign
+  // comparison (NOT time-series — no /metrics/timeseries endpoint), and
+  // (b) the empty-state fell back to fake "Mon-Sun" bars that looked
+  // plausibly real to operators. Now: real data only; empty-state renders
+  // a clear "No campaign data yet" message. Title relabeled below in the
+  // JSX to "Revenue vs Spend by Campaign".
+  const chartBars: Array<{ revenue: number; spend: number; label: string }> =
+    campaigns.length > 0
+      ? campaigns.slice(0, 7).map((c) => ({
+          revenue: Math.min(90, Math.max(8, (c.metrics.revenue / Math.max(...campaigns.map((x) => x.metrics.revenue), 1)) * 85)),
+          spend:   Math.min(85, Math.max(6, (c.metrics.spend   / Math.max(...campaigns.map((x) => x.metrics.spend),   1)) * 80)),
+          label:   c.name.slice(0, 4).toUpperCase(),
+        }))
+      : [];
 
   return (
     <div className="space-y-8">
+      {/* Continuation #66 (2026-05-12) — page-level refresh strip. Sits
+          above the (dismissible) AI Summary card so operators retain the
+          refresh affordance even after dismissing the insight. Cockpit-wide
+          consistency with #47/#48/#65 RefreshCw spinner pattern. */}
+      <div className="flex items-center justify-end gap-3">
+        {lastUpdatedAt !== null && (
+          <span className="text-[11px] text-muted-foreground font-body">
+            Updated <span className="font-bold text-foreground">{relUpdated()}</span>
+          </span>
+        )}
+        <button
+          onClick={() => { void loadMetrics(); void loadCampaigns(); }}
+          disabled={metricsLoading || campaignsLoading}
+          title="Refresh — re-poll metrics and campaigns"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-container-low text-foreground hover:bg-surface-container-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw size={12} className={(metricsLoading || campaignsLoading) ? "animate-spin" : ""} />
+          {metricsLoading || campaignsLoading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
       {/* AI Summary */}
       {insightVisible && (
         <section className="p-6 bg-white rounded-xl border border-border shadow-sm flex gap-6 items-start">
@@ -181,7 +240,7 @@ export default function DashboardOverview() {
                 : `Your account generated ${formatCurrency(metrics!.revenue)} in revenue at a ${metrics!.roas.toFixed(2)}x ROAS over the last 30 days.`}
             </p>
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 shrink-0 items-center">
             {noMetrics && (
               <Link href="/integrations">
                 <button className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white hover:opacity-90 transition-opacity">
@@ -220,23 +279,34 @@ export default function DashboardOverview() {
       <section className="grid grid-cols-12 gap-4">
         <div className="col-span-8 bg-white p-8 rounded-xl border border-border shadow-sm">
           <div className="flex justify-between items-center mb-8">
-            <h3 className="font-sans font-bold text-xl text-foreground">Revenue vs Spend Trend</h3>
+            {/* Continuation #77 — title corrected from "Revenue vs Spend
+                Trend" (which implied time-series, but the chart is actually
+                per-campaign comparison) to "Revenue vs Spend by Campaign". */}
+            <h3 className="font-sans font-bold text-xl text-foreground">Revenue vs Spend by Campaign</h3>
             <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-widest">
               <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-primary" /><span className="text-muted-foreground">Revenue</span></div>
               <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-outline-variant" /><span className="text-muted-foreground">Spend</span></div>
             </div>
           </div>
-          <div className="relative h-64 w-full flex items-end gap-2 border-b border-l border-border">
-            {chartBars.map((bar, i) => (
-              <div key={i} className="flex-1 flex items-end gap-0.5 h-full">
-                <div className="flex-1 bg-primary rounded-t-sm hover:opacity-80 transition-opacity" style={{ height: `${bar.revenue}%` }} />
-                <div className="flex-1 bg-outline-variant/40 rounded-t-sm" style={{ height: `${bar.spend}%` }} />
+          {chartBars.length === 0 ? (
+            <div className="h-64 flex items-center justify-center text-sm text-muted-foreground font-body border-b border-l border-border">
+              No campaign data yet. <Link href="/campaigns/create" className="ml-2 text-primary font-bold hover:underline">Create a campaign</Link>
+            </div>
+          ) : (
+            <>
+              <div className="relative h-64 w-full flex items-end gap-2 border-b border-l border-border">
+                {chartBars.map((bar, i) => (
+                  <div key={i} className="flex-1 flex items-end gap-0.5 h-full">
+                    <div className="flex-1 bg-primary rounded-t-sm hover:opacity-80 transition-opacity" style={{ height: `${bar.revenue}%` }} />
+                    <div className="flex-1 bg-outline-variant/40 rounded-t-sm" style={{ height: `${bar.spend}%` }} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="flex justify-between mt-4 px-2 text-[10px] font-bold text-muted-foreground uppercase">
-            {chartBars.map((b) => <span key={b.label}>{b.label}</span>)}
-          </div>
+              <div className="flex justify-between mt-4 px-2 text-[10px] font-bold text-muted-foreground uppercase">
+                {chartBars.map((b) => <span key={b.label}>{b.label}</span>)}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="col-span-4 flex flex-col gap-4">

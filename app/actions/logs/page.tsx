@@ -1,17 +1,82 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import {
   Search, Download, TrendingUp, ChevronDown, ChevronUp,
-  AlertTriangle, Bot, Activity, DollarSign, Zap,
+  AlertTriangle, Bot, Activity, DollarSign, Zap, RefreshCw,
 } from "lucide-react";
+import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
 
-type Status = "success" | "failed" | "running";
-type Platform = "All" | "Google" | "Meta" | "TikTok" | "Snapchat";
+// Continuation (2026-05-12): wired Execution Log page to canonical
+// `GET /api/v1/history` (decision_history; CLAUDE.md §9 "the most critical
+// table in the system"). Pattern matches #13/#22/#31/#33 — backend canonical
+// contract exists; FE swap from mocked-shell to real data under ADJACENT
+// CONTINUATION AUTHORITY (operator-facing execution visibility — priority
+// items #1 + #4 in IMPLEMENTATION PRIORITY SHIFT).
+//
+// Backend SELECT shape (history.ts:85):
+//   id, org_id, decision, action_taken, trigger_condition, result,
+//   ai_explanation, confidence_score, ai_decision_id, executed_by, created_at
+//
+// Schema constraints (20260503130000_phase4_minimal_execution_layer.sql):
+//   - result CHECK IN ('success','failed','skipped')  — TERMINAL (no 'running')
+//   - executed_by CHECK IN ('manual','automation')
+//   - confidence_score NUMERIC 0–1 (displayed as 0–100 %)
+//   - data_used JSONB (NOT exposed by GET /history list for perf; only
+//     GET /history/:id returns the full record with data_used)
+//
+// Adapted Stitch filters:
+//   - Platform filter → replaced with "Executed By" (All/Manual/Automation)
+//     since decision_history doesn't carry a platform column (action_taken
+//     is free-form TEXT). The canonical `?executed_by=` query param is
+//     validated server-side against the CHECK enum (history.ts:29,65).
+//   - Status filter → success/failed/skipped (terminal); no "running"
+//     since the result column is terminal. The Stitch "running" mock state
+//     is preserved in the type union for backwards-compat but never emitted.
+//
+// KPI strip (bottom-3-card metrics + system health strip):
+//   - Total Executions → derived from loaded entries
+//   - Revenue Impact / Efficiency Gain / System Health → labeled as
+//     informational placeholders since decision_history doesn't carry
+//     impact_data at the list-row level (only impact_snapshot in detail
+//     route /:id, which we don't pre-load). Marked with "—" to be honest
+//     rather than render fabricated numbers.
+
+type Status = "success" | "failed" | "running" | "skipped";
+type ExecutedBy = "All" | "manual" | "automation";
 
 interface PlatformTag {
   label: string;
   dot: string;
+}
+
+interface ApiHistoryEntry {
+  id: string;
+  org_id: string;
+  decision: string;
+  action_taken: string;
+  trigger_condition: string;
+  result: "success" | "failed" | "skipped";
+  ai_explanation: string | null;
+  confidence_score: number | null;
+  ai_decision_id: string | null;
+  executed_by: "manual" | "automation";
+  created_at: string;
+}
+
+// Continuation #42 (2026-05-12) — lazy-loaded full audit row. `GET /history`
+// LIST intentionally omits data_used + impact_snapshot for performance
+// (history.ts:85 column list); `GET /history/:id` returns the full row via
+// `.select('*')` (history.ts:124). Expanding a row triggers a one-shot
+// fetch; cache stays alive for the page session. Surfaces the two
+// CLAUDE.md §9 "system memory" fields that LIST hides:
+//   - data_used:       JSONB snapshot at decision time
+//   - impact_snapshot: before/after state per Phase 4 deliverable
+interface ApiHistoryDetail extends ApiHistoryEntry {
+  data_used: Record<string, unknown>;
+  impact_snapshot: Record<string, unknown> | null;
+  trace_id: string | null;
 }
 
 interface LogEntry {
@@ -19,7 +84,7 @@ interface LogEntry {
   name: string;
   desc: string;
   platforms: PlatformTag[];
-  platformFilter: Platform[];
+  executedBy: "manual" | "automation";
   scope: string;
   impact: string;
   impactClass: string;
@@ -29,151 +94,249 @@ interface LogEntry {
     type: "success" | "error";
     explanation?: string;
     signal?: string;
-    expected?: string;
-    actual?: string;
+    confidence?: string;
+    aiLinked?: boolean;
     errorTitle?: string;
-    retryStatus?: string;
     errorMessage?: string;
     rootCause?: string;
   };
 }
 
-const MOCK_LOGS: LogEntry[] = [
-  {
-    id: "log-001",
-    name: "PMax Bid Optimization",
-    desc: "Automated ROAS balancing",
-    platforms: [{ label: "Google Ads", dot: "#4285F4" }],
-    platformFilter: ["Google"],
-    scope: "12 Campaigns",
-    impact: "+12.4% ROAS",
-    impactClass: "text-emerald-600",
-    status: "success",
-    time: "09:42 AM",
-    detail: {
-      type: "success",
-      explanation:
-        "Detected 14% ROAS deviation in PMax campaigns during the morning peak. Intelligence core initiated bid ceiling adjustment across 12 high-intent segments to preserve margin while maintaining velocity.",
-      signal: "Inconsistent Conversion Latency",
-      expected: "$4.2k Revenue",
-      actual: "$4.8k Revenue",
-    },
-  },
-  {
-    id: "log-002",
-    name: "Lookalike Refresh Cycle",
-    desc: "Audience sync process",
-    platforms: [{ label: "Meta Ads", dot: "#1877F2" }],
-    platformFilter: ["Meta"],
-    scope: "4 Audiences",
-    impact: "N/A",
-    impactClass: "text-muted-foreground",
-    status: "failed",
-    time: "08:15 AM",
-    detail: {
-      type: "error",
-      errorTitle: "Execution Error: Audience API Timeout",
-      retryStatus: "QUEUED (T-15m)",
-      errorMessage: "Status Code 503: Service Unavailable at Meta Graph API Endpoint",
-      rootCause:
-        "Meta Ads API experiencing intermittent downtime for segment-level operations in the North America West region. Execution core paused to prevent corrupting audience hash states.",
-    },
-  },
-  {
-    id: "log-003",
-    name: "Budget Reallocation Flow",
-    desc: "Daily spending balancing",
-    platforms: [
-      { label: "TikTok Ads", dot: "#ff0050" },
-      { label: "Snapchat Ads", dot: "#FFFC00" },
-    ],
-    platformFilter: ["TikTok", "Snapchat"],
-    scope: "32 Groups",
-    impact: "Processing…",
-    impactClass: "text-foreground",
-    status: "running",
-    time: "Active Now",
-    detail: {
-      type: "success",
-      explanation:
-        "Dynamically reallocating daily budget across 32 ad groups based on real-time efficiency signals. TikTok shows +18% CTR uplift; Snapchat rebalancing in progress.",
-      signal: "Budget Efficiency Delta",
-      expected: "$8.1k Efficiency",
-      actual: "In Progress",
-    },
-  },
-  {
-    id: "log-004",
-    name: "Creative Rotation Engine",
-    desc: "Auto-swap fatigue assets",
-    platforms: [{ label: "Meta Ads", dot: "#1877F2" }],
-    platformFilter: ["Meta"],
-    scope: "6 Ad Sets",
-    impact: "+9.1% CTR",
-    impactClass: "text-emerald-600",
-    status: "success",
-    time: "07:30 AM",
-    detail: {
-      type: "success",
-      explanation:
-        "Frequency threshold crossed on 6 ad sets. Swapped in 3 reserve video creatives with highest historical CTR. Early signals show +9.1% improvement in click-through rate.",
-      signal: "Creative Frequency Fatigue",
-      expected: "$3.5k Recovered",
-      actual: "$3.9k Recovered",
-    },
-  },
-  {
-    id: "log-005",
-    name: "Bid Adjustment — Night Mode",
-    desc: "Off-peak bid reduction",
-    platforms: [{ label: "Google Ads", dot: "#4285F4" }],
-    platformFilter: ["Google"],
-    scope: "8 Campaigns",
-    impact: "-$220 Saved",
-    impactClass: "text-blue-600",
-    status: "success",
-    time: "12:05 AM",
-    detail: {
-      type: "success",
-      explanation:
-        "Automatically reduced bids by 35% during the 12 AM–5 AM window on 8 campaigns with historically low conversion rates. Spend efficiency improved without impacting daily delivery targets.",
-      signal: "Time-of-Day Conversion Signal",
-      expected: "$180 Saved",
-      actual: "$220 Saved",
-    },
-  },
-];
+const EXECUTED_BY_TAG: Record<"manual" | "automation", PlatformTag> = {
+  manual:     { label: "Manual",     dot: "#3d618c" },
+  automation: { label: "Automation", dot: "#005bc4" },
+};
 
 const STATUS_LABELS: Record<Status, { label: string; class: string }> = {
   success: { label: "Success", class: "bg-emerald-100 text-emerald-700" },
   failed:  { label: "Failed",  class: "bg-red-100 text-red-600" },
   running: { label: "Running", class: "bg-primary/10 text-primary" },
+  skipped: { label: "Skipped", class: "bg-surface-container-high text-muted-foreground" },
 };
 
-const PLATFORM_FILTERS: Platform[] = ["All", "Google", "Meta", "TikTok", "Snapchat"];
-const STATUS_FILTERS: Array<"All" | Status> = ["All", "success", "failed", "running"];
+const EXECUTED_BY_FILTERS: ExecutedBy[] = ["All", "manual", "automation"];
+const STATUS_FILTERS: Array<"All" | "success" | "failed" | "skipped"> = ["All", "success", "failed", "skipped"];
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function mapHistoryToLog(row: ApiHistoryEntry): LogEntry {
+  const confidencePct = row.confidence_score !== null
+    ? Math.round(row.confidence_score * 100)
+    : null;
+
+  const status: Status = row.result;
+
+  return {
+    id: row.id,
+    name: row.decision,
+    desc: row.action_taken,
+    platforms: [EXECUTED_BY_TAG[row.executed_by]],
+    executedBy: row.executed_by,
+    scope: row.ai_decision_id
+      ? `AI decision ${row.ai_decision_id.slice(0, 8)}…`
+      : "Manual op",
+    impact: confidencePct !== null ? `${confidencePct}% conf.` : "—",
+    impactClass: confidencePct !== null && confidencePct >= 70
+      ? "text-primary"
+      : "text-muted-foreground",
+    status,
+    time: formatTime(row.created_at),
+    detail: row.result === "failed"
+      ? {
+          type: "error",
+          errorTitle: `Execution Failed — ${row.action_taken}`,
+          errorMessage: row.ai_explanation ?? "No explanation recorded",
+          rootCause: row.trigger_condition,
+        }
+      : {
+          type: "success",
+          explanation: row.ai_explanation ?? "No explanation recorded",
+          signal: row.trigger_condition,
+          confidence: confidencePct !== null ? `${confidencePct}%` : "—",
+          aiLinked: row.ai_decision_id !== null,
+        },
+  };
+}
 
 export default function LogsPage() {
+  const { getToken } = useAuth();
+
+  const [entries,   setEntries]   = useState<LogEntry[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [search, setSearch] = useState("");
-  const [platformFilter, setPlatformFilter] = useState<Platform>("All");
-  const [statusFilter, setStatusFilter] = useState<"All" | Status>("All");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["log-001"]));
+  const [executedByFilter, setExecutedByFilter] = useState<ExecutedBy>("All");
+  const [statusFilter, setStatusFilter] = useState<"All" | "success" | "failed" | "skipped">("All");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Continuation #73 (2026-05-12) — surface backend `total` so operators
+  // see when more rows exist beyond the loaded page (default limit=50).
+  const [totalBackend, setTotalBackend] = useState<number>(0);
+
+  // Continuation #42 — lazy-loaded full audit row state (data_used + impact_snapshot).
+  const [details,      setDetails]      = useState<Record<string, ApiHistoryDetail>>({});
+  const [detailLoading,setDetailLoading]= useState<Set<string>>(new Set());
+  const [detailErrors, setDetailErrors] = useState<Record<string, string>>({});
+
+  async function fetchDetail(id: string) {
+    if (details[id] || detailLoading.has(id)) return;
+    setDetailLoading((prev) => new Set(prev).add(id));
+    setDetailErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      const data = await apiClient<ApiHistoryDetail>(`/api/v1/history/${id}`, token);
+      setDetails((prev) => ({ ...prev, [id]: data }));
+    } catch (err) {
+      setDetailErrors((prev) => ({ ...prev, [id]: formatErrorMessage(err, "Failed to load detail") }));
+    } finally {
+      setDetailLoading((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  // Continuation #48 — refresh-on-demand. Same pattern as #47 history +
+  // automation status. Initial-load useEffect uses cancellation guard;
+  // explicit refresh callback re-uses the same fetch logic without
+  // touching effect deps.
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Continuation #93 (2026-05-12) — data-freshness indicator extended to
+  // the execution log page (fourth volatility-sensitive cockpit surface
+  // after #90 dashboard/overview + #91 automation/history + #92 automation
+  // status). decision_history is append-only and grows continuously as
+  // executions fire; freshness signal helps operators judge whether the
+  // visible page reflects recent activity.
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  function relUpdated(): string {
+    if (lastUpdatedAt === null) return "—";
+    const ms = nowTick - lastUpdatedAt;
+    if (ms < 60_000) return "just now";
+    const m = Math.floor(ms / 60_000);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  }
+
+  async function fetchEntries() {
+    setRefreshing(true);
+    setLoadError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Sign in required");
+      const data = await apiClient<{ history: ApiHistoryEntry[]; total: number }>(
+        "/api/v1/history?limit=50",
+        token,
+      );
+      setEntries(data.history.map(mapHistoryToLog));
+      setTotalBackend(data.total);
+      setLastUpdatedAt(Date.now());
+    } catch (err) {
+      setLoadError(formatErrorMessage(err, "Failed to load execution logs"));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const token = await getToken();
+        if (!token) throw new ApiError(401, "Sign in required");
+        // The canonical history list endpoint enforces MAX_LIMIT=100
+        // server-side (history.ts:20); request default 50 page.
+        const data = await apiClient<{ history: ApiHistoryEntry[]; total: number }>(
+          "/api/v1/history?limit=50",
+          token,
+        );
+        if (!cancelled) {
+          setEntries(data.history.map(mapHistoryToLog));
+          setTotalBackend(data.total);
+          setLastUpdatedAt(Date.now());
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(formatErrorMessage(err, "Failed to load execution logs"));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [getToken]);
 
   function toggleExpand(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Fire-and-forget detail fetch on first expand; subsequent expands
+        // hit the cache. fetchDetail is no-op if already loaded/loading.
+        void fetchDetail(id);
+      }
       return next;
     });
   }
 
-  const filtered = MOCK_LOGS.filter((log) => {
-    if (platformFilter !== "All" && !log.platformFilter.includes(platformFilter)) return false;
+  // Defensive JSONB renderer — only primitive top-level keys are surfaced
+  // (same pattern as continuation #39 history-page result_data filter).
+  // Nested objects/arrays are intentionally elided to avoid leaking large
+  // or unstructured payloads to operator UI; values truncated to 100 chars;
+  // cap at 8 keys per panel.
+  function primitiveEntries(payload: Record<string, unknown> | null): Array<[string, string]> {
+    if (!payload || typeof payload !== "object") return [];
+    const out: Array<[string, string]> = [];
+    for (const [k, v] of Object.entries(payload)) {
+      if (out.length >= 8) break;
+      if (v === null) {
+        out.push([k, "—"]);
+      } else if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+        const s = String(v);
+        out.push([k, s.length > 100 ? `${s.slice(0, 100)}…` : s]);
+      }
+      // arrays / nested objects intentionally elided
+    }
+    return out;
+  }
+
+  const filtered = useMemo(() => entries.filter((log) => {
+    if (executedByFilter !== "All" && log.executedBy !== executedByFilter) return false;
     if (statusFilter !== "All" && log.status !== statusFilter) return false;
     if (search && !log.name.toLowerCase().includes(search.toLowerCase()) &&
         !log.desc.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  });
+  }), [entries, executedByFilter, statusFilter, search]);
+
+  const totalExecutions = entries.length;
+  const successRatePct = entries.length === 0
+    ? 0
+    : Math.round((entries.filter((e) => e.status === "success").length / entries.length) * 100);
 
   return (
     <div className="space-y-8 pb-12">
@@ -185,13 +348,33 @@ export default function LogsPage() {
           </h1>
           <p className="text-muted-foreground font-body">Real-time record of every automated action and its outcome</p>
         </div>
-        <button className="inline-flex items-center gap-2 bg-primary text-white px-6 py-2.5 rounded-xl font-bold hover:opacity-90 active:scale-95 transition-all font-body text-sm self-start md:self-auto">
-          <Download size={15} />
-          Export CSV
-        </button>
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          {lastUpdatedAt !== null && (
+            <span className="text-[11px] text-muted-foreground font-body">
+              Updated <span className="font-bold text-foreground">{relUpdated()}</span>
+            </span>
+          )}
+          <button
+            onClick={() => void fetchEntries()}
+            disabled={refreshing || loading}
+            title="Refresh — fetch latest execution logs"
+            className="inline-flex items-center gap-2 bg-surface-container-high text-foreground px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-surface-container-highest transition-all font-body disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+          <button
+            className="inline-flex items-center gap-2 bg-surface-container-high text-muted-foreground px-6 py-2.5 rounded-xl font-bold transition-all font-body text-sm opacity-50 cursor-not-allowed"
+            disabled
+            title="CSV export pending"
+          >
+            <Download size={15} />
+            Export CSV
+          </button>
+        </div>
       </div>
 
-      {/* System Health Strip */}
+      {/* System Health Strip — derived from loaded entries where possible */}
       <div className="bg-surface-container-low rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -201,24 +384,32 @@ export default function LogsPage() {
           <div className="h-4 w-px bg-border" />
           <div className="flex items-center gap-6">
             <div className="flex flex-col">
-              <span className="text-[10px] text-muted-foreground font-body">API STATUS</span>
-              <span className="text-sm font-bold text-primary font-body">99.9% Uptime</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-muted-foreground font-body">LATENCY</span>
-              <span className="text-sm font-bold text-foreground font-body">142ms</span>
+              <span className="text-[10px] text-muted-foreground font-body">LOADED ROWS</span>
+              <span className="text-sm font-bold text-primary font-body">{totalExecutions}</span>
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-muted-foreground font-body">SUCCESS RATE</span>
-              <span className="text-sm font-bold text-foreground font-body">98.4%</span>
+              <span className="text-sm font-bold text-foreground font-body">
+                {entries.length === 0 ? "—" : `${successRatePct}%`}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-muted-foreground font-body">SOURCE</span>
+              <span className="text-sm font-bold text-foreground font-body">decision_history</span>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground font-bold uppercase font-body">Real-time Sync</span>
+          <span className="text-[10px] text-muted-foreground font-bold uppercase font-body">Live</span>
           <Activity size={14} className="text-primary animate-pulse" />
         </div>
       </div>
+
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-body">
+          {loadError}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
@@ -229,24 +420,25 @@ export default function LogsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search operations…"
+            placeholder="Search decisions…"
             className="bg-white border border-border rounded-xl py-2.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all font-body w-56"
           />
         </div>
 
-        {/* Platform filter */}
+        {/* Executed-by filter (replaces Stitch Platform filter; backed by
+            canonical ?executed_by= query param) */}
         <div className="flex gap-1.5">
-          {PLATFORM_FILTERS.map((p) => (
+          {EXECUTED_BY_FILTERS.map((p) => (
             <button
               key={p}
-              onClick={() => setPlatformFilter(p)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all font-body ${
-                platformFilter === p
+              onClick={() => setExecutedByFilter(p)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold capitalize transition-all font-body ${
+                executedByFilter === p
                   ? "bg-primary/10 text-primary"
                   : "bg-white border border-border text-muted-foreground hover:bg-surface-container-high hover:text-foreground"
               }`}
             >
-              {p}
+              {p === "All" ? "All" : p}
             </button>
           ))}
         </div>
@@ -263,7 +455,7 @@ export default function LogsPage() {
                   : "bg-white border border-border text-muted-foreground hover:bg-surface-container-high hover:text-foreground"
               }`}
             >
-              {s === "All" ? "All Status" : STATUS_LABELS[s as Status].label}
+              {s === "All" ? "All Status" : STATUS_LABELS[s].label}
             </button>
           ))}
         </div>
@@ -275,7 +467,7 @@ export default function LogsPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-container-low">
-                {["Action Name", "Platform", "Scope", "Impact", "Status", "Time", ""].map((h) => (
+                {["Decision", "Executed By", "Linkage", "Confidence", "Status", "Time", ""].map((h) => (
                   <th key={h} className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest font-body whitespace-nowrap">
                     {h}
                   </th>
@@ -283,10 +475,18 @@ export default function LogsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-container-low">
-              {filtered.length === 0 ? (
+              {loading ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground font-body text-sm">
-                    No execution logs match the selected filters.
+                    Loading execution logs…
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground font-body text-sm">
+                    {entries.length === 0
+                      ? "No executions recorded yet."
+                      : "No execution logs match the selected filters."}
                   </td>
                 </tr>
               ) : (
@@ -297,9 +497,9 @@ export default function LogsPage() {
                       onClick={() => toggleExpand(log.id)}
                       className={`hover:bg-surface-container-low/50 transition-colors cursor-pointer ${log.status === "failed" ? "bg-red-50/20" : ""}`}
                     >
-                      <td className="px-6 py-5">
-                        <p className="text-sm font-bold text-foreground font-sans">{log.name}</p>
-                        <p className="text-xs text-muted-foreground font-body">{log.desc}</p>
+                      <td className="px-6 py-5 max-w-md">
+                        <p className="text-sm font-bold text-foreground font-sans truncate">{log.name}</p>
+                        <p className="text-xs text-muted-foreground font-body truncate">{log.desc}</p>
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex flex-wrap gap-1.5">
@@ -316,16 +516,9 @@ export default function LogsPage() {
                         <span className={`text-sm font-bold font-body ${log.impactClass}`}>{log.impact}</span>
                       </td>
                       <td className="px-6 py-5">
-                        {log.status === "running" ? (
-                          <span className="bg-primary/10 text-primary px-3 py-1 rounded-full text-[10px] font-extrabold uppercase flex items-center gap-1.5 w-fit font-body">
-                            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                            Running
-                          </span>
-                        ) : (
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase font-body ${STATUS_LABELS[log.status].class}`}>
-                            {STATUS_LABELS[log.status].label}
-                          </span>
-                        )}
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase font-body ${STATUS_LABELS[log.status].class}`}>
+                          {STATUS_LABELS[log.status].label}
+                        </span>
                       </td>
                       <td className="px-6 py-5 text-sm text-muted-foreground font-body whitespace-nowrap">{log.time}</td>
                       <td className="px-6 py-5 text-right">
@@ -339,17 +532,75 @@ export default function LogsPage() {
                     {/* Expanded Detail */}
                     {expanded.has(log.id) && (
                       <tr key={`${log.id}-detail`} className={log.status === "failed" ? "bg-red-50/10" : "bg-surface-container-low/20"}>
-                        <td colSpan={7} className="px-8 pb-8 pt-0">
+                        <td colSpan={7} className="px-8 pb-8 pt-0 space-y-3">
+                          {/* Continuation #42 — Data Snapshot + Impact panels
+                              from lazy-loaded /history/:id. CLAUDE.md §9
+                              "Decision History" → data_used + impact_snapshot
+                              are core memory-table fields. */}
+                          {detailLoading.has(log.id) && (
+                            <div className="mt-3 bg-surface-container-low/40 rounded-xl p-4 text-xs text-muted-foreground font-body">
+                              Loading data snapshot…
+                            </div>
+                          )}
+                          {detailErrors[log.id] && (
+                            <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs font-body">
+                              {detailErrors[log.id]}
+                            </div>
+                          )}
+                          {details[log.id] && (
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {/* Data Snapshot */}
+                              <div className="bg-white rounded-xl p-4 border border-border/30">
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3 font-body">Data Used (decision-time snapshot)</p>
+                                {primitiveEntries(details[log.id].data_used).length === 0 ? (
+                                  <p className="text-xs text-muted-foreground font-body italic">No primitive fields captured</p>
+                                ) : (
+                                  <dl className="space-y-1.5">
+                                    {primitiveEntries(details[log.id].data_used).map(([k, v]) => (
+                                      <div key={k} className="flex items-baseline justify-between gap-3 text-xs font-body">
+                                        <dt className="text-muted-foreground font-mono shrink-0">{k}</dt>
+                                        <dd className="text-foreground font-medium text-right truncate">{v}</dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                )}
+                              </div>
+                              {/* Impact Snapshot */}
+                              <div className="bg-white rounded-xl p-4 border border-border/30">
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3 font-body">Impact Snapshot (after-state)</p>
+                                {!details[log.id].impact_snapshot ? (
+                                  <p className="text-xs text-muted-foreground font-body italic">No impact recorded</p>
+                                ) : primitiveEntries(details[log.id].impact_snapshot).length === 0 ? (
+                                  <p className="text-xs text-muted-foreground font-body italic">No primitive fields captured</p>
+                                ) : (
+                                  <dl className="space-y-1.5">
+                                    {primitiveEntries(details[log.id].impact_snapshot).map(([k, v]) => (
+                                      <div key={k} className="flex items-baseline justify-between gap-3 text-xs font-body">
+                                        <dt className="text-muted-foreground font-mono shrink-0">{k}</dt>
+                                        <dd className="text-foreground font-medium text-right truncate">{v}</dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                )}
+                              </div>
+                              {details[log.id].trace_id && (
+                                <div className="md:col-span-2 text-[10px] text-muted-foreground font-mono font-body">
+                                  trace_id: {details[log.id].trace_id}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {log.detail.type === "success" ? (
                             <div className="bg-surface-container-low/40 rounded-xl p-6 grid grid-cols-1 md:grid-cols-3 gap-6 mt-2">
                               <div className="md:col-span-2">
                                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2 font-body">AI Execution Explanation</p>
-                                <p className="text-sm text-foreground leading-relaxed font-body">{log.detail.explanation}</p>
+                                <p className="text-sm text-foreground leading-relaxed font-body whitespace-pre-wrap">{log.detail.explanation}</p>
                               </div>
                               <div className="space-y-4">
                                 {log.detail.signal && (
                                   <div>
-                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1 font-body">Signal Detected</p>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1 font-body">Trigger Condition</p>
                                     <span className="inline-block bg-primary/10 text-primary px-3 py-1.5 rounded-lg text-xs font-bold font-body">
                                       {log.detail.signal}
                                     </span>
@@ -357,13 +608,15 @@ export default function LogsPage() {
                                 )}
                                 <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-border/20">
                                   <div className="flex flex-col">
-                                    <span className="text-[10px] text-muted-foreground font-bold font-body">EXPECTED</span>
-                                    <span className="text-sm font-bold text-foreground font-body">{log.detail.expected}</span>
+                                    <span className="text-[10px] text-muted-foreground font-bold font-body">CONFIDENCE</span>
+                                    <span className="text-sm font-bold text-foreground font-body">{log.detail.confidence}</span>
                                   </div>
                                   <TrendingUp size={16} className="text-muted-foreground" />
                                   <div className="flex flex-col text-right">
-                                    <span className="text-[10px] text-muted-foreground font-bold font-body">ACTUAL</span>
-                                    <span className="text-sm font-bold text-primary font-body">{log.detail.actual}</span>
+                                    <span className="text-[10px] text-muted-foreground font-bold font-body">AI LINKED</span>
+                                    <span className="text-sm font-bold text-primary font-body">
+                                      {log.detail.aiLinked ? "Yes" : "No"}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -377,22 +630,16 @@ export default function LogsPage() {
                                 <div className="flex-1">
                                   <div className="flex flex-wrap justify-between items-center mb-3 gap-3">
                                     <h4 className="font-bold text-red-600 font-body">{log.detail.errorTitle}</h4>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[10px] text-red-500 font-bold uppercase font-body">RETRY STATUS:</span>
-                                      <span className="bg-red-500 text-white px-2 py-0.5 rounded text-[10px] font-bold font-body">
-                                        {log.detail.retryStatus}
-                                      </span>
-                                    </div>
                                   </div>
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
-                                      <p className="text-[10px] font-bold text-muted-foreground uppercase font-body mb-1">Error Message</p>
-                                      <p className="text-xs font-mono bg-white/60 p-2 rounded-lg border border-red-100">
+                                      <p className="text-[10px] font-bold text-muted-foreground uppercase font-body mb-1">AI Explanation</p>
+                                      <p className="text-xs font-mono bg-white/60 p-2 rounded-lg border border-red-100 whitespace-pre-wrap">
                                         {log.detail.errorMessage}
                                       </p>
                                     </div>
                                     <div>
-                                      <p className="text-[10px] font-bold text-muted-foreground uppercase font-body mb-1">Root Cause Analysis</p>
+                                      <p className="text-[10px] font-bold text-muted-foreground uppercase font-body mb-1">Trigger Condition</p>
                                       <p className="text-xs text-foreground leading-relaxed font-body">{log.detail.rootCause}</p>
                                     </div>
                                   </div>
@@ -411,47 +658,60 @@ export default function LogsPage() {
         </div>
       </div>
 
-      {/* Bottom Metrics */}
+      {/* Bottom Metrics — derived from loaded data where possible; placeholders
+          ('—') where decision_history doesn't carry the field at list-row level */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-2xl p-6 border-l-4 border-primary shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest font-body">Total Executions (24h)</span>
-              <h3 className="text-3xl font-black text-foreground font-sans mt-1">1,284</h3>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest font-body">Total Executions</span>
+              {/* Continuation #73 — backend `total` count surfaced when it
+                  exceeds the loaded page; "(showing N)" subtitle when more
+                  rows exist beyond the limit=50 page. */}
+              <h3 className="text-3xl font-black text-foreground font-sans mt-1">
+                {totalBackend > totalExecutions
+                  ? <>{totalBackend}<span className="text-sm text-muted-foreground font-normal ml-2">showing {totalExecutions}</span></>
+                  : totalExecutions}
+              </h3>
             </div>
             <Zap size={32} className="text-primary/20" />
           </div>
-          <div className="mt-4 flex items-center gap-2 text-xs font-bold text-emerald-600 font-body">
-            <TrendingUp size={14} />
-            +14.2% from yesterday
+          <div className="mt-4 flex items-center gap-2 text-xs font-bold text-muted-foreground font-body">
+            <Activity size={14} />
+            Source: decision_history
           </div>
         </div>
 
         <div className="bg-white rounded-2xl p-6 border-l-4 border-emerald-500 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest font-body">Revenue Impact</span>
-              <h3 className="text-3xl font-black text-emerald-600 font-sans mt-1">+$24,104</h3>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest font-body">Success Rate</span>
+              <h3 className="text-3xl font-black text-emerald-600 font-sans mt-1">
+                {entries.length === 0 ? "—" : `${successRatePct}%`}
+              </h3>
             </div>
             <DollarSign size={32} className="text-emerald-500/20" />
           </div>
           <div className="mt-4 flex items-center gap-2 text-xs font-bold text-emerald-600 font-body">
             <Activity size={14} />
-            AI-attributed value
+            Across loaded rows
           </div>
         </div>
 
         <div className="bg-white rounded-2xl p-6 border-l-4 border-orange-400 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest font-body">Efficiency Gain</span>
-              <h3 className="text-3xl font-black text-foreground font-sans mt-1">+18%</h3>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest font-body">Automated vs Manual</span>
+              <h3 className="text-3xl font-black text-foreground font-sans mt-1">
+                {entries.filter((e) => e.executedBy === "automation").length}
+                <span className="text-muted-foreground text-lg">/{entries.length}</span>
+              </h3>
             </div>
             <TrendingUp size={32} className="text-orange-400/20" />
           </div>
           <div className="mt-4 flex items-center gap-2 text-xs font-bold text-muted-foreground font-body">
             <Activity size={14} />
-            -4.2h manual work saved
+            Auto-fired vs operator-driven
           </div>
         </div>
       </div>
@@ -462,10 +722,10 @@ export default function LogsPage() {
           <Bot size={18} className="text-primary" />
         </div>
         <div>
-          <p className="text-sm font-bold text-foreground font-sans">Architect Insights</p>
-          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tighter font-body mb-1">Live Analysis</p>
+          <p className="text-sm font-bold text-foreground font-sans">Audit Trail</p>
+          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tighter font-body mb-1">decision_history</p>
           <p className="text-xs text-muted-foreground leading-relaxed font-body">
-            System performance is currently <span className="text-primary font-bold">Optimal</span>. No critical bottlenecks detected in the last 6 hours.
+            Every execution — manual or automated — is recorded with full trigger, AI explanation, and confidence score. Click any row to expand.
           </p>
         </div>
       </div>

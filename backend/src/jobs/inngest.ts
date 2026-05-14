@@ -29,10 +29,22 @@ const dailySyncAll = inngest.createFunction(
     triggers: [{ cron: '0 2 * * *' }],
   },
   async ({ step }) => {
-    const { data: integrations } = await supabaseAdmin
+    // Continuation #106 (2026-05-13) — runtime safety hardening parallel to
+    // #104/#105. Pre-fix: `error` was discarded on the fleet-wide daily-sync
+    // fan-out lookup. A DB lookup failure (RLS, network, schema drift) would
+    // silently return data=null → 0 events queued → ALL orgs skip their
+    // daily sync silently with no audit trail. The failure mode compounds
+    // because the next operator visibility is days later when `last_synced_at`
+    // ages out. Now: capture error + throw → Inngest run record marks
+    // FAILED with the underlying message (operator-greppable, retryable).
+    const { data: integrations, error: integrationsErr } = await supabaseAdmin
       .from('integrations')
       .select('id, org_id')
       .eq('status', 'connected')
+
+    if (integrationsErr) {
+      throw new Error(`daily-sync-all: integrations lookup failed: ${integrationsErr.message}`)
+    }
 
     const events = (integrations ?? []).map((i) => ({
       name: 'integration/sync.requested',
@@ -74,7 +86,13 @@ const syncIntegration = inngest.createFunction(
       throw new Error(`Integration ${integrationId} not found`)
     }
 
-    const { data: syncLog } = await supabaseAdmin
+    // Continuation #106 (2026-05-13) — runtime safety hardening. Pre-fix:
+    // `error` was discarded on the sync_logs INSERT; failure surfaced as a
+    // generic "Failed to create sync log" with no underlying cause for
+    // operators debugging Inngest run failures. Now: capture error and
+    // include its message in the thrown error so the Inngest dashboard's
+    // failure trace carries actionable detail.
+    const { data: syncLog, error: syncLogErr } = await supabaseAdmin
       .from('sync_logs')
       .insert({
         org_id: orgId,
@@ -84,7 +102,9 @@ const syncIntegration = inngest.createFunction(
       .select('id')
       .single()
 
-    if (!syncLog) throw new Error('Failed to create sync log')
+    if (syncLogErr || !syncLog) {
+      throw new Error(`sync-integration: sync_logs insert failed: ${syncLogErr?.message ?? 'no row returned'}`)
+    }
 
     let recordsWritten = 0
 

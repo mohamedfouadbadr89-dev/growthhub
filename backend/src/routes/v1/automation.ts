@@ -30,7 +30,7 @@
 import { Hono } from 'hono'
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { ok, fail } from '../../utils/response.js'
-import { executeRule } from '../../services/execution/automation-engine.js'
+import { executeRule, actionRequiresApproval } from '../../services/execution/automation-engine.js'
 
 type Variables = { userId: string; orgId: string; requestId: string }
 
@@ -51,10 +51,18 @@ const MAX_LIMIT = 100
 automationRouter.get('/rules', async (c) => {
   const orgId = c.get('orgId')
 
+  // Continuation #102 (2026-05-12) — extended SELECT to include
+  // `actions_library.action_type` so the server can compute the
+  // `requires_approval` flag from the SAME centralized policy
+  // (automation-engine.ts:actionRequiresApproval). Operator-facing
+  // visibility for the #99 auto-fire gate: rule cards on
+  // /actions/automation can render an "Approval required — manual fire
+  // only" badge when this flag is true. Single source of truth — no FE
+  // mirror of the action-type set is needed.
   const { data, error } = await supabaseAdmin
     .from('automation_rules')
     .select(
-      'id, name, trigger_type, min_confidence_threshold, action_template_id, action_params, enabled, run_count, last_fired_at, created_at, updated_at, actions_library(platform, name)',
+      'id, name, trigger_type, min_confidence_threshold, action_template_id, action_params, enabled, run_count, last_fired_at, created_at, updated_at, actions_library(platform, name, action_type)',
     )
     .eq('org_id', orgId)
     .order('created_at', { ascending: false })
@@ -63,7 +71,18 @@ automationRouter.get('/rules', async (c) => {
     throw new Error(`automation rules list failed: ${error.message}`)
   }
 
-  return ok(c, { rules: data ?? [], total: (data ?? []).length })
+  // Compute `requires_approval` per-row from the central policy. Cast via
+  // unknown because supabase-js types many-to-one nested-selects as arrays.
+  type RuleRow = {
+    actions_library?: { action_type?: string } | null
+    [k: string]: unknown
+  }
+  const enriched = ((data ?? []) as unknown as RuleRow[]).map((r) => ({
+    ...r,
+    requires_approval: actionRequiresApproval(r.actions_library?.action_type),
+  }))
+
+  return ok(c, { rules: enriched, total: enriched.length })
 })
 
 // ─── POST /rules ──────────────────────────────────────────────────────

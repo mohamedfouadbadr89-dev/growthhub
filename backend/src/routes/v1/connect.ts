@@ -59,15 +59,28 @@ connectRouter.post('/start', async (c) => {
     return fail(c, 'shop is required for Shopify', 400, { code: 'MISSING_PARAMETER', field: 'shop' })
   }
 
-  const { data: existing } = await supabaseAdmin
+  // Continuation #105 (2026-05-13) — runtime safety hardening parallel to #104.
+  // Pre-fix: `error` was discarded — a DB lookup failure (network/RLS/schema)
+  // silently returned `data=null` and the code treated it as "no existing
+  // integration" → proceeded with redundant OAuth + credential rotation,
+  // bypassing the ALREADY_CONNECTED dedupe gate. Now: capture error + throw
+  // → errorHandler emits sanitized 500 with request_id (CONSTITUTION §3
+  // "Fail Loudly"). Switched .maybeSingle() → .limit(1) array select for
+  // backfill robustness (mirrors #101 / #104 pattern); pre-existing duplicate
+  // (org_id, platform, status='connected') rows from a prior bug would crash
+  // .maybeSingle() with PGRST116 — array select is safe regardless.
+  const { data: existingRows, error: existingErr } = await supabaseAdmin
     .from('integrations')
     .select('id')
     .eq('org_id', orgId)
     .eq('platform', platform)
     .eq('status', 'connected')
-    .maybeSingle()
+    .limit(1)
 
-  if (existing) {
+  if (existingErr) {
+    throw new Error(`connect start: existing integration lookup failed: ${existingErr.message}`)
+  }
+  if (existingRows && existingRows.length > 0) {
     return fail(c, 'Platform already connected for this organization', 409, { code: 'ALREADY_CONNECTED' })
   }
 
@@ -177,9 +190,18 @@ connectRouter.post('/complete', async (c) => {
     return fail(c, 'Failed to create integration', 500, { code: 'INTEGRATION_UPSERT_FAILED' })
   }
 
-  // For Shopify: create the ad_account row using the shop domain
+  // For Shopify: create the ad_account row using the shop domain.
+  // Continuation #105 (2026-05-13) — silent-failure hardening. Pre-fix:
+  // the upsert's return value was discarded entirely. If the insert failed
+  // (RLS, schema, conflict-key mismatch), the integration row was created
+  // as 'connected' but the ad_account row was missing — downstream sync
+  // and campaign code expects (integration_id, platform_account_id) to
+  // exist and silently fails with no audit trail. Now: capture error +
+  // throw → errorHandler emits sanitized 500 with request_id; integration
+  // row stays as-is (separate transaction) but the operator sees the
+  // failure surface instead of a half-completed connect flow.
   if (platform === 'shopify' && shop) {
-    await supabaseAdmin
+    const { error: adAcctErr } = await supabaseAdmin
       .from('ad_accounts')
       .upsert(
         {
@@ -191,6 +213,10 @@ connectRouter.post('/complete', async (c) => {
         },
         { onConflict: 'org_id,integration_id,platform_account_id' }
       )
+
+    if (adAcctErr) {
+      throw new Error(`connect complete: shopify ad_account upsert failed: ${adAcctErr.message}`)
+    }
   }
 
   return ok(c, { integrationId: integration.id, platform: integration.platform, status: integration.status })

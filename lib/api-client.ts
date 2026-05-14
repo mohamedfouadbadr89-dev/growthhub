@@ -76,7 +76,7 @@ export function formatErrorMessage(err: unknown, fallback = 'Something went wron
 // preserves backwards-compat with any future not-yet-canonical surface).
 function isCanonicalEnvelope(
   body: unknown,
-): body is { success: boolean; data?: unknown; error?: { message?: string }; request_id?: string | null } {
+): body is { success: boolean; data?: unknown; error?: { message?: string; code?: string }; request_id?: string | null } {
   return (
     !!body &&
     typeof body === 'object' &&
@@ -122,7 +122,24 @@ export async function apiClient<T = unknown>(
     // operators / support can quote it when reporting errors. Null for
     // legacy / non-canonical responses (defense-in-depth fallback).
     const requestId = isCanonicalEnvelope(body) ? body.request_id ?? null : null
-    throw new ApiError(res.status, friendlyMessage(res.status, raw), requestId)
+    // Continuation #59 (2026-05-12) — honor the canonical envelope's
+    // `error.code` discriminator. The backend `deferredPhase` 503 gate
+    // (backend/src/routes/v1/index.ts:55) and every explicit `fail()` site
+    // documents that the api-client uses presence of `error.code` to
+    // decide whether the server's message is intentionally caller-facing
+    // and should bypass the generic friendlyMessage mask. Pre-fix gap: the
+    // backend's intent was documented but never implemented — a 503 with
+    // `code: 'DEFERRED'` collapsed to "Server error — try again in a few
+    // moments", hiding the actionable "Phase X disabled per SYSTEM_CONTROL"
+    // copy. Codes like INVALID_FILTER / INVALID_TYPE / MISSING_PARAMETER /
+    // RATE_LIMITED / NOT_FOUND / DEFERRED / RULE_DISABLED / etc. are
+    // operator-actionable; pass them through verbatim. 401 keeps the
+    // friendlyMessage treatment because canonical messages tend to be
+    // technical ("missing bearer token") vs the user-friendly fallback.
+    const errorCode = isCanonicalEnvelope(body) ? body.error?.code : undefined
+    const useRawMessage = !!errorCode && res.status !== 401
+    const finalMessage = useRawMessage ? raw : friendlyMessage(res.status, raw)
+    throw new ApiError(res.status, finalMessage, requestId)
   }
 
   const body = await res.json()
