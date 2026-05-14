@@ -122,6 +122,19 @@ export default function GovernanceDashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Continuation #123 (2026-05-14) — Phase Ω.2 empty-state vs error-state
+  // distinction. The /governance/summary endpoint returns 200 + all-zero
+  // aggregates for orgs with no rules/runs/decisions yet. A 404 here would
+  // only fire if the backend route isn't mounted on the running process
+  // (stale build, mid-deploy state, or pre-PR#15 backend). In that case
+  // the operator should see a friendly "no data yet" empty state — not a
+  // red "Resource not found" error banner. We special-case ApiError 404
+  // to set `summary = null` with no error string; the existing empty-data
+  // render path then takes over with the appropriate copy.
+  function isNotFound(err: unknown): boolean {
+    return err instanceof ApiError && err.status === 404;
+  }
+
   async function fetchSummary() {
     setRefreshing(true);
     setError(null);
@@ -131,7 +144,12 @@ export default function GovernanceDashboardPage() {
       const data = await apiClient<GovernanceSummary>("/api/v1/governance/summary", token);
       setSummary(data);
     } catch (err) {
-      setError(formatErrorMessage(err, "Failed to load governance summary"));
+      if (isNotFound(err)) {
+        // Treat 404 as "endpoint not available yet" — show empty state, no banner.
+        setSummary(null);
+      } else {
+        setError(formatErrorMessage(err, "Failed to load governance summary"));
+      }
     } finally {
       setRefreshing(false);
       setLoading(false);
@@ -148,7 +166,13 @@ export default function GovernanceDashboardPage() {
         const data = await apiClient<GovernanceSummary>("/api/v1/governance/summary", token);
         if (!cancelled) setSummary(data);
       } catch (err) {
-        if (!cancelled) setError(formatErrorMessage(err, "Failed to load governance summary"));
+        if (!cancelled) {
+          if (isNotFound(err)) {
+            setSummary(null);
+          } else {
+            setError(formatErrorMessage(err, "Failed to load governance summary"));
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -171,13 +195,44 @@ export default function GovernanceDashboardPage() {
     );
   }
 
-  if (error || !summary) {
+  // Continuation #123 — error vs empty-state split:
+  //   - `error` set  → real failure (5xx/401/etc.) → red banner
+  //   - !summary     → endpoint returned 404 (route not mounted / no data
+  //                     yet) → friendly empty state, NOT an error
+  if (error) {
     return (
       <div className="space-y-6">
         <h1 className="text-3xl font-extrabold text-foreground font-sans">Governance</h1>
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-body flex items-center gap-2">
           <AlertCircle size={16} />
-          {error ?? "Summary unavailable"}
+          {error}
+        </div>
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body inline-flex items-center gap-1.5">
+            <ShieldCheck size={11} /> Governance
+          </p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-sans leading-none mb-1">
+            Org Health
+          </h1>
+          <p className="text-muted-foreground font-body mt-2 max-w-2xl">
+            No governance activity yet. As your automation rules fire, AI decisions are made, and
+            audit rows accumulate, this dashboard will populate with rules, run outcomes, approval
+            pressure, AI activity, and rate-limit headroom.
+          </p>
+        </div>
+        <div className="bg-surface-container-low rounded-2xl p-12 text-center">
+          <ShieldCheck size={28} className="text-muted-foreground mx-auto mb-3" />
+          <p className="text-foreground font-body font-bold mb-1">Nothing to summarize yet</p>
+          <p className="text-[11px] text-muted-foreground font-body opacity-70">
+            Create your first automation rule or run an action to populate this view.
+          </p>
         </div>
       </div>
     );
