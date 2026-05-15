@@ -1,12 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   TrendingUp, CheckCircle, RotateCcw, AlertTriangle, Pause, Play, Activity, Zap, History, RefreshCw, Plus, X,
 } from "lucide-react";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
+// Continuation #124 (2026-05-15) — Phase Ω.6 Bundle 2 Step 8.
+// Activation bridge: reads ?prefill=<template_slug>|<draft_id> on
+// mount and pre-populates the existing #111 Create-Rule form. NO new
+// execution path; the canonical POST /api/v1/automation/rules write
+// remains the only way rules land.
+import { getDraft as getCopilotDraft } from "@/lib/copilot-drafts";
+import { getTemplateBySlug } from "@/lib/workflow-templates";
+
+// Best-effort mapping from a template's tags + trigger.kind to the
+// backend automation_rules.trigger_type CHECK enum. Used by the
+// prefill bridge so operators land on a valid form selection.
+function derivePrefilledTriggerType(
+  tags: readonly string[],
+  triggerKind: "schedule" | "metric_threshold" | "manual" | "ai_signal" | "event",
+): string {
+  if (triggerKind === "ai_signal") {
+    const tagSet = new Set(tags);
+    if (tagSet.has("creative") || tagSet.has("fatigue")) return "CONVERSION_DROP";
+    if (tagSet.has("scaling")) return "SCALING_OPPORTUNITY";
+    if (tagSet.has("spike") || tagSet.has("budget")) return "SPEND_SPIKE";
+  }
+  return "ROAS_DROP";
+}
 
 // Continuation #41 (2026-05-12) — wired Automation Status page to canonical
 // Phase 4 Part 2 automation endpoints under ADJACENT CONTINUATION AUTHORITY.
@@ -195,7 +219,7 @@ const STATUS_DOT: Record<ApiRun["status"], string> = {
   skipped: "bg-muted-foreground",
 };
 
-export default function AutomationPage() {
+function AutomationPageInner() {
   const { getToken } = useAuth();
 
   const [rules,     setRules]     = useState<ApiRule[]>([]);
@@ -256,7 +280,7 @@ export default function AutomationPage() {
   // refreshes; the "Updated X ago" signal lets operators judge whether
   // rule state is current.
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
-  const [nowTick, setNowTick] = useState(Date.now());
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 30000);
     return () => clearInterval(t);
@@ -404,7 +428,7 @@ export default function AutomationPage() {
   // Continuation #119 (2026-05-14) — Phase β Layer 3 prefill handler.
   // Pre-populates the existing #111 Create form from a recommendation
   // and opens it for review. NO autonomous submission — operator must
-  // explicitly click "Create Rule" in the form. Approval-required
+  // explicitly click "Create Workflow" in the form. Approval-required
   // recommendations default to enabled=false so the rule lands dormant.
   function applyRecommendation(rec: ApiRecommendation) {
     setCreateError(null);
@@ -435,6 +459,101 @@ export default function AutomationPage() {
       return next;
     });
   }
+
+  // Continuation #124 (2026-05-15) — Phase Ω.6 Bundle 2 Step 8.
+  // Activation bridge: when the page is reached via `?prefill=<key>`,
+  // resolve the key against (1) the static template manifest and
+  // (2) localStorage Copilot drafts; if either resolves, pre-populate
+  // the existing #111 Create-Rule form. Resolved action_type slugs are
+  // looked up against the in-memory `actions` catalog (loaded earlier)
+  // so we can pass the canonical UUID to action_template_id. URL is
+  // cleaned via router.replace so refreshes don't re-prefill.
+  //
+  // No new execution path. The canonical POST /automation/rules write
+  // still happens only when the operator clicks "Create Workflow" inside
+  // the form. Approval-required drafts default to enabled=false.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const prefill = searchParams.get("prefill");
+    if (!prefill) return;
+    // Don't try to resolve action_template_id until actions catalog loaded
+    if (actions.length === 0) return;
+
+    type Prefill = {
+      name: string;
+      trigger_type: string;
+      action_type_slug: string | undefined;
+      min_confidence_threshold: number;
+      requires_approval: boolean;
+    };
+    let resolved: Prefill | null = null;
+
+    // 1. Template slug match
+    const template = getTemplateBySlug(prefill);
+    if (template) {
+      const primaryStep = template.steps.find((s) => s.kind === "action" && s.action_type);
+      resolved = {
+        name: template.name,
+        trigger_type: derivePrefilledTriggerType(template.tags ?? [], template.trigger.kind),
+        action_type_slug: primaryStep?.action_type,
+        min_confidence_threshold: 70,
+        requires_approval: !!template.requires_approval,
+      };
+    } else {
+      // 2. Copilot draft id match
+      const draft = getCopilotDraft(prefill);
+      if (draft) {
+        resolved = {
+          name: draft.name,
+          trigger_type: draft.primary_trigger_type ?? "ROAS_DROP",
+          action_type_slug: draft.primary_action_type,
+          min_confidence_threshold: draft.primary_min_confidence_threshold ?? 70,
+          requires_approval: !!draft.requires_approval,
+        };
+      }
+    }
+
+    if (!resolved) {
+      // Unknown prefill — clean URL silently
+      router.replace("/actions/automation");
+      return;
+    }
+
+    // Resolve the action_type slug (e.g. "meta.pause_campaign") to the
+    // actions_library UUID by matching against the in-memory catalog.
+    // If the slug doesn't match any catalog row (handler not yet
+    // landed), the prefill drops action_template_id — operator sees
+    // an open form ready for selection, no fake submission.
+    let actionTemplateId = "";
+    if (resolved.action_type_slug) {
+      const match = actions.find(
+        (a) => `${a.platform}.${a.action_type}` === resolved!.action_type_slug,
+      );
+      if (match) actionTemplateId = match.id;
+    }
+
+    const validTrigger = (TRIGGER_TYPE_OPTIONS as readonly string[]).includes(resolved.trigger_type)
+      ? (resolved.trigger_type as (typeof TRIGGER_TYPE_OPTIONS)[number])
+      : "ROAS_DROP";
+
+    setCreateForm({
+      name: resolved.name,
+      trigger_type: validTrigger,
+      action_template_id: actionTemplateId,
+      min_confidence_threshold: resolved.min_confidence_threshold,
+      enabled: !resolved.requires_approval,
+    });
+    setShowCreateForm(true);
+    setCreateError(null);
+    // Scroll to the form so operators see it
+    setTimeout(() => {
+      document.querySelector("form")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+    router.replace("/actions/automation");
+  }, [searchParams, router, actions]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function createRule(e: React.FormEvent) {
     e.preventDefault();
@@ -588,10 +707,10 @@ export default function AutomationPage() {
             className="inline-flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-primary/90 transition-all font-body disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {showCreateForm ? <X size={12} /> : <Plus size={12} />}
-            {showCreateForm ? "Cancel" : "Create Rule"}
+            {showCreateForm ? "Cancel" : "Create Workflow"}
           </button>
           <div className="text-right">
-            <p className="text-[10px] font-bold text-primary uppercase tracking-widest font-body">Enabled Rules</p>
+            <p className="text-[10px] font-bold text-primary uppercase tracking-widest font-body">Enabled Workflows</p>
             <p className="text-3xl font-black text-foreground font-sans leading-none">{activeCount}<span className="text-muted-foreground text-xl">/{totalRules}</span></p>
           </div>
         </div>
@@ -630,7 +749,7 @@ export default function AutomationPage() {
           className="bg-white border border-primary/20 rounded-2xl p-6 shadow-sm space-y-5"
         >
           <div className="flex items-center justify-between">
-            <h3 className="font-sans font-bold text-foreground text-lg">Create Automation Rule</h3>
+            <h3 className="font-sans font-bold text-foreground text-lg">Create Workflow</h3>
             <span className="text-[10px] text-muted-foreground font-body uppercase tracking-widest font-bold">
               Canonical automation rule
             </span>
@@ -729,7 +848,7 @@ export default function AutomationPage() {
                 </span>
               </label>
               <p className="text-[10px] text-muted-foreground font-body">
-                Disabled rules require manual fire via the rule card menu
+                Disabled workflows require manual fire from the card menu
               </p>
             </div>
           </div>
@@ -758,7 +877,7 @@ export default function AutomationPage() {
               className="inline-flex items-center gap-2 bg-primary text-white px-5 py-2 rounded-lg text-xs font-bold hover:bg-primary/90 transition-all font-body disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus size={12} />
-              {creating ? "Creating…" : "Create Rule"}
+              {creating ? "Creating…" : "Create Workflow"}
             </button>
           </div>
         </form>
@@ -768,7 +887,7 @@ export default function AutomationPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-2xl p-6 shadow-sm">
           <div className="flex justify-between items-start mb-4">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Total Rules</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Total Workflows</span>
             <TrendingUp size={18} className="text-primary" />
           </div>
           <p className="text-4xl font-black text-foreground font-sans">{totalRules}</p>
@@ -1218,5 +1337,18 @@ export default function AutomationPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Continuation #124 (2026-05-15) — Phase Ω.6 Bundle 2 Step 8.
+// Suspense boundary required because the page now uses useSearchParams
+// (Next.js requires it inside a Suspense subtree). The inner component
+// preserves all existing #111 Create-Rule, toggle, fire and dedupe
+// behaviour verbatim — Suspense is a structural wrapper only.
+export default function AutomationPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" />}>
+      <AutomationPageInner />
+    </Suspense>
   );
 }

@@ -7,6 +7,7 @@ import {
   Globe,
   MousePointerClick,
   ShoppingBag,
+  MessageSquare,
   CheckCircle2,
   RefreshCw,
   AlertCircle,
@@ -20,7 +21,10 @@ import {
 
 interface Integration {
   id: string;
-  platform: "meta" | "google" | "shopify";
+  // Phase Ω.8A.1 — 'slack' is a connectable non-OAuth platform (incoming
+  // webhook). 'email' is intentionally absent: it has no per-org
+  // integration row (system-wide Resend), so it never appears here.
+  platform: "meta" | "google" | "shopify" | "slack";
   status: "connected" | "disconnected" | "error";
   lastSyncedAt: string | null;
   createdAt: string;
@@ -64,9 +68,22 @@ const PLATFORM_META = {
     desc: "Pull first-party order data to fuel precision AI optimization algorithms.",
     tags: ["Orders", "Customers"],
   },
+  slack: {
+    Icon: MessageSquare,
+    iconBg: "bg-purple-50",
+    iconColor: "text-purple-600",
+    label: "Slack",
+    desc: "Deliver alerts and digests to your team channel via an incoming webhook.",
+    tags: ["Notifications"],
+  },
 } as const;
 
-const PLATFORMS: Array<keyof typeof PLATFORM_META> = ["meta", "google", "shopify"];
+const PLATFORMS: Array<keyof typeof PLATFORM_META> = ["meta", "google", "shopify", "slack"];
+
+// Platforms connected by submitting a credential (e.g. a Slack incoming
+// webhook URL) rather than an OAuth redirect. They have no data-sync surface,
+// so the card hides Sync Now / Sync History / Last synced.
+const WEBHOOK_PLATFORMS = new Set<keyof typeof PLATFORM_META>(["slack"]);
 
 function formatDate(iso: string | null): string {
   if (!iso) return "Never";
@@ -146,6 +163,22 @@ export default function IntegrationsPage() {
     const token = await getToken();
     if (!token) return;
     try {
+      // Slack uses the incoming-webhook model — no OAuth redirect. The
+      // operator pastes the webhook URL; it is POSTed to the dedicated
+      // /connect/slack route (validated + Vault-stored server-side).
+      if (platform === "slack") {
+        const webhookUrl = window.prompt(
+          "Paste your Slack incoming webhook URL (https://hooks.slack.com/services/...):",
+        );
+        if (!webhookUrl) return;
+        await apiClient("/api/v1/integrations/connect/slack", token, {
+          method: "POST",
+          body: JSON.stringify({ webhook_url: webhookUrl }),
+        });
+        setToast({ msg: "Slack connected successfully!", type: "success" });
+        void fetchIntegrations();
+        return;
+      }
       const body: Record<string, string> = { platform };
       if (platform === "shopify") {
         const shop = window.prompt("Enter your Shopify store URL (e.g. mystore.myshopify.com):");
@@ -322,8 +355,9 @@ export default function IntegrationsPage() {
                   <h3 className="text-lg font-bold text-foreground font-sans">{meta.label}</h3>
                   <p className="text-sm text-muted-foreground mt-2 leading-relaxed font-body">{meta.desc}</p>
 
-                  {/* Last synced */}
-                  {integration && (
+                  {/* Last synced — webhook platforms (Slack) have no data
+                      sync surface, so the timestamp is omitted for them. */}
+                  {integration && !WEBHOOK_PLATFORMS.has(platform) && (
                     <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground font-body">
                       <Clock size={12} />
                       <span>Last synced: {formatDate(integration.lastSyncedAt)}</span>
@@ -333,7 +367,9 @@ export default function IntegrationsPage() {
                   <div className="mt-4">
                     <div className="flex items-center justify-between text-xs font-medium">
                       <span className="text-muted-foreground font-body">
-                        {connected ? "Synced Entities" : "Available Entities"}
+                        {WEBHOOK_PLATFORMS.has(platform)
+                          ? "Delivers"
+                          : connected ? "Synced Entities" : "Available Entities"}
                       </span>
                       <div className={`flex gap-1.5 ${!connected ? "opacity-50" : ""}`}>
                         {meta.tags.map((tag) => (
@@ -347,6 +383,16 @@ export default function IntegrationsPage() {
 
                   <div className="mt-6">
                     {connected ? (
+                      WEBHOOK_PLATFORMS.has(platform) ? (
+                        // Webhook platforms (Slack) have no sync surface —
+                        // a connected card shows only Disconnect.
+                        <button
+                          onClick={() => handleDisconnect(integration!.id)}
+                          className="w-full py-2.5 rounded-xl text-red-600 text-sm font-bold border border-red-200 hover:bg-red-50 transition-colors font-body"
+                        >
+                          Disconnect
+                        </button>
+                      ) : (
                       <>
                         <div className="flex gap-2">
                           <button
@@ -463,6 +509,7 @@ export default function IntegrationsPage() {
                           </div>
                         )}
                       </>
+                      )
                     ) : hasError ? (
                       <button
                         onClick={() => handleConnect(platform)}

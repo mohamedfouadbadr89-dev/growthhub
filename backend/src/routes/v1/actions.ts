@@ -25,13 +25,14 @@ export const actionsRouter = new Hono<{ Variables: Variables }>()
 
 // Closed-enum domain for `?platform` filter on the LIST endpoint, mirrored
 // from the actions_library CHECK constraint
-// (`platform IN ('meta', 'google', 'shopify')` per
-// 20260503130000_phase4_minimal_execution_layer.sql:29). Cross-route
-// consistency with `campaigns.ts` `VALID_PLATFORMS` validation. The
-// `action_type` column is intentionally open-ended (future templates seeded
-// by migrations may add new types; no DB CHECK enum) and is NOT validated
-// here — same governance posture.
-const VALID_PLATFORMS = new Set(['meta', 'google', 'shopify'])
+// (`platform IN ('meta', 'google', 'shopify', 'slack', 'email')` per
+// 20260515120000_phase_omega8_a1_actions_and_slack_platform.sql — Phase
+// Ω.8A.1 extended the enum with 'slack' + 'email'). Cross-route consistency
+// with `campaigns.ts` `VALID_PLATFORMS` validation. The `action_type` column
+// is intentionally open-ended (future templates seeded by migrations may add
+// new types; no DB CHECK enum) and is NOT validated here — same governance
+// posture.
+const VALID_PLATFORMS = new Set(['meta', 'google', 'shopify', 'slack', 'email'])
 
 // GET /actions — list all action templates (system-global)
 actionsRouter.get('/', async (c) => {
@@ -43,7 +44,7 @@ actionsRouter.get('/', async (c) => {
   // converts the silent empty-result case into a canonical 400 with
   // actionable `INVALID_FILTER` diagnostic. Pattern matches campaigns LIST.
   if (platform && !VALID_PLATFORMS.has(platform)) {
-    return fail(c, `Invalid platform filter: ${platform}. Must be one of: meta, google, shopify`, 400, {
+    return fail(c, `Invalid platform filter: ${platform}. Must be one of: meta, google, shopify, slack, email`, 400, {
       code: 'INVALID_FILTER',
       field: 'platform',
     })

@@ -306,7 +306,7 @@ export default function GovernanceDashboardPage() {
 
           <div className="bg-white rounded-2xl p-5 border border-border/40">
             <div className="flex items-start justify-between mb-3">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Approval-required</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-body">Approval required</span>
               <ShieldAlert size={16} className={s.rules.requires_approval > 0 ? "text-amber-600" : "text-muted-foreground"} />
             </div>
             <p className={`text-3xl font-black font-sans leading-none ${s.rules.requires_approval > 0 ? "text-amber-600" : "text-foreground"}`}>
@@ -519,13 +519,13 @@ export default function GovernanceDashboardPage() {
           <Eye size={11} /> Audit Completeness (7d)
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <KpiTile label="decision_history rows" value={s.audit_last_7d.decision_history_rows} icon={<Activity size={14} className="text-primary" />} />
+          <KpiTile label="Audit log entries" value={s.audit_last_7d.decision_history_rows} icon={<Activity size={14} className="text-primary" />} />
           <KpiTile label="Executed by automation" value={s.audit_last_7d.executed_by_automation} icon={<Cpu size={14} className="text-violet-600" />} />
           <KpiTile label="Executed by operator" value={s.audit_last_7d.executed_by_manual} icon={<Users size={14} className="text-slate-600" />} />
         </div>
         <p className="text-[11px] text-muted-foreground font-body mt-4 leading-relaxed">
-          Every successful execution writes one immutable row to <code className="text-foreground">decision_history</code>{" "}
-          via the canonical <code className="text-foreground">executeAction</code> single-writer.
+          Every successful action leaves a single, tamper-evident audit entry. This count is the running
+          total over the last 7 days.
           <Link href="/actions/logs" className="text-primary hover:underline font-bold ml-1">
             Inspect logs →
           </Link>
@@ -677,9 +677,9 @@ export default function GovernanceDashboardPage() {
       <div className="pt-4 border-t border-border/30 text-[11px] font-body text-muted-foreground inline-flex items-start gap-1.5">
         <Eye size={10} className="mt-0.5" />
         <span>
-          Read-only observability. This page surfaces governance state — it does not mutate policy,
-          override approval gates, or change automation behavior. Configuration changes go through env vars
-          and the canonical Create/Toggle/Fire endpoints under <code className="text-foreground">/automation/rules</code>.
+          Read-only view. This page surfaces governance state — it cannot change policy, override
+          approval gates, or modify automation behavior. To create, toggle, or run a rule, use
+          the Automation surfaces in the sidebar.
         </span>
       </div>
     </div>

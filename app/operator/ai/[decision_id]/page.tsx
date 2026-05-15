@@ -72,11 +72,11 @@ function PhaseLabel({ phase }: { phase: AILogPhase }) {
   const labels: Record<AILogPhase, string> = {
     request:           "Request sent",
     raw:               "Raw response",
-    validated:         "Validated (AI Output Contract)",
+    validated:         "Output validated",
     validation_error:  "Validation failed",
     transport_error:   "Transport failure",
-    persisted:         "Persisted to ai_decisions",
-    persistence_error: "Persistence failed",
+    persisted:         "Decision saved",
+    persistence_error: "Save failed",
   };
   const isErr = phase.endsWith("_error");
   const isOk = phase === "validated" || phase === "persisted";
@@ -100,12 +100,17 @@ export default function AIDecisionDeepView({ params }: { params: { decision_id: 
   const [runs, setRuns] = useState<ApiAutomationRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Phase Ω.3 — graceful "not found" treatment for 404 + 400-with-bad-id
+  // (both happen on missing or malformed URLs and should not surface
+  // raw backend validator copy to operators).
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
+      setNotFound(false);
       try {
         const token = await getToken();
         if (!token) throw new ApiError(401, "Sign in required");
@@ -143,7 +148,13 @@ export default function AIDecisionDeepView({ params }: { params: { decision_id: 
         // Server-side filter already applied; no client-side narrowing needed.
         setRuns(runsRes.runs);
       } catch (err) {
-        if (!cancelled) setError(formatErrorMessage(err, "Failed to load AI decision"));
+        if (!cancelled) {
+          if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
+            setNotFound(true);
+          } else {
+            setError(formatErrorMessage(err, "Failed to load AI decision"));
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -170,6 +181,22 @@ export default function AIDecisionDeepView({ params }: { params: { decision_id: 
     );
   }
 
+  if (notFound) {
+    return (
+      <div className="space-y-6">
+        <Link href="/operator/ai" className="inline-flex items-center gap-2 text-sm font-bold text-primary hover:underline font-body">
+          <ArrowLeft size={14} /> Back to AI Operator Center
+        </Link>
+        <div className="bg-surface-container-low rounded-2xl p-12 text-center">
+          <Brain size={28} className="text-muted-foreground mx-auto mb-3" />
+          <p className="text-foreground font-body font-bold mb-1">We couldn&apos;t find this AI decision.</p>
+          <p className="text-[11px] text-muted-foreground font-body opacity-70">
+            It may have been archived, or the link is no longer valid. Try browsing recent decisions instead.
+          </p>
+        </div>
+      </div>
+    );
+  }
   if (error || !decision) {
     return (
       <div className="space-y-6">
@@ -178,7 +205,7 @@ export default function AIDecisionDeepView({ params }: { params: { decision_id: 
         </Link>
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-body flex items-center gap-2">
           <AlertCircle size={16} />
-          {error ?? "AI decision not found"}
+          {error ?? "We couldn’t load this decision right now."}
         </div>
       </div>
     );
