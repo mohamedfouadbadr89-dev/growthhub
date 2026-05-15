@@ -138,6 +138,18 @@ const LIVE_FLAG_DEPENDENCIES: Array<{ flag: string; deps: readonly string[] }> =
   // flow plus the same 3 OAuth client envs at startup.
   { flag: 'META_CREATE_CAMPAIGN_LIVE',   deps: ['META_TEST_ACCESS_TOKEN'] },
   { flag: 'GOOGLE_CREATE_CAMPAIGN_LIVE', deps: ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET'] },
+  // Phase Ω.8A.1 — Slack + Email-digest LIVE flags (Tier-1 internal notify).
+  // SLACK_POST_MESSAGE_LIVE has NO system-wide env dependency: the Slack
+  // incoming-webhook URL is a per-org Vault secret resolved per-request
+  // (integrations.provider_secret_id), exactly as Google's per-org refresh
+  // tokens are excluded from this static check by design. The dev-only
+  // SLACK_DEFAULT_WEBHOOK_URL is an optional fallback, not a hard dep, so
+  // deps stays empty — the per-request handler still fails loud if neither
+  // a Vault webhook nor the env fallback is present.
+  // EMAIL_SEND_DIGEST_LIVE reuses the system-wide RESEND_API_KEY, so it
+  // carries the same dependency as SEND_ALERT_EMAIL_LIVE.
+  { flag: 'SLACK_POST_MESSAGE_LIVE', deps: [] },
+  { flag: 'EMAIL_SEND_DIGEST_LIVE',  deps: ['RESEND_API_KEY'] },
 ]
 
 const liveMisconfig: string[] = []

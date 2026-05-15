@@ -238,15 +238,14 @@ export default function AIOperatorPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">
-            Operator
+            Insights
           </p>
           <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-sans leading-none mb-1">
-            AI Operator Center
+            AI Insights
           </h1>
           <p className="text-muted-foreground font-body mt-2">
-            Review every AI decision your AI has made, the reasoning behind it, and trace each call
-            end-to-end. Use this to validate outcomes, debug a specific run, or audit confidence trends
-            over time.
+            Review every AI decision, the reasoning behind it, and trace each call end-to-end.
+            Use this to validate outcomes, debug a specific run, or audit confidence trends over time.
           </p>
         </div>
       </div>
@@ -288,7 +287,7 @@ export default function AIOperatorPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search decisions, reasoning, trace_id…"
+                placeholder="Search decisions, reasoning, or trace ID…"
                 className="bg-white border border-border/40 rounded-xl py-2.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 font-body w-64"
               />
             </div>
@@ -440,7 +439,7 @@ export default function AIOperatorPage() {
                 type="text"
                 value={logsTraceInput}
                 onChange={(e) => setLogsTraceInput(e.target.value)}
-                placeholder="Paste a trace_id (UUID) — e.g. from a customer report or audit row"
+                placeholder="Paste a trace ID — e.g. from a customer report or audit row"
                 className="w-full bg-white border border-border/40 rounded-xl py-2.5 pl-9 pr-4 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 font-body"
               />
             </div>
@@ -465,11 +464,11 @@ export default function AIOperatorPage() {
             <div className="bg-surface-container-low rounded-2xl p-12 text-center">
               <Activity size={28} className="text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground font-body mb-1">
-                Enter a trace_id to view the AI lifecycle.
+                Enter a trace ID to view a decision&apos;s full lifecycle.
               </p>
               <p className="text-[11px] text-muted-foreground font-body opacity-70">
-                Each AI call records request → raw → validated → persisted (or validation/transport/persistence_error)
-                phases. The trace_id correlates with <code className="text-foreground">decision_history.trace_id</code>.
+                Every AI call leaves a step-by-step trail — from the request to the validated decision.
+                The trace ID lets you follow any single decision end-to-end through the audit log.
               </p>
             </div>
           ) : logsLoading ? (

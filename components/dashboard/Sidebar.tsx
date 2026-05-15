@@ -79,22 +79,25 @@ const DASHBOARD_CHILDREN: NavItem[] = [
   { label: 'Cohort Analysis', href: '/dashboard/cohort', icon: CalendarDays },
 ];
 
+// Continuation #123 (2026-05-15) — Phase Ω.6 Phase A reframing per
+// `specs/operator-intelligence.md` realignment. Section label and
+// item labels move from "automation engine" language to marketer-
+// facing "workflows" language. Routes UNCHANGED — only display
+// strings change. Operator URL memory + bookmarks preserved.
 const AUTOMATION_CHILDREN: NavItem[] = [
-  // Continuation #54 (2026-05-12) — Decision Center link points to the
-  // canonical destination directly instead of `/automation` (which then
-  // redirects to /dashboard/automation/decision-center). Pre-fix: the
-  // pathname-based active-state highlight in NavGroup never lit up since
-  // the sidebar's href stayed at `/automation` but the resolved pathname
-  // after redirect was the deeper path. Operator-facing navigation
-  // coherence (priority #8).
-  // Continuation #122 (2026-05-14) — Phase Ω: relabel to make the
-  // governance-deferred state operator-visible. The canonical AI
-  // operator surface lives at `/operator/ai` (Phase β); this link is
-  // preserved for the Phase 6 unlock path.
+  // Decision Center (preview) — governance-deferred Phase 6 mock-shell
+  // remains operator-visible with the "(preview)" suffix.
   { label: 'Decision Center (preview)', href: '/dashboard/automation/decision-center', icon: Cpu },
+  // Copilot — Phase Ω.6 foundational D UX. AI-assisted workflow drafting;
+  // calls existing /api/v1/ai/decisions/generate. No orchestration runtime.
+  { label: 'Copilot',         href: '/automation/copilot',    icon: Sparkles },
+  // Templates — Phase Ω.6 Phase B. Curated marketplace of starter workflows;
+  // each routes to a real Use-Template flow (no dead CTAs).
+  { label: 'Templates',       href: '/automation/strategies', icon: Lightbulb },
+  // Builder — Phase 6 mock-shell, intentionally deferred to Phase E.
   { label: 'Builder',         href: '/automation/builder',    icon: GitBranch },
-  { label: 'Strategies',      href: '/automation/strategies', icon: Lightbulb },
-  { label: 'History',         href: '/automation/history',    icon: ScrollText },
+  // Runs — was "History"; reframed for marketer-facing language.
+  { label: 'Runs',            href: '/automation/history',    icon: ScrollText },
   // Continuation #118 (2026-05-14) — Phase α Layer 6 (Execution Timeline)
   // per `specs/execution-timeline.md`. Interleaved chronological view of
   // automation_runs + decision_history. FE-only; no new endpoints.
@@ -158,7 +161,9 @@ const DECISIONS_CHILDREN: NavItem[] = [
 // `specs/ai-operator-center.md`. Single top-level link (no submenu —
 // the page itself has tabs). Read-only operator surface over
 // `ai_decisions` + `ai_logs`.
-const OPERATOR_AI_ITEM: NavItem = { label: 'AI Operator', href: '/operator/ai', icon: Brain };
+// Continuation #123 (2026-05-15) — reframed from "AI Operator" to
+// "AI Insights" per Phase A marketing terminology direction.
+const OPERATOR_AI_ITEM: NavItem = { label: 'AI Insights', href: '/operator/ai', icon: Brain };
 
 // Continuation #121 (2026-05-14) — Phase δ Governance Dashboard entry per
 // `specs/governance-dashboard.md`. Read-only observability over the
@@ -177,7 +182,7 @@ const NAV_STRUCTURE: NavItem[] = [
     children: DECISIONS_CHILDREN,
   },
   { label: 'Actions', icon: MousePointer2, children: ACTIONS_CHILDREN },
-  { label: 'Automation', icon: Cpu, children: AUTOMATION_CHILDREN },
+  { label: 'Workflows', icon: Cpu, children: AUTOMATION_CHILDREN },
   OPERATOR_AI_ITEM,
   GOVERNANCE_ITEM,
   { label: 'Creatives', icon: Palette, children: CREATIVES_CHILDREN },

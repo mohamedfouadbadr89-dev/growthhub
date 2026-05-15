@@ -27,9 +27,14 @@ import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import {
   ArrowLeft, Zap, ShieldAlert, AlertCircle, CheckCircle2, XCircle,
-  SkipForward, RefreshCw, Copy, Info,
+  SkipForward, RefreshCw, Copy, Info, Sparkles, BookOpen, ArrowRight,
+  Lightbulb,
 } from "lucide-react";
 import { apiClient, ApiError, formatErrorMessage } from "@/lib/api-client";
+// Continuation #125 (2026-05-15) — Phase Ω.7 enrichment + cross-refs.
+import { lookupEnrichment, resolveRelatedEnrichments } from "@/lib/action-enrichments";
+import { getTemplatesUsingActionType } from "@/lib/workflow-templates";
+import { TEMPLATE_CATEGORIES } from "@/lib/workflow-templates";
 
 // Continuation #122 (2026-05-14) — Phase Ω stabilization. The prior
 // FE-side approval mirror Set has been removed; `GET /api/v1/actions/:id`
@@ -95,6 +100,12 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
   const [template, setTemplate] = useState<ApiActionTemplate | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Phase Ω.3 — distinguish "this template doesn't exist" (404 OR 400
+  // INVALID_TYPE on a malformed URL — both are operator-facing "not found"
+  // states) from genuine load failures (5xx, network errors). The not-found
+  // state renders an operator-friendly empty state instead of a red banner
+  // with the raw backend validator copy.
+  const [notFound, setNotFound] = useState(false);
 
   // Form state — keyed by parameter name. Initialized empty; backend
   // re-validates required fields and rejects with code='MISSING_PARAMETER'.
@@ -116,6 +127,7 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
     (async () => {
       setLoading(true);
       setLoadError(null);
+      setNotFound(false);
       try {
         const token = await getToken();
         if (!token) throw new ApiError(401, "Sign in required");
@@ -126,7 +138,14 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
         if (!cancelled) setTemplate(data);
       } catch (err) {
         if (!cancelled) {
-          setLoadError(formatErrorMessage(err, "Failed to load action template"));
+          // Treat 404 and 400-with-bad-id as the same "not found" UX —
+          // both happen for missing or malformed URLs and should not
+          // surface backend validator copy to operators.
+          if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
+            setNotFound(true);
+          } else {
+            setLoadError(formatErrorMessage(err, "Failed to load action template"));
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -228,6 +247,22 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
     );
   }
 
+  if (notFound) {
+    return (
+      <div className="space-y-6">
+        <Link href="/actions" className="inline-flex items-center gap-2 text-sm font-bold text-primary hover:underline font-body">
+          <ArrowLeft size={14} /> Back to Action Library
+        </Link>
+        <div className="bg-surface-container-low rounded-2xl p-12 text-center">
+          <Sparkles size={28} className="text-muted-foreground mx-auto mb-3" />
+          <p className="text-foreground font-body font-bold mb-1">We couldn&apos;t find this action.</p>
+          <p className="text-[11px] text-muted-foreground font-body opacity-70">
+            It may have been removed, or the link is no longer valid. Try browsing the full catalog instead.
+          </p>
+        </div>
+      </div>
+    );
+  }
   if (loadError || !template) {
     return (
       <div className="space-y-6">
@@ -236,7 +271,7 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
         </Link>
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-body flex items-center gap-2">
           <AlertCircle size={16} />
-          {loadError ?? "Action template not found"}
+          {loadError ?? "We couldn’t load this action right now."}
         </div>
       </div>
     );
@@ -297,15 +332,20 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 max-w-3xl">
           <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
           <div className="text-sm font-body">
-            <p className="font-bold text-amber-800 mb-1">Approval-required action</p>
+            <p className="font-bold text-amber-800 mb-1">Approval required</p>
             <p className="text-amber-700">
-              Automation rules pointing at this template will not auto-fire on AI-decision streams.
-              Manual execution from this page is treated as implicit operator approval and runs
-              through the canonical executor pipeline (idempotency, rate limit, audit trail preserved).
+              This action can&apos;t run automatically — it needs explicit operator approval before it executes.
+              Running it from this page counts as your approval and is recorded in the audit log.
             </p>
           </div>
         </div>
       )}
+
+      {/* Continuation #125 (2026-05-15) — Phase Ω.7 marketer-facing
+          panels: outcome + "When to use this" + "What you'll receive".
+          Sourced from the static enrichment manifest with defensive
+          fallbacks; never blocks the page if a slug is unenriched. */}
+      <EnrichmentPanels slug={`${template.platform}.${template.action_type}`} />
 
       {/* Execute form */}
       <form
@@ -489,7 +529,7 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
 
           <div className="space-y-2 text-xs font-body">
             <div className="flex gap-2">
-              <span className="text-muted-foreground font-bold w-32 shrink-0">decision_history</span>
+              <span className="text-muted-foreground font-bold w-32 shrink-0">Audit record</span>
               <code className="text-foreground font-mono break-all">{executeResult.history_id}</code>
             </div>
             {executeResult.result_data && Object.entries(executeResult.result_data)
@@ -521,6 +561,129 @@ export default function ActionDetailPage({ params }: { params: { id: string } })
           </div>
         </div>
       )}
+
+      {/* Continuation #125 (2026-05-15) — Phase Ω.7 cross-references.
+          "Used in templates" + "Related operations" panels build the
+          discovery loop: operators arriving at this action can pivot
+          back to the marketplace or to sibling operations without
+          re-navigating. Pure FE derivations over static manifests. */}
+      <UsedInTemplatesPanel slug={`${template.platform}.${template.action_type}`} />
+      <RelatedOperationsPanel slug={`${template.platform}.${template.action_type}`} />
     </div>
+  );
+}
+
+// ─── Enrichment + cross-ref panels ──────────────────────────────────
+
+function EnrichmentPanels({ slug }: { slug: string }) {
+  const enrichment = lookupEnrichment(slug);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
+      <section className="bg-white rounded-2xl border border-border/40 p-5">
+        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-3 font-body inline-flex items-center gap-1.5">
+          <Lightbulb size={11} />
+          When to use this
+        </h3>
+        <ul className="space-y-2">
+          {enrichment.use_cases.map((u, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm font-body text-foreground">
+              <span className="w-1 h-1 rounded-full bg-primary mt-2 shrink-0" aria-hidden="true" />
+              <span>{u}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="bg-white rounded-2xl border border-border/40 p-5">
+        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-3 font-body inline-flex items-center gap-1.5">
+          <CheckCircle2 size={11} />
+          What you&apos;ll receive
+        </h3>
+        <ul className="space-y-2">
+          {enrichment.outputs.map((o, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm font-body text-foreground">
+              <CheckCircle2 size={12} className="text-emerald-500 mt-0.5 shrink-0" />
+              <span>{o}</span>
+            </li>
+          ))}
+        </ul>
+        {enrichment.safety_note && (
+          <div className="mt-4 pt-3 border-t border-border/30 text-[11px] font-body text-amber-700 inline-flex items-start gap-1.5">
+            <ShieldAlert size={11} className="mt-0.5 shrink-0" />
+            <span>{enrichment.safety_note}</span>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function UsedInTemplatesPanel({ slug }: { slug: string }) {
+  const templates = getTemplatesUsingActionType(slug);
+  if (templates.length === 0) return null;
+  return (
+    <section className="max-w-3xl">
+      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-3 font-body inline-flex items-center gap-1.5">
+        <BookOpen size={11} />
+        Used in {templates.length} {templates.length === 1 ? "template" : "templates"}
+      </h3>
+      <ul className="space-y-2">
+        {templates.map((t) => {
+          const cat = TEMPLATE_CATEGORIES.find((c) => c.id === t.category)!;
+          return (
+            <li key={t.slug}>
+              <Link
+                href={`/automation/strategies/${t.slug}`}
+                className="group flex items-center justify-between gap-3 bg-white border border-border/40 rounded-xl p-3.5 hover:border-primary/20 hover:shadow-sm transition-all"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${cat.accent_bg} ${cat.accent_text} font-body`}>
+                      {cat.label}
+                    </span>
+                  </div>
+                  <h4 className="font-sans font-bold text-foreground text-sm group-hover:text-primary transition-colors truncate">
+                    {t.name}
+                  </h4>
+                  <p className="text-[11px] font-body text-muted-foreground line-clamp-1 mt-0.5">
+                    {t.description}
+                  </p>
+                </div>
+                <ArrowRight size={14} className="text-primary shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function RelatedOperationsPanel({ slug }: { slug: string }) {
+  const related = resolveRelatedEnrichments(slug, 3);
+  if (related.length === 0) return null;
+  return (
+    <section className="max-w-3xl">
+      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-3 font-body inline-flex items-center gap-1.5">
+        <Sparkles size={11} />
+        Related operations
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {related.map((r) => (
+          <Link
+            key={r.slug}
+            href={`/actions?platform=all&search=${encodeURIComponent(r.slug)}`}
+            className="group bg-white border border-border/40 rounded-xl p-3.5 hover:border-primary/20 hover:shadow-sm transition-all"
+          >
+            <code className="text-[10px] text-muted-foreground font-mono block mb-1">
+              {r.slug}
+            </code>
+            <p className="text-sm font-body font-bold text-foreground group-hover:text-primary transition-colors line-clamp-2">
+              {r.outcome}
+            </p>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }

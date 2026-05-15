@@ -325,7 +325,7 @@ export default function DecisionHistoryPage() {
   // the history page since it's the CLAUDE.md §9 "system memory" surface;
   // operators need to know if displayed runs are current or stale.
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
-  const [nowTick, setNowTick] = useState(Date.now());
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 30000);
     return () => clearInterval(t);
@@ -427,7 +427,10 @@ export default function DecisionHistoryPage() {
     : Math.round((successCountStats / totalRuns) * 100);
   const trendBuckets = (() => {
     const buckets = new Array(12).fill(0);
-    const now = Date.now();
+    // Use nowTick (state updated by 30s interval) instead of Date.now()
+    // here so the derivation is pure across re-renders. Bucket bins are
+    // monotonic by day, so 30s granularity is more than enough.
+    const now = nowTick;
     const DAY = 24 * 60 * 60 * 1000;
     for (const e of entries) {
       if (!e.executedAt) continue;
@@ -458,11 +461,11 @@ export default function DecisionHistoryPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">Automation</p>
+          <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary mb-2 font-body">Workflows</p>
           <h1 className="text-4xl font-extrabold tracking-tight text-foreground font-sans leading-none mb-1">
-            Decision History
+            Workflow Runs
           </h1>
-          <p className="text-muted-foreground font-body">Full memory — every decision, trigger, data snapshot, and outcome</p>
+          <p className="text-muted-foreground font-body">Every workflow run — what triggered it, what it did, and what came out.</p>
         </div>
         <div className="flex items-center gap-3 self-start md:self-auto">
           {lastUpdatedAt !== null && (

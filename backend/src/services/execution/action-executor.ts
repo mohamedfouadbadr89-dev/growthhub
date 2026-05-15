@@ -50,6 +50,10 @@
 
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { readSecret } from '../../lib/vault.js'
+import { assertCredentialShape } from '../integrations/shape-registry.js'
+import { isValidSlackWebhookUrl, postToSlackWebhook } from '../integrations/slack.js'
+import { normalizeForEmail } from '../notifications/normalize.js'
+import type { EmailDigestInput } from '../notifications/normalize.js'
 
 // ─── Real-execution guards (env-driven, default OFF) ──────────────────
 
@@ -106,6 +110,27 @@ const GOOGLE_LIVE_ORG_ALLOWLIST = (process.env.GOOGLE_LIVE_ORG_ALLOWLIST ?? '')
   .map((s) => s.trim())
   .filter(Boolean)
 const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION ?? 'v19'
+
+// ─── Phase Ω.8A.1 — Slack + Email-digest real-execution guards ────────
+// Default OFF — same flag-gated pattern as every handler above. Both are
+// Tier-1 internal-notify operations (OPERATIONS_TAXONOMY.md §2.4): no spend
+// impact, no approval gate.
+//
+// SLACK_POST_MESSAGE_LIVE: when ON, slack.post_message resolves the org's
+//   per-org incoming-webhook URL from Supabase Vault via
+//   integrations.provider_secret_id (shape-checked by shape-registry.ts).
+//   SLACK_DEFAULT_WEBHOOK_URL is a DEV-ONLY fallback for orgs with no Slack
+//   integration row — production orgs MUST connect their own webhook.
+// EMAIL_SEND_DIGEST_LIVE: when ON, email.send_digest sends a deterministic
+//   text/plain digest (normalizeForEmail) to org admins via Resend — the
+//   same system-wide RESEND_API_KEY + admin-recipient model as
+//   send_alert_email.
+//
+// Both reuse META_LIVE_ORG_ALLOWLIST as the generic live-exec allowlist
+// (the established send_alert_email convention) — no new allowlist env.
+const SLACK_POST_MESSAGE_LIVE = process.env.SLACK_POST_MESSAGE_LIVE === 'true'
+const SLACK_DEFAULT_WEBHOOK_URL = process.env.SLACK_DEFAULT_WEBHOOK_URL
+const EMAIL_SEND_DIGEST_LIVE = process.env.EMAIL_SEND_DIGEST_LIVE === 'true'
 
 // ─── Phase 4 Part 2 — Per-org execution rate limit ────────────────────
 // Caps `decision_history` inserts per org per minute. Idempotent replays
@@ -455,6 +480,69 @@ const ACTION_HANDLERS: Record<string, ActionHandler> = {
         action_type: ctx.actionType,
         platform: ctx.platform,
         ...params,
+      },
+    }
+  },
+
+  // Phase Ω.8A.1 — Slack post_message (Notify, Tier 1). Real mode behind
+  // SLACK_POST_MESSAGE_LIVE + META_LIVE_ORG_ALLOWLIST; default simulated.
+  // Simulated mode runs the SAME deterministic text composition the real
+  // path sends, so the audit row's result_data.normalized_payload records
+  // exactly what would have been posted (Simulation Contract).
+  post_message: async (params, ctx) => {
+    const liveAllowed =
+      ctx.platform === 'slack' &&
+      SLACK_POST_MESSAGE_LIVE &&
+      (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+        META_LIVE_ORG_ALLOWLIST.includes(ctx.orgId))
+
+    if (liveAllowed) {
+      return realSlackPostMessage(params, ctx)
+    }
+    return {
+      success: true,
+      result_data: {
+        simulated: true,
+        action_type: ctx.actionType,
+        platform: ctx.platform,
+        normalized_payload: { text: composeSlackText(params) },
+      },
+    }
+  },
+
+  // Phase Ω.8A.1 — Email send_digest (Notify, Tier 1). Real mode behind
+  // EMAIL_SEND_DIGEST_LIVE + RESEND_API_KEY + META_LIVE_ORG_ALLOWLIST;
+  // default simulated. Simulated mode still runs the deterministic
+  // normalizeForEmail() pipeline so the audit row records the exact body
+  // that would have been sent.
+  send_digest: async (params, ctx) => {
+    const liveAllowed =
+      ctx.platform === 'email' &&
+      EMAIL_SEND_DIGEST_LIVE &&
+      Boolean(RESEND_API_KEY) &&
+      (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+        META_LIVE_ORG_ALLOWLIST.includes(ctx.orgId))
+
+    if (liveAllowed) {
+      return realEmailSendDigest(params, ctx)
+    }
+    const normalized = normalizeForEmail(
+      (params.digest ?? {}) as EmailDigestInput,
+    )
+    return {
+      success: true,
+      result_data: {
+        simulated: true,
+        action_type: ctx.actionType,
+        platform: ctx.platform,
+        subject: typeof params.subject === 'string' ? params.subject : null,
+        normalized_payload: {
+          text: normalized.text,
+          truncated: normalized.truncated,
+          total_chars: normalized.total_chars,
+          sections_count: normalized.sections_count,
+          metrics_count: normalized.metrics_count,
+        },
       },
     }
   },
@@ -2645,6 +2733,463 @@ async function realSendAlertEmail(
   }
 }
 
+// ─── Slack post_message helpers (Phase Ω.8A.1) ────────────────────────
+//
+// Deterministic plain-text composition shared by the simulated + real
+// dispatch paths so the audit row's `result_data.normalized_payload`
+// records exactly what was (or would have been) posted.
+
+function composeSlackText(params: Record<string, unknown>): string {
+  const title = typeof params.title === 'string' ? params.title.trim() : ''
+  const message = typeof params.message === 'string' ? params.message.trim() : ''
+  return [title, message].filter(Boolean).join('\n\n')
+}
+
+// ─── Real slack.post_message (incoming webhook) ───────────────────────
+//
+// Posts a plain-text message to the org's connected Slack incoming webhook.
+// The webhook URL is a single-value non-OAuth secret resolved per-request
+// from Supabase Vault via `integrations.provider_secret_id` — never stored
+// raw in a DB column, never an OAuth token. `assertCredentialShape()`
+// enforces the credential-ownership invariant before the secret is read.
+//
+// SLACK_DEFAULT_WEBHOOK_URL is a dev-only fallback for orgs that have not
+// connected a Slack integration row; production orgs MUST connect one.
+//
+// Idempotency is enforced upstream by `executeAction` via `executionId`,
+// so retries never double-post: a replay short-circuits before this
+// function is invoked.
+
+async function realSlackPostMessage(
+  params: Record<string, unknown>,
+  ctx: HandlerCtx,
+): Promise<{ success: boolean; result_data: Record<string, unknown>; error_message?: string }> {
+  const text = composeSlackText(params)
+  if (text.length === 0) {
+    return {
+      success: false,
+      result_data: {},
+      error_message: 'message missing or invalid',
+    }
+  }
+
+  // Resolve the per-org Slack incoming-webhook URL.
+  let webhookUrl: string
+  let tokenSource: string
+  try {
+    const { data: integ, error: integErr } = await supabaseAdmin
+      .from('integrations')
+      .select('platform, vault_refresh_token_secret_id, provider_secret_id')
+      .eq('org_id', ctx.orgId)
+      .eq('platform', 'slack')
+      .maybeSingle()
+    if (integErr) {
+      throw new Error(`slack integration lookup failed: ${integErr.message}`)
+    }
+    if (integ) {
+      // shape-registry enforces: a slack integrations row carries its
+      // credential in provider_secret_id ONLY (never an OAuth column).
+      const { secretId } = assertCredentialShape(integ)
+      webhookUrl = await readSecret(secretId)
+      tokenSource = 'vault:integration:slack'
+    } else if (SLACK_DEFAULT_WEBHOOK_URL) {
+      webhookUrl = SLACK_DEFAULT_WEBHOOK_URL
+      tokenSource = 'env:SLACK_DEFAULT_WEBHOOK_URL'
+    } else {
+      return {
+        success: false,
+        result_data: { mode: 'live' },
+        error_message:
+          'no Slack integration connected for this org and SLACK_DEFAULT_WEBHOOK_URL is unset',
+      }
+    }
+  } catch (e) {
+    const err = e as Error
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: {
+        name: err?.name,
+        message: `Slack credential resolution failed: ${err?.message ?? 'unknown'}`,
+      },
+    })
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'credential' },
+      error_message: `Slack credential resolution failed: ${err?.message ?? 'unknown'}`,
+    }
+  }
+
+  // Defense-in-depth: only ever POST to a real Slack webhook host.
+  if (!isValidSlackWebhookUrl(webhookUrl)) {
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: { message: 'resolved Slack webhook URL is malformed' },
+    })
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'credential' },
+      error_message:
+        'resolved Slack webhook URL is malformed (expected https://hooks.slack.com/services/...)',
+    }
+  }
+
+  // Step: log BEFORE the external call. The webhook URL is NOT logged.
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_call',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+  })
+
+  const t0 = Date.now()
+  let postResult: { ok: boolean; http_status: number; body: string }
+  try {
+    postResult = await postToSlackWebhook(webhookUrl, text)
+  } catch (e) {
+    const latency_ms = Date.now() - t0
+    const err = e as Error
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.api_response',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      latency_ms,
+      ok: false,
+      error: { name: err?.name, message: err?.message ?? 'fetch failed' },
+    })
+    return {
+      success: false,
+      result_data: { mode: 'live', stage: 'transport' },
+      error_message: `Slack transport: ${err?.message ?? 'fetch failed'}`,
+    }
+  }
+
+  const latency_ms = Date.now() - t0
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_response',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+    latency_ms,
+    http_status: postResult.http_status,
+    ok: postResult.ok,
+  })
+
+  if (!postResult.ok) {
+    return {
+      success: false,
+      result_data: {
+        mode: 'live',
+        http_status: postResult.http_status,
+        slack_response: postResult.body,
+        token_source: tokenSource,
+      },
+      error_message: `Slack webhook rejected the post: ${
+        postResult.body || `HTTP ${postResult.http_status}`
+      }`,
+    }
+  }
+
+  return {
+    success: true,
+    result_data: {
+      mode: 'live',
+      http_status: postResult.http_status,
+      token_source: tokenSource,
+      // Exact payload sent — kept verbatim for the audit row.
+      normalized_payload: { text },
+    },
+  }
+}
+
+// ─── Real email.send_digest (Resend, text/plain) ──────────────────────
+//
+// Sends a deterministic plain-text digest to the calling org's admins via
+// Resend. The raw structured `digest` param is recorded by `executeAction`
+// in `decision_history.data_used.params`; this function records the EXACT
+// normalized body it sends in `result_data.normalized_payload`. The two
+// never drift because `normalizeForEmail` is deterministic.
+//
+// text/plain ONLY — no HTML, no markdown. Recipient list is computed
+// server-side from `users` (org admins), never from caller params.
+
+async function realEmailSendDigest(
+  params: Record<string, unknown>,
+  ctx: HandlerCtx,
+): Promise<{ success: boolean; result_data: Record<string, unknown>; error_message?: string }> {
+  const subject = params.subject
+  if (typeof subject !== 'string' || subject.length === 0) {
+    return {
+      success: false,
+      result_data: {},
+      error_message: 'subject missing or invalid',
+    }
+  }
+
+  const rawDigest = params.digest
+  if (
+    typeof rawDigest !== 'object' ||
+    rawDigest === null ||
+    Array.isArray(rawDigest)
+  ) {
+    return {
+      success: false,
+      result_data: {},
+      error_message: 'digest missing or invalid (expected an object)',
+    }
+  }
+
+  const normalized = normalizeForEmail(rawDigest as EmailDigestInput)
+  const normalizedPayload = {
+    text: normalized.text,
+    truncated: normalized.truncated,
+    total_chars: normalized.total_chars,
+    sections_count: normalized.sections_count,
+    metrics_count: normalized.metrics_count,
+  }
+
+  if (normalized.text.length === 0) {
+    return {
+      success: false,
+      result_data: { mode: 'live', normalized_payload: normalizedPayload },
+      error_message: 'digest normalized to an empty body; nothing sent',
+    }
+  }
+
+  if (!RESEND_API_KEY) {
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: {
+        message:
+          'EMAIL_SEND_DIGEST_LIVE=true but RESEND_API_KEY is not configured',
+      },
+    })
+    return {
+      success: false,
+      result_data: { mode: 'live', normalized_payload: normalizedPayload },
+      error_message: 'Resend API key not configured',
+    }
+  }
+
+  // Look up admin recipients for THIS org. service_role bypasses RLS by
+  // design (CLAUDE.md §3); the .eq('org_id', …) filter still enforces
+  // org-isolation explicitly at the application layer.
+  const { data: admins, error: adminErr } = await supabaseAdmin
+    .from('users')
+    .select('email')
+    .eq('org_id', ctx.orgId)
+    .eq('role', 'admin')
+
+  if (adminErr) {
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.error',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      error: { message: `admin lookup failed: ${adminErr.message}` },
+    })
+    return {
+      success: false,
+      result_data: { mode: 'live', normalized_payload: normalizedPayload },
+      error_message: 'admin lookup failed',
+    }
+  }
+
+  const allEmails = (admins ?? [])
+    .map((r) => r.email as string | null)
+    .filter((e): e is string => typeof e === 'string' && e.length > 0)
+
+  // Filter out JIT placeholders so we never email fake addresses.
+  const realEmails = allEmails.filter(
+    (e) =>
+      !e.endsWith('@placeholder.local') && !e.endsWith('@clerk.placeholder'),
+  )
+
+  if (realEmails.length === 0) {
+    return {
+      success: false,
+      result_data: {
+        mode: 'live',
+        normalized_payload: normalizedPayload,
+        recipients_total: allEmails.length,
+        recipients_real: 0,
+      },
+      error_message:
+        allEmails.length === 0
+          ? 'no admin recipients in this org'
+          : 'all admin emails are placeholders; nothing sent',
+    }
+  }
+
+  // Step: log BEFORE the external call. Recipient addresses are NOT logged.
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_call',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+  })
+
+  const t0 = Date.now()
+  let resp: Response
+  let respBody: unknown
+  try {
+    resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: ALERT_EMAIL_FROM,
+        to: realEmails,
+        subject,
+        // text/plain ONLY — the deterministic normalized body.
+        text: normalized.text,
+      }),
+    })
+    respBody = await resp.json().catch(() => null)
+  } catch (e) {
+    const latency_ms = Date.now() - t0
+    const err = e as Error
+    logExec({
+      ts: new Date().toISOString(),
+      phase: 'exec.api_response',
+      org_id: ctx.orgId,
+      request_id: ctx.requestId,
+      trace_id: ctx.traceId,
+      ai_decision_id: ctx.aiDecisionId,
+      template_id: ctx.templateId,
+      platform: ctx.platform,
+      action_type: ctx.actionType,
+      mode: 'live',
+      latency_ms,
+      ok: false,
+      error: { name: err?.name, message: err?.message ?? 'fetch failed' },
+    })
+    return {
+      success: false,
+      result_data: {
+        mode: 'live',
+        stage: 'transport',
+        normalized_payload: normalizedPayload,
+      },
+      error_message: `Resend transport: ${err?.message ?? 'fetch failed'}`,
+    }
+  }
+
+  const latency_ms = Date.now() - t0
+  const bodyObj =
+    respBody && typeof respBody === 'object'
+      ? (respBody as Record<string, unknown>)
+      : null
+  const ok = resp.ok && bodyObj !== null && bodyObj.error === undefined
+
+  logExec({
+    ts: new Date().toISOString(),
+    phase: 'exec.api_response',
+    org_id: ctx.orgId,
+    request_id: ctx.requestId,
+    trace_id: ctx.traceId,
+    ai_decision_id: ctx.aiDecisionId,
+    template_id: ctx.templateId,
+    platform: ctx.platform,
+    action_type: ctx.actionType,
+    mode: 'live',
+    latency_ms,
+    http_status: resp.status,
+    ok,
+  })
+
+  if (!ok) {
+    const errObj = bodyObj?.error
+    const errMsg =
+      errObj && typeof errObj === 'object'
+        ? safeStringify(errObj)
+        : `HTTP ${resp.status}`
+    return {
+      success: false,
+      result_data: {
+        mode: 'live',
+        http_status: resp.status,
+        recipients_count: realEmails.length,
+        normalized_payload: normalizedPayload,
+        body: bodyObj,
+      },
+      error_message: errMsg,
+    }
+  }
+
+  return {
+    success: true,
+    result_data: {
+      mode: 'live',
+      recipients_count: realEmails.length,
+      http_status: resp.status,
+      message_id:
+        bodyObj && typeof bodyObj.id === 'string' ? bodyObj.id : null,
+      // Exact body sent — paired with the raw digest in data_used.params.
+      normalized_payload: normalizedPayload,
+    },
+  }
+}
+
 // ─── Public entry point ──────────────────────────────────────────────
 
 /**
@@ -2875,7 +3420,22 @@ export async function executeAction(input: ExecuteActionInput): Promise<ExecuteA
      t.action_type === 'create_campaign' &&
      GOOGLE_CREATE_CAMPAIGN_LIVE &&
      (GOOGLE_LIVE_ORG_ALLOWLIST.length === 0 ||
-       GOOGLE_LIVE_ORG_ALLOWLIST.includes(input.orgId)))
+       GOOGLE_LIVE_ORG_ALLOWLIST.includes(input.orgId))) ||
+    // mirror ACTION_HANDLERS.post_message liveAllowed (Phase Ω.8A.1) —
+    // Slack credential is per-org Vault, resolved inside the handler; not
+    // mirrored here (this label gates on flag + allowlist only).
+    (t.platform === 'slack' &&
+     t.action_type === 'post_message' &&
+     SLACK_POST_MESSAGE_LIVE &&
+     (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+       META_LIVE_ORG_ALLOWLIST.includes(input.orgId))) ||
+    // mirror ACTION_HANDLERS.send_digest liveAllowed (Phase Ω.8A.1)
+    (t.platform === 'email' &&
+     t.action_type === 'send_digest' &&
+     EMAIL_SEND_DIGEST_LIVE &&
+     Boolean(RESEND_API_KEY) &&
+     (META_LIVE_ORG_ALLOWLIST.length === 0 ||
+       META_LIVE_ORG_ALLOWLIST.includes(input.orgId)))
   const mode: 'simulated' | 'live' = liveCandidate ? 'live' : 'simulated'
 
   const ctx: HandlerCtx = {

@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import { generateState, validateState } from '../../lib/oauth-state.js'
-import { createSecret } from '../../lib/vault.js'
+import { createSecret, deleteSecret } from '../../lib/vault.js'
 import { supabaseAdmin } from '../../lib/supabase.js'
 import { ok, fail } from '../../utils/response.js'
+import { isValidSlackWebhookUrl } from '../../services/integrations/slack.js'
 
 // Continuation #31 (2026-05-12) — PHASE2_ENVELOPE_FOLLOWUP item M resolution.
 // Canonicalized onto Phase 1 envelope per ADJACENT CONTINUATION AUTHORITY.
@@ -238,4 +239,135 @@ connectRouter.post('/complete', async (c) => {
   }
 
   return ok(c, { integrationId: integration.id, platform: integration.platform, status: integration.status })
+})
+
+// POST /api/v1/integrations/connect/slack
+//
+// Phase Ω.8A.1 — Slack connect path. Slack uses the INCOMING WEBHOOK
+// model, NOT OAuth: there is no /start (no auth dance) and no /complete
+// (no authorization-code exchange). The operator creates an incoming
+// webhook in their own Slack workspace and submits the resulting URL
+// here directly. This is a single self-contained connection route.
+//
+// The webhook URL is a single-value non-OAuth secret: it is stored ONLY
+// in Supabase Vault and referenced by `integrations.provider_secret_id`
+// (ACTION_RUNTIME_RULES.md §15). It is NEVER written raw to a DB column
+// and NEVER logged. The credential-ownership invariant
+// (`provider_secret_id` populated, `vault_refresh_token_secret_id` NULL)
+// is set explicitly on the upsert and enforced at runtime by
+// `shape-registry.ts` `assertCredentialShape()`.
+//
+// Reconnect (operator pastes a fresh URL) upserts on (org_id, platform)
+// and best-effort deletes the superseded Vault secret — no orphans.
+connectRouter.post('/slack', async (c) => {
+  const orgId = c.get('orgId')
+
+  let body: { webhook_url?: unknown }
+  try {
+    const parsed: unknown = await c.req.json()
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return fail(c, 'body must be a JSON object', 400, { code: 'INVALID_JSON' })
+    }
+    body = parsed as { webhook_url?: unknown }
+  } catch {
+    return fail(c, 'Invalid JSON body', 400, { code: 'INVALID_JSON' })
+  }
+
+  // Validate the webhook URL shape BEFORE it touches Vault. Rejecting a
+  // non-Slack host here is the connect-time half of the SSRF guard the
+  // slack.post_message handler also applies at call time.
+  const webhookUrl = body.webhook_url
+  if (!isValidSlackWebhookUrl(webhookUrl)) {
+    return fail(
+      c,
+      'webhook_url must be a valid Slack incoming-webhook URL (https://hooks.slack.com/services/...)',
+      400,
+      { code: 'INVALID_PARAMETER', field: 'webhook_url' },
+    )
+  }
+
+  // Capture any prior slack credential so the superseded Vault secret can
+  // be cleaned up after a successful reconnect.
+  const { data: existing, error: existingErr } = await supabaseAdmin
+    .from('integrations')
+    .select('id, provider_secret_id')
+    .eq('org_id', orgId)
+    .eq('platform', 'slack')
+    .maybeSingle()
+  if (existingErr) {
+    throw new Error(
+      `connect slack: existing integration lookup failed: ${existingErr.message}`,
+    )
+  }
+  const oldSecretId =
+    existing && typeof existing.provider_secret_id === 'string'
+      ? existing.provider_secret_id
+      : null
+
+  // Store the webhook URL in Supabase Vault.
+  let vaultSecretId: string
+  try {
+    vaultSecretId = await createSecret(webhookUrl)
+  } catch (err) {
+    console.error(
+      `[connect-slack][req=${c.get('requestId') ?? 'no-request-id'}] ` +
+        `Vault secret creation failed (org=${orgId}):`,
+      err,
+    )
+    return fail(c, 'Failed to store credentials', 500, { code: 'VAULT_STORE_FAILED' })
+  }
+
+  // Upsert the integration row. `provider_secret_id` carries the credential;
+  // `vault_refresh_token_secret_id` is explicitly NULLed to honor the
+  // single-credential-column invariant for the slack platform.
+  const { data: integration, error } = await supabaseAdmin
+    .from('integrations')
+    .upsert(
+      {
+        org_id: orgId,
+        platform: 'slack',
+        status: 'connected',
+        provider_secret_id: vaultSecretId,
+        vault_refresh_token_secret_id: null,
+      },
+      { onConflict: 'org_id,platform' },
+    )
+    .select('id, platform, status')
+    .single()
+
+  if (error || !integration) {
+    console.error(
+      `[connect-slack][req=${c.get('requestId') ?? 'no-request-id'}] ` +
+        `Integration upsert failed (org=${orgId}):`,
+      error,
+    )
+    // Best-effort: drop the secret we just created so it is not orphaned.
+    try {
+      await deleteSecret(vaultSecretId)
+    } catch {
+      /* observability-only — the upsert failure is the surfaced error */
+    }
+    return fail(c, 'Failed to create integration', 500, {
+      code: 'INTEGRATION_UPSERT_FAILED',
+    })
+  }
+
+  // Reconnect cleanup: delete the superseded webhook secret (best-effort).
+  if (oldSecretId && oldSecretId !== vaultSecretId) {
+    try {
+      await deleteSecret(oldSecretId)
+    } catch (err) {
+      console.error(
+        `[connect-slack][req=${c.get('requestId') ?? 'no-request-id'}] ` +
+          `Failed to delete superseded Vault secret (org=${orgId}):`,
+        err,
+      )
+    }
+  }
+
+  return ok(c, {
+    integrationId: integration.id,
+    platform: integration.platform,
+    status: integration.status,
+  })
 })

@@ -42,23 +42,30 @@ integrationsRouter.delete('/:id', async (c) => {
 
   const { data: integration, error: fetchError } = await supabaseAdmin
     .from('integrations')
-    .select('id, vault_refresh_token_secret_id')
+    .select('id, vault_refresh_token_secret_id, provider_secret_id')
     .eq('id', id)
     .eq('org_id', orgId)
     .single()
 
   if (fetchError || !integration) return fail(c, 'Integration not found', 404, { code: 'NOT_FOUND' })
 
-  if (integration.vault_refresh_token_secret_id) {
+  // Clean up BOTH credential columns from Vault. An integrations row
+  // carries exactly one (OAuth providers → vault_refresh_token_secret_id;
+  // non-OAuth providers like Slack → provider_secret_id), but the disconnect
+  // path deletes whichever is present so no Vault secret is orphaned.
+  // Continuation #48 — request_id correlation for grep parity with the
+  // [req]/[err]/[exec]/[AI] chain. Vault deletion failure is
+  // observability-only (the integration is still soft-disconnected), so
+  // each warn lands here instead of throwing.
+  const secretIdsToDelete = [
+    integration.vault_refresh_token_secret_id,
+    integration.provider_secret_id,
+  ].filter((s): s is string => typeof s === 'string' && s.length > 0)
+
+  for (const secretId of secretIdsToDelete) {
     try {
-      await deleteSecret(integration.vault_refresh_token_secret_id as string)
+      await deleteSecret(secretId)
     } catch (err) {
-      // Continuation #48 — request_id correlation for grep parity with
-      // [req]/[err]/[exec]/[AI] chain. The Vault deletion failure is
-      // observability-only (we still soft-disconnect the integration),
-      // so the warn lands here instead of throwing; tagging with
-      // request_id lets operators pivot from any error sink back to
-      // the originating HTTP request.
       console.error(
         `[integrations-disconnect][req=${c.get('requestId') ?? 'no-request-id'}] ` +
           `Failed to delete Vault secret (integration_id=${id}, org=${orgId}):`,
@@ -69,7 +76,11 @@ integrationsRouter.delete('/:id', async (c) => {
 
   const { error } = await supabaseAdmin
     .from('integrations')
-    .update({ status: 'disconnected', vault_refresh_token_secret_id: null })
+    .update({
+      status: 'disconnected',
+      vault_refresh_token_secret_id: null,
+      provider_secret_id: null,
+    })
     .eq('id', id)
     .eq('org_id', orgId)
 
