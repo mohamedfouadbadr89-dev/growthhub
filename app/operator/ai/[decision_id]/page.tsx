@@ -11,7 +11,7 @@
 //
 // Read-only. No mutations. No new endpoints beyond those already added.
 
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import {
@@ -91,9 +91,16 @@ function PhaseLabel({ phase }: { phase: AILogPhase }) {
   );
 }
 
-export default function AIDecisionDeepView({ params }: { params: { decision_id: string } }) {
+export default function AIDecisionDeepView({
+  params,
+}: {
+  // Next.js 16 delivers dynamic-route `params` as a Promise to Client
+  // Components — unwrap with React's `use()`. Reading `params.decision_id`
+  // synchronously yielded `undefined` and broke the decision fetch.
+  params: Promise<{ decision_id: string }>;
+}) {
   const { getToken } = useAuth();
-  const decisionId = params.decision_id;
+  const decisionId = use(params).decision_id;
 
   const [decision, setDecision] = useState<ApiAIDecision | null>(null);
   const [logs, setLogs] = useState<ApiAILog[]>([]);

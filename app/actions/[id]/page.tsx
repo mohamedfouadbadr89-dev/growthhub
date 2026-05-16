@@ -22,7 +22,7 @@
 // NO backend modification. NO schema change. Backend remains the single
 // authority on idempotency, rate limit, audit, and LIVE flag gating.
 
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import {
@@ -93,9 +93,16 @@ function extractFields(schema: ParameterSchema | null | undefined): ParameterSch
   return Array.isArray(fields) ? fields : [];
 }
 
-export default function ActionDetailPage({ params }: { params: { id: string } }) {
+export default function ActionDetailPage({
+  params,
+}: {
+  // Next.js 16 delivers dynamic-route `params` as a Promise to Client
+  // Components — unwrap with React's `use()`. Reading `params.id`
+  // synchronously yielded `undefined` and broke the detail fetch.
+  params: Promise<{ id: string }>;
+}) {
   const { getToken } = useAuth();
-  const actionId = params.id;
+  const actionId = use(params).id;
 
   const [template, setTemplate] = useState<ApiActionTemplate | null>(null);
   const [loading, setLoading] = useState(true);

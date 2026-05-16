@@ -14,6 +14,7 @@
 //   - multi_step → /automation/copilot?prefill=<slug>
 // Both destinations are real, working flows. No "Coming soon".
 
+import { use } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
@@ -80,9 +81,15 @@ function useTemplateHref(t: WorkflowTemplate): string {
 export default function TemplateDetailPage({
   params,
 }: {
-  params: { slug: string };
+  // Next.js 15/16 delivers dynamic-route `params` as a Promise — even to
+  // Client Components. Typing it as a sync object made `params.slug`
+  // resolve to `undefined`, so `getTemplateBySlug(undefined)` always
+  // returned null and `notFound()` fired for EVERY slug (universal 404).
+  // Unwrap with React's `use()` — the canonical client-side pattern.
+  params: Promise<{ slug: string }>;
 }) {
-  const template = getTemplateBySlug(params.slug);
+  const { slug } = use(params);
+  const template = getTemplateBySlug(slug);
   if (!template) {
     notFound();
   }

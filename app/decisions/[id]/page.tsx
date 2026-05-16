@@ -21,6 +21,14 @@ import { redirect } from "next/navigation";
 // per SYSTEM_CONTROL.md — this redirect explicitly does NOT reactivate
 // them.
 
-export default function DecisionDetailRedirect({ params }: { params: { id: string } }) {
-  redirect(`/operator/ai/${params.id}`);
+export default async function DecisionDetailRedirect({
+  params,
+}: {
+  // Next.js 16 delivers dynamic-route `params` as a Promise to Server
+  // Components — await it. Reading `params.id` synchronously yielded
+  // `undefined`, producing a redirect to `/operator/ai/undefined`.
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  redirect(`/operator/ai/${id}`);
 }

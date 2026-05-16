@@ -66,9 +66,10 @@ const DASHBOARD_CHILDREN: NavItem[] = [
   // dashboard landing page lives at /dashboard/overview (per CLAUDE.md §5
   // routing map; Clerk `AFTER_SIGN_IN_URL` env points here per CLAUDE.md §10).
   // Without this sidebar entry, operators had no path back to Overview from
-  // any dashboard child page; clicking the Dashboard parent header also
-  // didn't help since there is no `app/dashboard/page.tsx` root → bare
-  // `/dashboard` 404s. Placing Overview at index 0 matches the routing map.
+  // any dashboard child page. The bare `/dashboard` route is now safe:
+  // `app/dashboard/page.tsx` (added #53) server-side redirects to
+  // /dashboard/overview, so the parent header never 404s. Placing Overview
+  // at index 0 matches the routing map.
   { label: 'Overview', href: '/dashboard/overview', icon: LayoutDashboard },
   { label: 'Channels', href: '/dashboard/channels', icon: BarChart3 },
   { label: 'Creative', href: '/dashboard/creative', icon: Palette },
